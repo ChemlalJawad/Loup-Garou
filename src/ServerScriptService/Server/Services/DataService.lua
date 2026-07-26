@@ -27,6 +27,10 @@ export type Profile = {
 	EquippedBrainrotUid: string?,
 	InventorySlots: number,
 	OwnedGamePasses: { [number]: boolean },
+	Perks: {
+		DoubleCoins: boolean,
+		DoubleLuck: boolean,
+	},
 	Stats: {
 		FlagCaptures: number,
 		FlagReturns: number,
@@ -52,6 +56,10 @@ local function defaultProfile(): Profile
 		EquippedBrainrotUid = nil,
 		InventorySlots = Constants.DEFAULT_INVENTORY_SLOTS,
 		OwnedGamePasses = {},
+		Perks = {
+			DoubleCoins = false,
+			DoubleLuck = false,
+		},
 		Stats = {
 			FlagCaptures = 0,
 			FlagReturns = 0,
@@ -267,6 +275,36 @@ end
 function DataService.HasGamePass(player: Player, passId: number): boolean
 	local profile = profiles[player]
 	return profile ~= nil and profile.OwnedGamePasses[passId] == true
+end
+
+-- Generic perk flags (e.g. "DoubleCoins", "DoubleLuck"), set by ShopService
+-- once it maps an owned game pass to a gameplay effect. Other systems (Egg,
+-- CTF, ...) only ever read perks by name here - they never need to know
+-- which game pass id grants them, keeping systems decoupled from ShopConfig.
+function DataService.SetPerk(player: Player, perkName: string, value: boolean)
+	local profile = profiles[player]
+	if not profile or profile.Perks[perkName] == nil then
+		return
+	end
+	profile.Perks[perkName] = value
+	fireChanged(player)
+end
+
+function DataService.GetPerk(player: Player, perkName: string): boolean
+	local profile = profiles[player]
+	if not profile then
+		return false
+	end
+	return profile.Perks[perkName] == true
+end
+
+function DataService.AddInventorySlots(player: Player, amount: number)
+	local profile = profiles[player]
+	if not profile then
+		return
+	end
+	profile.InventorySlots = math.max(Constants.DEFAULT_INVENTORY_SLOTS, profile.InventorySlots + amount)
+	fireChanged(player)
 end
 
 function DataService.IncrementStat(player: Player, statName: string, amount: number?)
