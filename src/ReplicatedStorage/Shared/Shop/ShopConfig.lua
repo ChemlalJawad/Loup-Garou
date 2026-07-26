@@ -4,20 +4,68 @@
 -- access here) so both server (ShopService, authoritative grants) and client
 -- (ShopUI, catalog rendering) can require this safely.
 --
--- NOTE: every `Id` below is the placeholder `0`. Game Passes and Developer
--- Products can only be created for a *published* place from the Roblox
--- Creator Dashboard, so there is nothing meaningful to put here until this
--- game ships. Search this file for "-- TODO: set real id" when publishing
--- and fill in the real numeric ids issued by the dashboard - see
--- docs/ARCHITECTURE.md for the full explanation. Because every Id is the
--- same placeholder right now, anything that keys off `Id` (DataService's
--- `OwnedGamePasses` map, `ShopConfig.GetProductById`) will alias all entries
--- together until real, distinct ids are filled in. That's expected at this
--- stage and resolves itself the moment real ids are set.
+-- ============================================================================
+-- PUBLISHING CHECKLIST - read this before shipping
+-- ============================================================================
+-- Every `Id` below is the placeholder `0`. Game Passes and Developer Products
+-- can only be created for a *published* place from the Roblox Creator
+-- Dashboard, so there is nothing meaningful to put here until this game
+-- ships. To go live:
+--   1. Publish the place at least once (Creator Dashboard requires a place
+--      to exist before you can create passes/products against it).
+--   2. In the Creator Dashboard, create one Game Pass per entry in
+--      `gamePasses` below (VIP, Double Coins, Double Luck,
+--      +50 Inventory Slots) and one Developer Product per entry in
+--      `products` below (the 4 Gems packs + 3 Coins packs). Set whatever
+--      Robux price you want in the dashboard - prices are NOT configured
+--      here, Roblox renders its own native price on the purchase prompt.
+--   3. Paste each numeric id the dashboard gives you over the matching `0`
+--      below. Search this file for "-- TODO: set real id" to find every
+--      spot that needs one (also greppable from the repo root).
+--   4. That's it - no other code changes needed. The moment a specific
+--      item's `Id` stops being `0`, `ShopConfig.IsTestModeForId` for that
+--      item returns false automatically, so its shop card switches from
+--      "Coming soon" / "TEST BUY" to a real MarketplaceService prompt with
+--      zero further edits. Items you haven't published yet keep working in
+--      Studio and keep showing "Coming soon" to real players.
+-- ============================================================================
+--
+-- Because every Id is the same placeholder right now, anything that keys off
+-- `Id` (DataService's `OwnedGamePasses` map, `ShopConfig.GetProductById`)
+-- will alias all entries together until real, distinct ids are filled in.
+-- That's expected at this stage (including in TEST_MODE - see below) and
+-- resolves itself the moment real ids are set.
 
+local RunService = game:GetService("RunService")
 local Constants = require(game:GetService("ReplicatedStorage").Shared.Constants)
 
 local ShopConfig = {}
+
+-- === Test mode ===============================================================
+--
+-- Whether to let a developer exercise the full purchase -> grant -> UI flow
+-- in Studio without a real MarketplaceService id. This flag is checked
+-- ONLY at require-time (server + client each evaluate it once, like every
+-- other value in this module) via RunService:IsStudio(), which is a
+-- structural guarantee, not a config toggle: IsStudio() is hard-coded false
+-- by Roblox in every live, published server a real player can join. There is
+-- no live-server code path that can ever observe TEST_MODE = true.
+--
+-- ShopConfig.TEST_MODE alone is NOT the gate callers should use - always call
+-- ShopConfig.IsTestModeForId(id) instead, which ALSO requires the specific
+-- pass/product's Id to still be the `0` placeholder. This second condition
+-- means that even inside Studio, an item stops being simulated the instant a
+-- real id is pasted in (e.g. for QA-ing the real MarketplaceService flow
+-- against a test place), and it's what makes it structurally impossible to
+-- ever simulate a free grant of a *real*, purchasable product.
+ShopConfig.TEST_MODE = RunService:IsStudio()
+
+-- The one function every call site (ShopService, ShopController, ShopUI)
+-- should use to decide "is this specific pass/product simulated right now".
+-- See the TEST_MODE comment above for why both conditions are required.
+function ShopConfig.IsTestModeForId(id: number): boolean
+	return ShopConfig.TEST_MODE and id == 0
+end
 
 export type CurrencyKey = "Coins" | "Gems"
 

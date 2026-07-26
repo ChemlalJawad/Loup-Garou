@@ -223,4 +223,94 @@ function CTFConfig.GetAbility(id: string): AbilityDefinition?
 	return abilities[id]
 end
 
+-- Rarity's effect on CTF combat -----------------------------------------
+--
+-- Deliberate design call: rarity gives only a small ability-cooldown discount
+-- (max 10% at Secret), never extra move speed, damage, stun duration, or
+-- range. Those stay a pure function of the equipped species/ability archetype
+-- above, which anyone can equip regardless of rarity. Idle income and sell
+-- value already reward pulling higher rarities; letting rarity also swing PvP
+-- combat power would make the Robux-purchased luck boost pay-to-win, which we
+-- want to avoid. A slightly faster ability cycle is a felt reward without
+-- being "stronger hits" or "more health".
+local rarityCooldownMultiplier: { [string]: number } = {
+	Common = 1.0,
+	Rare = 0.97,
+	Epic = 0.94,
+	Legendary = 0.92,
+	Secret = 0.9,
+}
+CTFConfig.RarityCooldownMultiplier = rarityCooldownMultiplier
+
+-- Battlefield powerups ----------------------------------------------------
+--
+-- Pure data: CTFService owns spawning (deriving points from WorldLayout's
+-- Arena rect) and effect application; the client only needs Id/DisplayName
+-- for feedback since the server sends Duration on pickup.
+
+export type PowerupArchetype = "Speed" | "Shield" | "Haste" | "Reveal"
+
+export type PowerupDefinition = {
+	Id: string,
+	DisplayName: string,
+	Color: Color3,
+	Duration: number, -- seconds the effect lasts (Haste is instantaneous; kept for UI countdown flavor)
+	Archetype: PowerupArchetype,
+	SpeedMultiplier: number?, -- Speed archetype
+}
+
+local powerups: { [string]: PowerupDefinition } = {
+	Speed = {
+		Id = "Speed",
+		DisplayName = "Speed Surge",
+		Color = Color3.fromRGB(80, 220, 255),
+		Duration = 6,
+		Archetype = "Speed",
+		SpeedMultiplier = 1.35,
+	},
+	Shield = {
+		Id = "Shield",
+		DisplayName = "Shield",
+		Color = Color3.fromRGB(255, 220, 80),
+		Duration = 3,
+		Archetype = "Shield",
+	},
+	Haste = {
+		Id = "Haste",
+		DisplayName = "Haste",
+		Color = Color3.fromRGB(180, 80, 255),
+		Duration = 1, -- flavor only; the effect (cooldown reset) is instant
+		Archetype = "Haste",
+	},
+	Reveal = {
+		Id = "Reveal",
+		DisplayName = "Enemy Vision",
+		Color = Color3.fromRGB(255, 80, 140),
+		Duration = 8,
+		Archetype = "Reveal",
+	},
+}
+CTFConfig.Powerups = powerups
+
+-- Fixed draw order so the spawner cycles predictably rather than relying on
+-- table iteration order (which pairs() does not guarantee).
+CTFConfig.PowerupOrder = { "Speed", "Shield", "Haste", "Reveal" }
+
+function CTFConfig.GetPowerup(id: string): PowerupDefinition?
+	return powerups[id]
+end
+
+-- Spawn points as fractional (x, z) coordinates inside the Arena zone rect
+-- (see WorldLayout.PointIn), not hardcoded studs - the arena is built by a
+-- separate world-design agent and its geometry isn't visible from here.
+CTFConfig.PowerupSpawnFractions = {
+	{ 0.5, 0.5 },
+	{ 0.25, 0.3 },
+	{ 0.75, 0.3 },
+	{ 0.25, 0.7 },
+	{ 0.75, 0.7 },
+	{ 0.5, 0.15 },
+}
+CTFConfig.PowerupRespawnSeconds = 20
+
 return CTFConfig

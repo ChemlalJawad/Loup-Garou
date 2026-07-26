@@ -13,6 +13,7 @@ local Constants = require(ReplicatedStorage.Shared.Constants)
 local Net = require(ReplicatedStorage.Shared.Net)
 local ShopConfig = require(ReplicatedStorage.Shared.Shop.ShopConfig)
 local DataService = require(ServerScriptService.Server.Services.DataService)
+local EconomyService = require(ServerScriptService.Server.Services.EconomyService)
 
 local ShopService = {}
 
@@ -27,6 +28,53 @@ type ReceiptInfo = {
 
 local function notify(player: Player, message: string, kind: string)
 	Net.GetEvent(Constants.REMOTE_NAMES.Shared.Notify):FireClient(player, message, kind)
+end
+
+-- Idempotency bookkeeping for ProcessReceipt --------------------------------
+--
+-- Roblox can legitimately call ProcessReceipt more than once for the same
+-- PurchaseId (e.g. our server returned NotProcessedYet or crashed before
+-- returning at all, so Roblox retries). Re-running the grant on a retry
+-- would double-pay the player, so we record processed PurchaseIds in the
+-- player's profile and no-op (still returning PurchaseGranted) on a repeat.
+--
+-- There's no dedicated Profile field for this (DataService.lua is owned by
+-- another system - see docs/EXPANSION_PLAN.md), so this stores an extra key
+-- on the profile table directly via DataService.Mutate rather than adding
+-- one. DataService's reconcile() only ever *adds* missing keys from
+-- defaultProfile() into a loaded save, it never strips unknown ones, so this
+-- key round-trips through save/load fine. The list is capped at
+-- PROCESSED_PURCHASE_HISTORY_LIMIT entries so it can't grow the profile
+-- forever over a long play history.
+local PROCESSED_PURCHASE_HISTORY_LIMIT = 50
+
+local function hasProcessedPurchase(profile: DataService.Profile, purchaseId: string): boolean
+	local processed = (profile :: any).ShopProcessedPurchaseIds
+	if type(processed) ~= "table" then
+		return false
+	end
+	for _, id in processed :: { string } do
+		if id == purchaseId then
+			return true
+		end
+	end
+	return false
+end
+
+local function markPurchaseProcessed(player: Player, purchaseId: string)
+	DataService.Mutate(player, function(profile)
+		local anyProfile = profile :: any
+		local processed = anyProfile.ShopProcessedPurchaseIds
+		if type(processed) ~= "table" then
+			processed = {}
+			anyProfile.ShopProcessedPurchaseIds = processed
+		end
+		table.insert(processed, purchaseId)
+		local overflow = #processed - PROCESSED_PURCHASE_HISTORY_LIMIT
+		for _ = 1, overflow do
+			table.remove(processed, 1)
+		end
+	end)
 end
 
 local function pushCurrency(player: Player)
@@ -72,6 +120,11 @@ local function applyGamePassEffect(player: Player, passConfig: ShopConfig.GamePa
 	if passConfig.InventorySlotBonus then
 		DataService.AddInventorySlots(player, passConfig.InventorySlotBonus)
 	end
+
+	-- Push the shared Economy HUD (coins/gems/inventory-slot readouts) right
+	-- away rather than waiting for the next throttled ProfileChanged tick, so
+	-- a purchase feels instant.
+	EconomyService.PushState(player)
 end
 
 -- Checks live ownership of a single Game Pass and applies its effect if
@@ -130,6 +183,46 @@ local function syncAllGamePasses(player: Player)
 	gamePassSyncLocked[player] = nil
 end
 
+-- Test-mode purchase simulation ----------------------------------------------
+--
+-- ShopConfig.IsTestModeForId(id) is only ever true in Studio AND only for an
+-- item whose Id is still the `0` placeholder (see ShopConfig.lua for the
+-- full guard rationale). When it's true we skip MarketplaceService entirely
+-- - there's no real product to prompt against yet - and grant the benefit
+-- directly through the exact same DataService/EconomyService calls a real
+-- purchase would use, then push the same result remotes a real purchase
+-- pushes, so a developer pressing Play can verify the whole
+-- purchase -> grant -> UI flow before the game is ever published.
+local function simulateGamePassPurchase(player: Player, passConfig: ShopConfig.GamePassDefinition)
+	local alreadyOwned = DataService.HasGamePass(player, passConfig.Id)
+	if not alreadyOwned then
+		DataService.SetGamePassOwned(player, passConfig.Id, true)
+	end
+	applyGamePassEffect(player, passConfig, not alreadyOwned)
+
+	pushOwnedPasses(player)
+	pushCurrency(player)
+	notify(player, `TEST MODE: granted "{passConfig.Name}"`, "Success")
+end
+
+local function simulateProductPurchase(player: Player, productConfig: ShopConfig.ProductDefinition)
+	local grantOk = pcall(function()
+		if productConfig.Currency == Constants.CURRENCY.HARD then
+			DataService.AddGems(player, productConfig.Amount)
+		else
+			DataService.AddCoins(player, productConfig.Amount)
+		end
+	end)
+	if not grantOk then
+		warn(`[ShopService] simulateProductPurchase: failed to grant "{productConfig.Key}" to {player.Name}`)
+		return
+	end
+
+	EconomyService.PushState(player)
+	pushCurrency(player)
+	notify(player, `TEST MODE: granted {productConfig.Amount} {productConfig.Currency} ({productConfig.Name})`, "Success")
+end
+
 local function onPromptGamePass(player: Player, passKey: unknown)
 	if typeof(passKey) ~= "string" then
 		return
@@ -138,6 +231,11 @@ local function onPromptGamePass(player: Player, passKey: unknown)
 	local passConfig = ShopConfig.GetGamePass(passKey)
 	if not passConfig then
 		warn(`[ShopService] onPromptGamePass: unknown pass key "{tostring(passKey)}"`)
+		return
+	end
+
+	if ShopConfig.IsTestModeForId(passConfig.Id) then
+		simulateGamePassPurchase(player, passConfig)
 		return
 	end
 
@@ -152,6 +250,11 @@ local function onPromptProduct(player: Player, productKey: unknown)
 	local productConfig = ShopConfig.GetProduct(productKey)
 	if not productConfig then
 		warn(`[ShopService] onPromptProduct: unknown product key "{tostring(productKey)}"`)
+		return
+	end
+
+	if ShopConfig.IsTestModeForId(productConfig.Id) then
+		simulateProductPurchase(player, productConfig)
 		return
 	end
 
@@ -201,6 +304,13 @@ local function processReceipt(receiptInfo: ReceiptInfo): Enum.ProductPurchaseDec
 		return Enum.ProductPurchaseDecision.NotProcessedYet
 	end
 
+	-- Idempotency: this exact PurchaseId was already granted (see the
+	-- hasProcessedPurchase/markPurchaseProcessed comment above). No-op as a
+	-- granted purchase rather than granting a second time.
+	if hasProcessedPurchase(profile, receiptInfo.PurchaseId) then
+		return Enum.ProductPurchaseDecision.PurchaseGranted
+	end
+
 	local productConfig = ShopConfig.GetProductById(receiptInfo.ProductId)
 	if not productConfig then
 		warn(`[ShopService] ProcessReceipt: unknown ProductId {receiptInfo.ProductId}`)
@@ -220,6 +330,12 @@ local function processReceipt(receiptInfo: ReceiptInfo): Enum.ProductPurchaseDec
 		return Enum.ProductPurchaseDecision.NotProcessedYet
 	end
 
+	-- Only mark the receipt processed AFTER the grant has actually succeeded -
+	-- if we marked it first and the grant then failed, a legitimate retry
+	-- would be swallowed as a false-positive no-op.
+	markPurchaseProcessed(player, receiptInfo.PurchaseId)
+
+	EconomyService.PushState(player)
 	pushCurrency(player)
 	notify(player, `Purchased {productConfig.Name}!`, "Success")
 
