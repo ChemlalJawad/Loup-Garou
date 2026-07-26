@@ -12,12 +12,14 @@
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local Debris = game:GetService("Debris")
+local TeamsService = game:GetService("Teams")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ServerScriptService = game:GetService("ServerScriptService")
 
 local Constants = require(ReplicatedStorage.Shared.Constants)
 local Net = require(ReplicatedStorage.Shared.Net)
 local CTFConfig = require(ReplicatedStorage.Shared.CTF.CTFConfig)
-local DataService = require(script.Parent.DataService)
+local DataService = require(ServerScriptService.Server.Services.DataService)
 
 export type FlagStateName = "AtBase" | "Carried" | "Dropped"
 export type RoundStateName = "Waiting" | "InProgress" | "RoundOver"
@@ -103,7 +105,7 @@ function Impl.GetTeamRef(teamId: string): Team?
 	if not def then
 		return nil
 	end
-	local inst = game:GetService("Teams"):FindFirstChild(def.Name)
+	local inst = TeamsService:FindFirstChild(def.Name)
 	if inst and inst:IsA("Team") then
 		teamRefs[teamId] = inst
 		return inst
