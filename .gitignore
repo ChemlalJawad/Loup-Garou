@@ -1,0 +1,18 @@
+# Roblox / Rojo build output
+*.rbxl
+*.rbxlx
+*.rbxm
+*.rbxmx
+
+# Aftman / Foreman tool binaries
+.aftman/
+/tools/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
