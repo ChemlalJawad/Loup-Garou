@@ -11,4 +11,9 @@ return {
 	RarityBadge = require(script.RarityBadge),
 	Toast = require(script.Toast),
 	Divider = require(script.Divider),
+	Modal = require(script.Modal),
+	TabBar = require(script.TabBar),
+	ScrollGrid = require(script.ScrollGrid),
+	ProgressBar = require(script.ProgressBar),
+	ItemCard = require(script.ItemCard),
 }
