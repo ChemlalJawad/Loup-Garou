@@ -108,7 +108,9 @@ end
 
 -- Re-checks ownership of every configured Game Pass for a player and applies
 -- effects for any newly-owned ones. Serialized per player (see the lock
--- comment above) so overlapping calls never race each other.
+-- comment above) so overlapping calls never race each other. Does NOT push
+-- Currency/OwnedPasses updates itself - callers push explicitly afterward,
+-- so there's exactly one push per call site regardless of what changed.
 local function syncAllGamePasses(player: Player)
 	if gamePassSyncLocked[player] then
 		gamePassSyncPending[player] = true
@@ -116,24 +118,16 @@ local function syncAllGamePasses(player: Player)
 	end
 
 	gamePassSyncLocked[player] = true
-	local anyNewlyGranted = false
 
 	repeat
 		gamePassSyncPending[player] = nil
 		for _, key in ShopConfig.GamePassOrder do
 			local passConfig = ShopConfig.GamePasses[key]
-			if detectAndApplyGamePass(player, passConfig) then
-				anyNewlyGranted = true
-			end
+			detectAndApplyGamePass(player, passConfig)
 		end
 	until not gamePassSyncPending[player]
 
 	gamePassSyncLocked[player] = nil
-
-	if anyNewlyGranted and player.Parent then
-		pushOwnedPasses(player)
-		pushCurrency(player)
-	end
 end
 
 local function onPromptGamePass(player: Player, passKey: unknown)
@@ -174,6 +168,11 @@ local function onGamePassPurchaseFinished(player: Player, _gamePassId: number, w
 	-- that mapping would be ambiguous. A full resync is cheap (one Async call
 	-- per pass) and correct in both the placeholder and real-id cases.
 	syncAllGamePasses(player)
+	if not player.Parent then
+		return
+	end
+	pushOwnedPasses(player)
+	pushCurrency(player)
 	notify(player, "Purchase complete - thank you!", "Success")
 end
 
