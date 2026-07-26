@@ -66,7 +66,7 @@ export type ProductDefinition = {
 
 -- === Game Passes ===========================================================
 
-ShopConfig.GamePasses: { [GamePassKey]: GamePassDefinition } = {
+local gamePasses: { [GamePassKey]: GamePassDefinition } = {
 	VIP = {
 		Key = "VIP",
 		Id = 0, -- TODO: set real id from Creator Dashboard
@@ -96,9 +96,11 @@ ShopConfig.GamePasses: { [GamePassKey]: GamePassDefinition } = {
 		InventorySlotBonus = 50,
 	},
 }
+ShopConfig.GamePasses = gamePasses
 
 -- Stable display order for UI iteration (table iteration order is undefined).
-ShopConfig.GamePassOrder: { GamePassKey } = { "VIP", "DoubleCoins", "DoubleLuck", "ExtraInventorySlots" }
+local gamePassOrder: { GamePassKey } = { "VIP", "DoubleCoins", "DoubleLuck", "ExtraInventorySlots" }
+ShopConfig.GamePassOrder = gamePassOrder
 
 -- === Developer Products =====================================================
 
@@ -106,7 +108,7 @@ ShopConfig.GamePassOrder: { GamePassKey } = { "VIP", "DoubleCoins", "DoubleLuck"
 -- per-Robux at higher tiers. Robux prices themselves aren't set here: they're
 -- configured in the Creator Dashboard against each product Id and rendered
 -- natively by Roblox's own purchase-confirmation UI.
-ShopConfig.Products: { [ProductKey]: ProductDefinition } = {
+local products: { [ProductKey]: ProductDefinition } = {
 	GemsSmall = {
 		Key = "GemsSmall",
 		Id = 0, -- TODO: set real id from Creator Dashboard
@@ -168,11 +170,13 @@ ShopConfig.Products: { [ProductKey]: ProductDefinition } = {
 		Amount = 12000,
 	},
 }
+ShopConfig.Products = products
 
 -- Stable display order for UI iteration: Gems packs first (premium, higher
 -- price tier), then Coins packs (soft currency, lower price tier).
-ShopConfig.ProductOrder: { ProductKey } =
+local productOrder: { ProductKey } =
 	{ "GemsSmall", "GemsMedium", "GemsLarge", "GemsMega", "CoinsSmall", "CoinsMedium", "CoinsLarge" }
+ShopConfig.ProductOrder = productOrder
 
 function ShopConfig.GetGamePass(key: string): GamePassDefinition?
 	return ShopConfig.GamePasses[key :: GamePassKey]

@@ -21,66 +21,7 @@ local CENTER = Vector3.new(0, 0, 0)
 -- what stops platforms from z-fighting against the ground plate beneath them.
 local PLATFORM_TOP = 0
 
-function HubZone.Build(parent: Instance)
-	local zone = Instance.new("Folder")
-	zone.Name = "Hub"
-	zone.Parent = parent
-
-	-- Band A: outer plaza slab.
-	WorldKit.Part({
-		Name = "PlazaOuter",
-		Size = Vector3.new(100, 2, 100),
-		Position = CENTER + Vector3.new(0, PLATFORM_TOP - 1, 0),
-		Color = Theme.Color.Background,
-		Material = Enum.Material.Slate,
-		Parent = zone,
-	})
-
-	-- Band B: mid plaza, raised slightly, ringed in AccentPrimary neon.
-	WorldKit.Part({
-		Name = "PlazaMid",
-		Size = Vector3.new(68, 0.3, 68),
-		Position = CENTER + Vector3.new(0, 0.15, 0),
-		Color = Theme.Color.Surface,
-		Material = Enum.Material.SmoothPlastic,
-		Parent = zone,
-	})
-	WorldKit.NeonBorder({
-		Name = "PlazaMidTrim",
-		Center = CENTER + Vector3.new(0, 0.31, 0),
-		Width = 68,
-		Depth = 68,
-		Color = Theme.Color.AccentPrimary,
-		Parent = zone,
-	})
-
-	-- Band C: inner plaza (round, for contrast against the square bands),
-	-- ringed in a wider glowing "halo" collar, hosts the fountain.
-	WorldKit.UprightCylinder({
-		Name = "PlazaInner",
-		Diameter = 40,
-		Height = 0.3,
-		Position = CENTER + Vector3.new(0, 0.45, 0),
-		Color = Theme.Color.SurfaceRaised,
-		Material = Enum.Material.SmoothPlastic,
-		Parent = zone,
-	})
-	WorldKit.UprightCylinder({
-		Name = "PlazaInnerHalo",
-		Diameter = 41,
-		Height = 0.15,
-		Position = CENTER + Vector3.new(0, 0.525, 0),
-		Color = Theme.Color.AccentSecondary,
-		Material = Enum.Material.Neon,
-		CanCollide = false,
-		Parent = zone,
-	})
-
-	HubZone.buildFountain(zone)
-	HubZone.buildSpawn(zone)
-end
-
-function HubZone.buildFountain(zone: Instance)
+local function buildFountain(zone: Instance)
 	local base = CENTER.Y + 0.6 -- top of the inner plaza band
 
 	-- Basin.
@@ -146,7 +87,7 @@ function HubZone.buildFountain(zone: Instance)
 	light.Parent = beacon
 end
 
-function HubZone.buildSpawn(zone: Instance)
+local function buildSpawn(zone: Instance)
 	-- The one spawn every player actually lands at first. Placed on the mid
 	-- band (outside the fountain's footprint), facing the fountain.
 	WorldKit.Spawn({
@@ -166,6 +107,65 @@ function HubZone.buildSpawn(zone: Instance)
 		Color = Theme.Color.AccentPrimary,
 		Parent = zone,
 	})
+end
+
+function HubZone.Build(parent: Instance)
+	local zone = Instance.new("Folder")
+	zone.Name = "Hub"
+	zone.Parent = parent
+
+	-- Band A: outer plaza slab.
+	WorldKit.Part({
+		Name = "PlazaOuter",
+		Size = Vector3.new(100, 2, 100),
+		Position = CENTER + Vector3.new(0, PLATFORM_TOP - 1, 0),
+		Color = Theme.Color.Background,
+		Material = Enum.Material.Slate,
+		Parent = zone,
+	})
+
+	-- Band B: mid plaza, raised slightly, ringed in AccentPrimary neon.
+	WorldKit.Part({
+		Name = "PlazaMid",
+		Size = Vector3.new(68, 0.3, 68),
+		Position = CENTER + Vector3.new(0, 0.15, 0),
+		Color = Theme.Color.Surface,
+		Material = Enum.Material.SmoothPlastic,
+		Parent = zone,
+	})
+	WorldKit.NeonBorder({
+		Name = "PlazaMidTrim",
+		Center = CENTER + Vector3.new(0, 0.31, 0),
+		Width = 68,
+		Depth = 68,
+		Color = Theme.Color.AccentPrimary,
+		Parent = zone,
+	})
+
+	-- Band C: inner plaza (round, for contrast against the square bands),
+	-- ringed in a wider glowing "halo" collar, hosts the fountain.
+	WorldKit.UprightCylinder({
+		Name = "PlazaInner",
+		Diameter = 40,
+		Height = 0.3,
+		Position = CENTER + Vector3.new(0, 0.45, 0),
+		Color = Theme.Color.SurfaceRaised,
+		Material = Enum.Material.SmoothPlastic,
+		Parent = zone,
+	})
+	WorldKit.UprightCylinder({
+		Name = "PlazaInnerHalo",
+		Diameter = 41,
+		Height = 0.15,
+		Position = CENTER + Vector3.new(0, 0.525, 0),
+		Color = Theme.Color.AccentSecondary,
+		Material = Enum.Material.Neon,
+		CanCollide = false,
+		Parent = zone,
+	})
+
+	buildFountain(zone)
+	buildSpawn(zone)
 end
 
 return HubZone

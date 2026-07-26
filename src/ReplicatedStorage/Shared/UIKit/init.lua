@@ -9,4 +9,6 @@ return {
 	Panel = require(script.Panel),
 	CurrencyPill = require(script.CurrencyPill),
 	RarityBadge = require(script.RarityBadge),
+	Toast = require(script.Toast),
+	Divider = require(script.Divider),
 }
