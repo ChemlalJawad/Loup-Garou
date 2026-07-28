@@ -20,6 +20,12 @@ export type OwnedBrainrot = {
 	HatchedAt: number,
 }
 
+export type QuestProgress = {
+	Id: string,
+	Progress: number,
+	Claimed: boolean,
+}
+
 export type Profile = {
 	Coins: number,
 	Gems: number,
@@ -31,11 +37,51 @@ export type Profile = {
 		DoubleCoins: boolean,
 		DoubleLuck: boolean,
 	},
+
+	-- Progression (owned by EconomyService).
+	Level: number,
+	XP: number,
+	Rebirths: number,
+
+	-- Collection index: brainrotId -> total ever hatched (0/absent = undiscovered).
+	Index: { [string]: number },
+	IndexMilestonesClaimed: { [string]: boolean },
+
+	-- Quests (owned by QuestService). Keyed by quest id.
+	Quests: { [string]: QuestProgress },
+	QuestsRefreshedAt: number,
+
+	-- Daily login reward (owned by DailyRewardService).
+	Daily: {
+		LastClaimAt: number,
+		Streak: number,
+	},
+
+	-- Redeemed promo codes (owned by CodesService), code -> true.
+	CodesRedeemed: { [string]: boolean },
+
+	-- Timed boosts: boostName -> os.time() expiry. Expired entries are pruned
+	-- lazily on read by EconomyService.
+	Boosts: { [string]: number },
+
+	-- Permanent upgrades bought with in-game currency (owned by StoreService):
+	-- upgradeId -> owned tier/level.
+	Upgrades: { [string]: number },
+
+	AutoHatch: {
+		Enabled: boolean,
+		EggId: string?,
+	},
+
 	Stats: {
 		FlagCaptures: number,
 		FlagReturns: number,
 		Tags: number,
 		EggsHatched: number,
+		RoundsWon: number,
+		RoundsPlayed: number,
+		CoinsEarned: number,
+		BrainrotsSold: number,
 	},
 	Settings: {
 		Music: boolean,
@@ -60,11 +106,33 @@ local function defaultProfile(): Profile
 			DoubleCoins = false,
 			DoubleLuck = false,
 		},
+		Level = 1,
+		XP = 0,
+		Rebirths = 0,
+		Index = {},
+		IndexMilestonesClaimed = {},
+		Quests = {},
+		QuestsRefreshedAt = 0,
+		Daily = {
+			LastClaimAt = 0,
+			Streak = 0,
+		},
+		CodesRedeemed = {},
+		Boosts = {},
+		Upgrades = {},
+		AutoHatch = {
+			Enabled = false,
+			EggId = nil,
+		},
 		Stats = {
 			FlagCaptures = 0,
 			FlagReturns = 0,
 			Tags = 0,
 			EggsHatched = 0,
+			RoundsWon = 0,
+			RoundsPlayed = 0,
+			CoinsEarned = 0,
+			BrainrotsSold = 0,
 		},
 		Settings = {
 			Music = true,
@@ -240,12 +308,84 @@ function DataService.AddBrainrot(player: Player, id: string, rarity: string): Da
 	table.insert(profile.OwnedBrainrots, entry)
 	profile.Stats.EggsHatched += 1
 
+	-- Collection index bookkeeping lives here rather than in IndexService so
+	-- that *every* grant path (hatch, merge, code reward, quest reward) counts
+	-- toward discovery automatically without each caller remembering to.
+	profile.Index[id] = (profile.Index[id] or 0) + 1
+
 	if not profile.EquippedBrainrotUid then
 		profile.EquippedBrainrotUid = entry.Uid
 	end
 
 	fireChanged(player)
 	return entry
+end
+
+-- Removes one owned Brainrot by uid. Returns the removed entry, or nil if the
+-- uid wasn't owned. If it was the equipped one, equips whatever is left (or
+-- nothing) so EquippedBrainrotUid never dangles at a destroyed entry.
+function DataService.RemoveBrainrot(player: Player, uid: string): OwnedBrainrot?
+	local profile = profiles[player]
+	if not profile then
+		return nil
+	end
+
+	for index, owned in profile.OwnedBrainrots do
+		if owned.Uid == uid then
+			table.remove(profile.OwnedBrainrots, index)
+			if profile.EquippedBrainrotUid == uid then
+				local replacement = profile.OwnedBrainrots[1]
+				profile.EquippedBrainrotUid = replacement and replacement.Uid or nil
+			end
+			fireChanged(player)
+			return owned
+		end
+	end
+	return nil
+end
+
+function DataService.FindBrainrot(player: Player, uid: string): OwnedBrainrot?
+	local profile = profiles[player]
+	if not profile then
+		return nil
+	end
+	for _, owned in profile.OwnedBrainrots do
+		if owned.Uid == uid then
+			return owned
+		end
+	end
+	return nil
+end
+
+-- The currently equipped entry, or nil if nothing is equipped.
+function DataService.GetEquipped(player: Player): OwnedBrainrot?
+	local profile = profiles[player]
+	if not profile or not profile.EquippedBrainrotUid then
+		return nil
+	end
+	return DataService.FindBrainrot(player, profile.EquippedBrainrotUid)
+end
+
+function DataService.CountBrainrotsOfId(player: Player, id: string): number
+	local profile = profiles[player]
+	if not profile then
+		return 0
+	end
+	local count = 0
+	for _, owned in profile.OwnedBrainrots do
+		if owned.Id == id then
+			count += 1
+		end
+	end
+	return count
+end
+
+function DataService.FreeSlots(player: Player): number
+	local profile = profiles[player]
+	if not profile then
+		return 0
+	end
+	return math.max(0, profile.InventorySlots - #profile.OwnedBrainrots)
 end
 
 function DataService.EquipBrainrot(player: Player, uid: string): boolean
@@ -305,6 +445,70 @@ function DataService.AddInventorySlots(player: Player, amount: number)
 	end
 	profile.InventorySlots = math.max(Constants.DEFAULT_INVENTORY_SLOTS, profile.InventorySlots + amount)
 	fireChanged(player)
+end
+
+-- Generic escape hatch: run `mutator` against the player's profile and fire
+-- ProfileChanged once afterwards. Systems added after this file was written
+-- (quests, daily rewards, codes, boosts, upgrades, ...) use this instead of
+-- each needing a bespoke setter here, which keeps DataService from growing a
+-- new function per feature. Returns false if the profile isn't loaded.
+--
+-- Rules for callers: mutate only your own system's slice of the profile, keep
+-- the mutator synchronous (no task.wait / yielding calls inside it), and never
+-- replace a whole table the reconciler depends on (assign fields, don't do
+-- `profile.Quests = {}` unless you mean to wipe it).
+function DataService.Mutate(player: Player, mutator: (Profile) -> ()): boolean
+	local profile = profiles[player]
+	if not profile then
+		return false
+	end
+	mutator(profile)
+	fireChanged(player)
+	return true
+end
+
+-- Timed boosts -------------------------------------------------------------
+
+function DataService.GrantBoost(player: Player, boostName: string, durationSeconds: number)
+	local profile = profiles[player]
+	if not profile then
+		return
+	end
+	local now = os.time()
+	local currentExpiry = profile.Boosts[boostName]
+	-- Stack by extending from the later of (now, existing expiry) so buying a
+	-- second boost while one is active adds time instead of throwing it away.
+	local base = if currentExpiry and currentExpiry > now then currentExpiry else now
+	profile.Boosts[boostName] = base + durationSeconds
+	fireChanged(player)
+end
+
+function DataService.HasBoost(player: Player, boostName: string): boolean
+	local profile = profiles[player]
+	if not profile then
+		return false
+	end
+	local expiry = profile.Boosts[boostName]
+	if not expiry then
+		return false
+	end
+	if expiry <= os.time() then
+		profile.Boosts[boostName] = nil
+		return false
+	end
+	return true
+end
+
+function DataService.BoostSecondsRemaining(player: Player, boostName: string): number
+	local profile = profiles[player]
+	if not profile then
+		return 0
+	end
+	local expiry = profile.Boosts[boostName]
+	if not expiry then
+		return 0
+	end
+	return math.max(0, expiry - os.time())
 end
 
 function DataService.IncrementStat(player: Player, statName: string, amount: number?)

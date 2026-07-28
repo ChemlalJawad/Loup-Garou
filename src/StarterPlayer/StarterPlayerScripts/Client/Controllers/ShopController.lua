@@ -25,18 +25,22 @@ local function onBuyProduct(productKey: string)
 end
 
 function ShopController.Init()
-	ShopUI.Init({
+	local shopPanel = ShopUI.Init({
 		OnBuyGamePass = onBuyGamePass,
 		OnBuyProduct = onBuyProduct,
 	})
 
+	-- Panel=shopPanel hands exclusive show/hide of this screen to Shell (only
+	-- one registered panel is ever open at once); ShopUI no longer tracks its
+	-- own `visible` boolean. Order=40 matches the Shop slot in the nav dock
+	-- order documented in docs/EXPANSION_PLAN.md.
 	Shell.RegisterNavButton({
 		Id = "NavShop",
 		Label = "Shop",
 		IconText = "💎",
-		OnClick = function()
-			ShopUI.Toggle()
-		end,
+		Panel = shopPanel,
+		Order = 40,
+		OnClick = function() end,
 	})
 
 	Net.GetEvent(Constants.REMOTE_NAMES.Shop.CurrencyUpdated).OnClientEvent:Connect(function(coins: number, gems: number)

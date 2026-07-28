@@ -28,8 +28,13 @@ local PANEL_SIZE = UDim2.new(0, 640, 0, 480)
 local ROBUX_TEXT_COLOR = Color3.fromRGB(10, 20, 14) -- dark text for contrast on Theme.Color.Robux
 local ACTIVE_TAB_TEXT_COLOR = Color3.fromRGB(10, 20, 14) -- dark text for contrast on the active tab's accent fill
 
+-- The nav/panel id this screen registers with Shell. Shared between
+-- RegisterNavButton's Id and the Modal's OnClose callback so clicking the
+-- Modal's own [X] keeps Shell's panel-registry state (openPanelId, nav icon
+-- highlight) in sync instead of only hiding the Frame.
+local PANEL_ID = "NavShop"
+
 local initialized = false
-local isVisible = false
 local activeTab = "GamePasses"
 
 local rootPanel: Frame? = nil
@@ -38,7 +43,39 @@ local productsScroll: ScrollingFrame? = nil
 local tabButtons: { [string]: TextButton } = {}
 local gamePassButtons: { [string]: TextButton } = {}
 
-local function createBuyButton(parent: Instance, onClick: () -> ()): TextButton
+-- Buy-button visual states -----------------------------------------------
+--
+-- A card's button reads one of three ways:
+--   * "Coming soon" (disabled, muted) - real id, not test mode: Id is still
+--     the `0` placeholder and we are NOT in Studio test mode, so a real
+--     player must never see a button that looks live but does nothing.
+--   * "TEST BUY" (Robux-colored, active) - ShopConfig.IsTestModeForId(id) is
+--     true: Studio + placeholder id, so clicking simulates the purchase.
+--   * "R$  Buy" (Robux-colored, active) - a real, non-zero id: a normal
+--     MarketplaceService prompt.
+local function applyBuyButtonState(button: TextButton, id: number)
+	if ShopConfig.IsTestModeForId(id) then
+		button.Text = "TEST BUY"
+		button.BackgroundColor3 = Theme.Color.Robux
+		button.TextColor3 = ROBUX_TEXT_COLOR
+		button.Active = true
+		button.AutoButtonColor = false
+	elseif id == 0 then
+		button.Text = "Coming soon"
+		button.BackgroundColor3 = Theme.Color.Background
+		button.TextColor3 = Theme.Color.TextDisabled
+		button.Active = false
+		button.AutoButtonColor = false
+	else
+		button.Text = "R$  Buy"
+		button.BackgroundColor3 = Theme.Color.Robux
+		button.TextColor3 = ROBUX_TEXT_COLOR
+		button.Active = true
+		button.AutoButtonColor = false
+	end
+end
+
+local function createBuyButton(parent: Instance, id: number, onClick: () -> ()): TextButton
 	local button = UIKit.Button.new({
 		Text = "R$  Buy",
 		Variant = "Primary",
@@ -49,9 +86,9 @@ local function createBuyButton(parent: Instance, onClick: () -> ()): TextButton
 		OnClick = onClick,
 	})
 	-- Roblox brand guideline: the Robux-green accent is reserved for actual
-	-- Robux price tags, so it only ever appears on these buy buttons.
-	button.BackgroundColor3 = Theme.Color.Robux
-	button.TextColor3 = ROBUX_TEXT_COLOR
+	-- Robux price affordances, so Theme.Color.Robux only ever appears on
+	-- these buy buttons (never on the disabled "Coming soon" state).
+	applyBuyButtonState(button, id)
 	return button
 end
 
@@ -105,7 +142,7 @@ local function createGamePassCard(
 		Parent = card,
 	})
 
-	return createBuyButton(card, function()
+	return createBuyButton(card, passConfig.Id, function()
 		onBuy(passConfig.Key)
 	end)
 end
@@ -177,7 +214,7 @@ local function createProductCard(
 		Parent = card,
 	})
 
-	createBuyButton(card, function()
+	createBuyButton(card, productConfig.Id, function()
 		onBuy(productConfig.Key)
 	end)
 end
@@ -236,46 +273,12 @@ local function setActiveTab(tabKey: string)
 	end
 end
 
-local function buildHeader(parent: Instance)
-	local header = Util.Create("Frame", {
-		Name = "Header",
-		BackgroundTransparency = 1,
-		Size = UDim2.new(1, 0, 0, 56),
-		Parent = parent,
-	}) :: Frame
-
-	Util.Create("TextLabel", {
-		Name = "Title",
-		BackgroundTransparency = 1,
-		Position = UDim2.new(0, 20, 0, 0),
-		Size = UDim2.new(1, -80, 1, 0),
-		Text = "SHOP",
-		TextColor3 = Theme.Color.TextPrimary,
-		Font = Theme.Font.Heading,
-		TextSize = 22,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		Parent = header,
-	})
-
-	UIKit.Button.new({
-		Text = "✕",
-		Variant = "Ghost",
-		Size = UDim2.new(0, 36, 0, 36),
-		AnchorPoint = Vector2.new(1, 0.5),
-		Position = UDim2.new(1, -16, 0.5, 0),
-		Parent = header,
-		OnClick = function()
-			ShopUI.SetVisible(false)
-		end,
-	})
-end
-
 local function buildTabBar(parent: Instance)
 	local tabBar = Util.Create("Frame", {
 		Name = "TabBar",
 		BackgroundTransparency = 1,
-		Position = UDim2.new(0, 16, 0, 58),
-		Size = UDim2.new(1, -32, 0, 40),
+		Position = UDim2.new(0, 0, 0, 0),
+		Size = UDim2.new(1, 0, 0, 40),
 		Parent = parent,
 	}) :: Frame
 
@@ -309,10 +312,10 @@ end
 
 local function buildContent(parent: Instance, callbacks: ShopUICallbacks)
 	local contentContainer = Util.Create("Frame", {
-		Name = "Content",
+		Name = "Lists",
 		BackgroundTransparency = 1,
-		Position = UDim2.new(0, 16, 0, 108),
-		Size = UDim2.new(1, -32, 1, -124),
+		Position = UDim2.new(0, 0, 0, 50),
+		Size = UDim2.new(1, 0, 1, -50),
 		Parent = parent,
 	}) :: Frame
 
@@ -341,47 +344,53 @@ local function buildContent(parent: Instance, callbacks: ShopUICallbacks)
 	addProductGroup(Constants.CURRENCY.SOFT, "COINS")
 end
 
-function ShopUI.Init(callbacks: ShopUICallbacks)
+-- Returns the panel's root Frame so ShopController can pass it as `Panel` to
+-- Shell.RegisterNavButton - Shell then owns exclusive show/hide of this
+-- screen, so this module never tracks its own `visible` boolean.
+function ShopUI.Init(callbacks: ShopUICallbacks): Frame
 	if initialized then
 		warn("[ShopUI] Init called more than once - ignoring")
-		return
+		return rootPanel :: Frame
 	end
 	initialized = true
 
-	local panel = UIKit.Panel.new({
-		Name = "ShopPanel",
+	local subtitle = if ShopConfig.TEST_MODE
+		then "Robux shop - TEST MODE active in Studio (placeholder ids simulate a purchase)"
+		else "Robux shop"
+
+	local modal = UIKit.Modal.new({
+		Title = "SHOP",
+		Subtitle = subtitle,
 		Size = PANEL_SIZE,
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.new(0.5, 0, 0.5, 0),
-		Raised = true,
+		AccentColor = Theme.Color.Robux,
 		Parent = Shell.GetScreenGui(),
-	}) :: Frame
-	panel.Visible = false
-	panel.ZIndex = 10
-	panel.ClipsDescendants = true
+		OnClose = function()
+			-- The Modal's own [X] hides the Frame directly; route it back
+			-- through Shell so Shell's panel registry (openPanelId, nav icon
+			-- highlight) stays in sync instead of drifting out of state.
+			Shell.ClosePanel(PANEL_ID)
+		end,
+	})
+	local panel = modal.Root
+	panel.Name = "ShopPanel"
 	rootPanel = panel
 
-	buildHeader(panel)
-	buildTabBar(panel)
-	buildContent(panel, callbacks)
+	buildTabBar(modal.Content)
+	buildContent(modal.Content, callbacks)
 
 	setActiveTab("GamePasses")
-end
 
-function ShopUI.SetVisible(visible: boolean)
-	isVisible = visible
-	if rootPanel then
-		rootPanel.Visible = visible
-	end
-end
-
-function ShopUI.Toggle()
-	ShopUI.SetVisible(not isVisible)
+	return panel
 end
 
 -- `ownedPasses` is the raw `profile.OwnedGamePasses` map ({ [passId]: true }),
 -- pushed straight through from Shop_OwnedPassesUpdated - keyed by numeric
--- Game Pass Id, same as DataService stores it.
+-- Game Pass Id, same as DataService stores it. NOTE: while every pass Id is
+-- still the `0` placeholder, this map can only ever have one key (0), so
+-- "owning" any one placeholder pass (including via a TEST BUY) shows every
+-- other placeholder pass as OWNED too - the same aliasing ShopConfig.lua
+-- documents for GetProductById. It resolves itself once real, distinct ids
+-- are filled in.
 function ShopUI.SetOwnedPasses(ownedPasses: { [number]: boolean })
 	for _, key in ShopConfig.GamePassOrder do
 		local passConfig = ShopConfig.GamePasses[key]
@@ -397,10 +406,7 @@ function ShopUI.SetOwnedPasses(ownedPasses: { [number]: boolean })
 			button.TextColor3 = Theme.Color.TextDisabled
 			button.Active = false
 		else
-			button.Text = "R$  Buy"
-			button.BackgroundColor3 = Theme.Color.Robux
-			button.TextColor3 = ROBUX_TEXT_COLOR
-			button.Active = true
+			applyBuyButtonState(button, passConfig.Id)
 		end
 	end
 end

@@ -1,0 +1,6 @@
+# Pins the Rojo version used by this project. Install with:
+#   aftman install
+# (https://github.com/LPGhatguy/aftman)
+
+[tools]
+rojo = "rojo-rbx/rojo@7.4.4"
