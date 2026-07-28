@@ -23,8 +23,12 @@ local PetService = {}
 
 -- Tuning: how the companion trails the player. Offset is in the HRP's local
 -- space (behind and to the side); the bob is a slow vertical sine nudged onto
--- the AlignPosition target attachment by a per-companion Heartbeat connection
--- (created/destroyed with the companion) rather than a global per-frame loop.
+-- the AlignPosition target attachment by ONE shared Heartbeat loop (see
+-- `PetService.Init`) that iterates every live companion, rather than a
+-- Heartbeat connection per companion. A per-player connection is the classic
+-- Roblox perf trap: N separate RBXScriptConnection dispatches cost more than
+-- one connection doing N cheap sine evaluations, and it's the same "one
+-- shared loop, not one per player" rule IdleIncomeService already follows.
 local FOLLOW_OFFSET = Vector3.new(3, 1.5, 3.5) -- +X right, +Y up, +Z behind
 local POSITION_RESPONSIVENESS = 6 -- lower = more lag ("alive" feel)
 local POSITION_MAX_FORCE = 15000
@@ -39,10 +43,12 @@ type Companion = {
 	AlignPosition: AlignPosition,
 	AlignOrientation: AlignOrientation,
 	TargetAttachment: Attachment, -- a tiny anchored-less attachment we move by hand each bob step
-	BobConnection: RBXScriptConnection?,
+	StartTime: number, -- os.clock() at spawn, so the bob phase is per-companion without a per-companion connection
 }
 
 local companions: { [Player]: Companion } = {}
+local companionCount = 0
+local sharedBobConnection: RBXScriptConnection? = nil
 -- CharacterAdded connections, tracked per player so PlayerRemoving can
 -- disconnect them even for a player who left before ever equipping anything.
 local characterConnections: { [Player]: RBXScriptConnection } = {}
@@ -68,6 +74,31 @@ local function fireEquippedChanged(player: Player, ownedId: string?, rarity: str
 	Net.GetEvent(Constants.REMOTE_NAMES.Pets.EquippedChanged):FireClient(player, ownedId, rarity)
 end
 
+-- The one shared per-frame loop for every companion's hover bob. Lazily
+-- started when the first companion spawns, disconnected when the last one
+-- despawns, so an empty server (or one where nobody has hatched anything
+-- yet) pays nothing per frame.
+local function ensureBobLoopRunning()
+	if sharedBobConnection then
+		return
+	end
+	sharedBobConnection = RunService.Heartbeat:Connect(function()
+		local now = os.clock()
+		for _, companion in companions do
+			local elapsed = now - companion.StartTime
+			local bob = math.sin((elapsed / BOB_PERIOD) * math.pi * 2) * BOB_AMPLITUDE
+			companion.TargetAttachment.Position = FOLLOW_OFFSET + Vector3.new(0, bob, 0)
+		end
+	end)
+end
+
+local function stopBobLoopIfEmpty()
+	if companionCount <= 0 and sharedBobConnection then
+		sharedBobConnection:Disconnect()
+		sharedBobConnection = nil
+	end
+end
+
 -- Tears down a player's companion model + all its connections/constraints.
 -- Safe to call repeatedly (e.g. despawn-before-respawn) - every step is
 -- guarded so a half-built companion never leaks a connection.
@@ -77,13 +108,12 @@ local function despawnCompanion(player: Player)
 		return
 	end
 	companions[player] = nil
+	companionCount -= 1
 
-	if companion.BobConnection then
-		companion.BobConnection:Disconnect()
-	end
 	if companion.Model.Parent then
 		companion.Model:Destroy()
 	end
+	stopBobLoopIfEmpty()
 end
 
 -- Builds a fresh companion model for `ownedId`/`rarity`, welds on the
@@ -157,23 +187,12 @@ local function spawnCompanion(player: Player, character: Model, ownedId: string,
 		AlignPosition = alignPosition,
 		AlignOrientation = alignOrientation,
 		TargetAttachment = targetAttachment,
-		BobConnection = nil,
+		StartTime = os.clock(),
 	}
 
-	-- Gentle hover bob: nudges the target attachment's local Y in a slow sine
-	-- wave. This is a per-companion RenderStepped-equivalent, but since it's
-	-- driven from a Heartbeat connection that's created and destroyed with the
-	-- companion (not a global per-frame scan over all players), the cost stays
-	-- proportional to "how many companions currently exist," same as any other
-	-- part of this system.
-	local startTime = os.clock()
-	companion.BobConnection = RunService.Heartbeat:Connect(function()
-		local elapsed = os.clock() - startTime
-		local bob = math.sin((elapsed / BOB_PERIOD) * math.pi * 2) * BOB_AMPLITUDE
-		targetAttachment.Position = FOLLOW_OFFSET + Vector3.new(0, bob, 0)
-	end)
-
 	companions[player] = companion
+	companionCount += 1
+	ensureBobLoopRunning()
 end
 
 -- Reconciles the visible companion with DataService.GetEquipped(player):
