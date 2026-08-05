@@ -203,6 +203,21 @@ Configured in `LightingSetup.lua`, applied once from `MapBuilder.Init()`.
   Arena (100 studs from the Hub) doesn't look like it's floating in a flat
   void when seen from a distance; it also sells the "world has scale" read
   without any skybox art.
+- **`SunRaysEffect`** (Intensity 0.12, Spread 0.65) — a light, cheap
+  sun-shaft glow through the Atmosphere haze at dusk. Kept low so it never
+  competes with UI or CTF readability; this is polish, not a mood swing.
+- **`Sky`** (`StarCount = 3000`, `SunAngularSize = 11`, `MoonAngularSize = 5`,
+  `CelestialBodiesShown = true`) — a deliberate starfield at dusk instead of
+  the engine's un-tuned default. No custom skybox/sun/moon texture ids are
+  set: inventing an `rbxassetid://` here would either fail to load or show
+  something unrelated, so every texture field is left at Roblox's own
+  built-in default.
+- **Path lamp posts** (`MapBuilder.buildPath`) — every connector path between
+  zones now gets `WorldKit.Pillar` lamp posts every ~24 studs, alternating
+  sides, capped in the same neon color as that path's own edge trim. Bare
+  colored strips between zones were the visually weakest link in an
+  otherwise-detailed map; this was the cheapest fix (a handful of extra Parts
+  per path) for the biggest perceived gap.
 
 ### CoreGui recommendation (not implemented here)
 

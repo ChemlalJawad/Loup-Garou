@@ -14,6 +14,8 @@ local OWNED_EFFECT_NAMES = {
 	"HatchWars_Bloom",
 	"HatchWars_ColorCorrection",
 	"HatchWars_Atmosphere",
+	"HatchWars_SunRays",
+	"HatchWars_Sky",
 }
 
 local function clearOwnedEffects()
@@ -70,6 +72,30 @@ function LightingSetup.Apply()
 	atmosphere.Glare = 0.15
 	atmosphere.Haze = 1.4
 	atmosphere.Parent = Lighting
+
+	-- Subtle sun-shaft glow through the haze - cheap and reads as "premium"
+	-- at dusk, kept low-intensity so it never washes out gameplay or UI.
+	local sunRays = Instance.new("SunRaysEffect")
+	sunRays.Name = "HatchWars_SunRays"
+	sunRays.Intensity = 0.12
+	sunRays.Spread = 0.65
+	sunRays.Parent = Lighting
+
+	-- A dedicated Sky instance (rather than leaving Lighting to fall back to
+	-- the engine default) so the star count/celestial size are deliberate
+	-- choices instead of an accident. No custom skybox/sun/moon texture ids
+	-- are set here - inventing an rbxassetid:// would either fail to load or
+	-- show something unrelated, so every texture field is left at Roblox's
+	-- own built-in default (empty string = "use the default"). At dusk with
+	-- Atmosphere haze, a denser starfield reads well once the sky darkens
+	-- toward the horizon.
+	local sky = Instance.new("Sky")
+	sky.Name = "HatchWars_Sky"
+	sky.CelestialBodiesShown = true
+	sky.StarCount = 3000
+	sky.SunAngularSize = 11
+	sky.MoonAngularSize = 5
+	sky.Parent = Lighting
 end
 
 return LightingSetup

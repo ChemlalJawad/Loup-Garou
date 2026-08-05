@@ -83,6 +83,35 @@ local function buildPath(
 			Parent = parent,
 		})
 	end
+
+	-- Lamp posts every ~24 studs, alternating sides and set back beyond the
+	-- neon edge trim (never on the walkway itself), so the walk between zones
+	-- isn't just a bare colored strip - this was the visually weakest link
+	-- between an otherwise-detailed set of zones. Cap color matches the
+	-- path's own neon trim for continuity with the zone it leads into.
+	local postSpacing = 24
+	local postCount = math.max(1, math.floor(length / postSpacing))
+	local alongAxis = if axis == "Z" then Vector3.new(0, 0, 1) else Vector3.new(1, 0, 0)
+	local perpUnit = if axis == "Z" then Vector3.new(1, 0, 0) else Vector3.new(0, 0, 1)
+	local postSideOffset = edgeOffset + 1.5 -- beyond the trim, off the walkway
+
+	for i = 1, postCount do
+		-- Centered spacing: posts sit at fractional offsets from the path's own
+		-- centre rather than from one end, so a path never gets a lonely post
+		-- crammed right against a zone entrance.
+		local t = (i - 0.5) / postCount - 0.5
+		local along = alongAxis * (t * length)
+		local sign = if i % 2 == 0 then 1 else -1
+		WorldKit.Pillar({
+			Name = `{name}Lamp{i}`,
+			Position = center + along + perpUnit * postSideOffset * sign,
+			Height = 9,
+			Thickness = 0.7,
+			Color = Color3.fromRGB(36, 36, 50),
+			CapColor = color,
+			Parent = parent,
+		})
+	end
 end
 
 -- Paths are owned here rather than by any one zone, since each connects two

@@ -41,12 +41,27 @@ end
 
 -- Recursive descendant search: the world-design agent's map may nest
 -- RedBaseSpawn/BlueBaseSpawn parts under any folder structure, so we can't
--- rely on a fixed path.
+-- rely on a fixed path. Results are cached by name once found, since this is
+-- called on every CTF join AND every respawn while on a team - a per-call
+-- Workspace-wide recursive scan would mean every death in an active match
+-- re-walks the whole world tree. The cache is invalidated automatically if
+-- the cached instance is ever destroyed/reparented (`.Parent == nil`), so a
+-- future world rebuild still self-heals instead of teleporting to a stale
+-- reference.
+local worldPartCache: { [string]: BasePart } = {}
+
 local function findWorldPart(name: string): BasePart?
+	local cached = worldPartCache[name]
+	if cached and cached.Parent then
+		return cached
+	end
+
 	local found = Workspace:FindFirstChild(name, true)
 	if found and found:IsA("BasePart") then
+		worldPartCache[name] = found
 		return found
 	end
+	worldPartCache[name] = nil
 	return nil
 end
 

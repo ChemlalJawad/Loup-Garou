@@ -19,6 +19,7 @@ local ServerScriptService = game:GetService("ServerScriptService")
 local Constants = require(ReplicatedStorage.Shared.Constants)
 local Net = require(ReplicatedStorage.Shared.Net)
 local CTFConfig = require(ReplicatedStorage.Shared.CTF.CTFConfig)
+local WorldLayout = require(ReplicatedStorage.Shared.WorldLayout)
 local DataService = require(ServerScriptService.Server.Services.DataService)
 
 export type FlagStateName = "AtBase" | "Carried" | "Dropped"
@@ -64,6 +65,14 @@ local redScore = 0
 local blueScore = 0
 local roundState: RoundStateName = "Waiting"
 local timeRemaining = Constants.CTF_ROUND_LENGTH_SECONDS
+
+type PowerupPad = {
+	Part: BasePart,
+	PowerupId: string,
+	Available: boolean,
+}
+local powerupPads: { PowerupPad } = {}
+local scoreboardLabel: TextLabel? = nil
 
 for _, def in Constants.TEAMS do
 	teamIdByName[def.Name] = def.Id
@@ -221,8 +230,34 @@ function Impl.BroadcastFlagState()
 	Net.GetEvent(Constants.REMOTE_NAMES.CTF.FlagStateUpdated):FireAllClients(Impl.BuildFlagPayload())
 end
 
+-- The physical scoreboard monolith ArenaZone builds at arena centre
+-- ("ArenaScoreboardFace", a SurfaceGui with a child TextLabel named "Label" -
+-- see WorldKit.SurfaceLabel) has to be updated by name, same as the flag
+-- stands. Cached after the first successful find since the monolith never
+-- moves once built (same reasoning as TeamService's spawn-part cache).
+function Impl.FindScoreboardLabel(): TextLabel?
+	if scoreboardLabel and scoreboardLabel.Parent then
+		return scoreboardLabel
+	end
+	local surfaceGui = Workspace:FindFirstChild("ArenaScoreboardFace", true)
+	if not surfaceGui or not surfaceGui:IsA("SurfaceGui") then
+		return nil
+	end
+	local label = surfaceGui:FindFirstChild("Label")
+	if label and label:IsA("TextLabel") then
+		scoreboardLabel = label
+		return label
+	end
+	return nil
+end
+
 function Impl.BroadcastScore()
 	Net.GetEvent(Constants.REMOTE_NAMES.CTF.ScoreUpdated):FireAllClients(redScore, blueScore)
+
+	local label = Impl.FindScoreboardLabel()
+	if label then
+		label.Text = `{redScore} - {blueScore}`
+	end
 end
 
 function Impl.BroadcastRoundState()
@@ -452,6 +487,156 @@ function Impl.SetupFlags()
 	Impl.BroadcastFlagState()
 end
 
+-- Battlefield powerups --------------------------------------------------
+--
+-- Pickups scattered around the arena at fixed, WorldLayout-derived points
+-- (CTFConfig.PowerupSpawnFractions - fractions of the Arena rect, not
+-- hardcoded studs, since the arena's actual built geometry belongs to a
+-- separate world-design zone module this service never reaches into).
+-- Effects reuse the same movement-effect/shield/cooldown machinery the
+-- ability system already has, so a powerup and an ability that do the same
+-- thing (e.g. a speed buff) behave identically.
+
+function Impl.ApplyPowerupEffect(player: Player, def: CTFConfig.PowerupDefinition)
+	if def.Archetype == "Speed" then
+		Impl.ApplyMovementEffect(player, { SpeedMultiplier = def.SpeedMultiplier or 1.3, Duration = def.Duration })
+	elseif def.Archetype == "Shield" then
+		local until_ = os.clock() + def.Duration
+		local existing = shieldUntil[player]
+		shieldUntil[player] = if existing and existing > until_ then existing else until_
+	elseif def.Archetype == "Haste" then
+		-- Instant: clears whatever cooldown is currently ticking so the next
+		-- UseAbility request succeeds immediately.
+		abilityCooldowns[player] = nil
+	elseif def.Archetype == "Reveal" then
+		-- Simplification: highlights whichever enemy is currently carrying a
+		-- flag (if any), visible to everyone rather than only the picker -
+		-- doing a picker-only reveal would need a client-side highlight
+		-- controller this pass doesn't touch. No-ops if nobody is carrying.
+		local playerTeamId = Impl.TeamIdOf(player)
+		for teamId, flag in flags do
+			if teamId ~= playerTeamId and flag.State == "Carried" and flag.Carrier then
+				local carrierCharacter = flag.Carrier.Character
+				if carrierCharacter then
+					local highlight = Instance.new("Highlight")
+					highlight.Name = "PowerupReveal"
+					highlight.FillColor = def.Color
+					highlight.FillTransparency = 0.6
+					highlight.OutlineColor = def.Color
+					highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+					highlight.Parent = carrierCharacter
+					Debris:AddItem(highlight, def.Duration)
+				end
+			end
+		end
+	end
+end
+
+function Impl.RespawnPowerupPad(pad: PowerupPad)
+	pad.Available = true
+	pad.Part.Transparency = 0
+	pad.Part.CanTouch = true
+	local light = pad.Part:FindFirstChildOfClass("PointLight")
+	if light then
+		light.Enabled = true
+	end
+end
+
+function Impl.OnPowerupTouched(pad: PowerupPad, hit: BasePart)
+	if not pad.Available then
+		return
+	end
+	local character = hit.Parent
+	local player = character and Players:GetPlayerFromCharacter(character :: Instance)
+	if not player then
+		return
+	end
+	if not Impl.TeamIdOf(player) then
+		return
+	end
+
+	local def = CTFConfig.GetPowerup(pad.PowerupId)
+	if not def then
+		return
+	end
+
+	pad.Available = false
+	pad.Part.Transparency = 0.85
+	pad.Part.CanTouch = false
+	local light = pad.Part:FindFirstChildOfClass("PointLight")
+	if light then
+		light.Enabled = false
+	end
+
+	Impl.ApplyPowerupEffect(player, def)
+	Net.GetEvent(Constants.REMOTE_NAMES.CTF.PowerupCollected):FireClient(player, def.Id, def.DisplayName, def.Duration)
+	-- No client controller currently listens to PowerupCollected specifically
+	-- (that's a nice-to-have HUD icon a future pass can add), so also toast
+	-- through the already-globally-wired Shared.Notify pipe for immediate
+	-- feedback without any new client code.
+	Net.GetEvent(Constants.REMOTE_NAMES.Shared.Notify):FireClient(player, `{def.DisplayName} picked up!`, "Success")
+
+	task.delay(CTFConfig.PowerupRespawnSeconds, function()
+		Impl.RespawnPowerupPad(pad)
+	end)
+end
+
+function Impl.SetupPowerups()
+	local powerupsFolder = Instance.new("Folder")
+	powerupsFolder.Name = "CTFPowerups"
+	powerupsFolder.Parent = Workspace
+
+	local order = CTFConfig.PowerupOrder
+	for index, fraction in CTFConfig.PowerupSpawnFractions do
+		local powerupId = order[(index - 1) % #order + 1]
+		local def = CTFConfig.GetPowerup(powerupId)
+		if def then
+			local position = WorldLayout.PointIn("Arena", fraction[1], fraction[2], WorldLayout.GroundY + 3)
+
+			local part = Instance.new("Part")
+			part.Name = `PowerupPad_{index}_{powerupId}`
+			part.Shape = Enum.PartType.Ball
+			part.Size = Vector3.new(2.6, 2.6, 2.6)
+			part.Color = def.Color
+			part.Material = Enum.Material.Neon
+			part.Anchored = true
+			part.CanCollide = false
+			part.CastShadow = false
+			part.Position = position
+			part.Parent = powerupsFolder
+
+			local light = Instance.new("PointLight")
+			light.Color = def.Color
+			light.Brightness = 3
+			light.Range = 18
+			light.Parent = part
+
+			local billboard = Instance.new("BillboardGui")
+			billboard.Size = UDim2.new(0, 140, 0, 32)
+			billboard.StudsOffset = Vector3.new(0, 2.4, 0)
+			billboard.AlwaysOnTop = true
+			billboard.LightInfluence = 0
+			billboard.Parent = part
+
+			local label = Instance.new("TextLabel")
+			label.BackgroundTransparency = 1
+			label.Size = UDim2.new(1, 0, 1, 0)
+			label.Text = def.DisplayName
+			label.TextColor3 = def.Color
+			label.Font = Enum.Font.GothamBold
+			label.TextSize = 16
+			label.TextStrokeTransparency = 0.3
+			label.Parent = billboard
+
+			local pad: PowerupPad = { Part = part, PowerupId = powerupId, Available = true }
+			part.Touched:Connect(function(hit)
+				Impl.OnPowerupTouched(pad, hit)
+			end)
+			table.insert(powerupPads, pad)
+		end
+	end
+end
+
 -- Tagging ---------------------------------------------------------------
 
 function Impl.TryTag(tagger: Player, target: Player)
@@ -527,6 +712,9 @@ function Impl.RoundLoop()
 		roundState = "InProgress"
 		Impl.BroadcastRoundState()
 		Impl.Announce("A new Brain-Rot CTF round has begun!", "Info")
+		for _, pad in powerupPads do
+			Impl.RespawnPowerupPad(pad)
+		end
 
 		while timeRemaining > 0 and redScore < Constants.CTF_SCORE_TO_WIN and blueScore < Constants.CTF_SCORE_TO_WIN do
 			task.wait(1)
@@ -808,6 +996,7 @@ end
 
 function CTFService.Init()
 	task.spawn(Impl.SetupFlags)
+	task.spawn(Impl.SetupPowerups)
 
 	Players.PlayerAdded:Connect(Impl.OnPlayerAdded)
 	for _, player in Players:GetPlayers() do
