@@ -84,6 +84,8 @@ ice slide, with treasure chests at the top and hidden around the map.
 | Day/night cycle, zone moods, mobile quality scaling | `Shared/LightingConfig.lua`, `World/LightingSetup.lua`, `Controllers/LightingController.lua` |
 | Fun Park: jump pads, trampolines, reward chests | `World/FunParkZone.lua`, `Controllers/MovementController.lua`, `Services/RewardChestService.lua` |
 | Coin Rain world event | `Shared/Events`, `Services/EventService.lua`, `Controllers/EventController.lua` |
+| Landscaping + hidden wild chests | `World/LandscapeZone.lua`, `World/PathRegistry.lua`, `WorldKit` props (Tree, Bush, FlowerBed, Rock, BalloonCluster, Mushroom) |
+| Ambient wandering Brainrots (tap to pet) | `Controllers/AmbientLifeController.lua` |
 
 Both `Main.server.lua` and `Main.client.lua` **auto-discover** every service/
 controller/zone that follows the file's expected shape (an `Init()`/`Build()`
@@ -111,6 +113,24 @@ to mess around in) and deliberately left out what doesn't work for kids:
   coins, the day/night cycle) is animated on the client from shared server
   time, so it costs no network traffic; decorative lights and particles
   switch off on low graphics quality.
+- **Something to discover everywhere.** The grass between zones is a park
+  (~190 trees, bushes, flower beds, rocks, balloons, giant mushrooms) with
+  three hidden chests out in the wilds, and Brainrots wander the lawns
+  around the plaza - walk up and tap "Pet" for a hop and a burst of hearts.
+  Petting gives no reward on purpose: nothing to farm, just friendly.
+
+### Optimization notes
+
+- `WorldKit.TiledFloor` draws one collision slab plus only the contrasting
+  tiles as thin non-colliding overlays: half the parts, and one collider
+  instead of hundreds (~400 parts saved map-wide, which pays for the whole
+  landscape).
+- Decorative parts that don't collide also skip raycasts (`CanQuery=false`)
+  and touch events; Brainrot model parts never fire `Touched`, and only
+  their root casts a shadow.
+- Sign billboards stop rendering beyond 220 studs.
+- Ambient wanderers are client-only, update at 30 Hz, and freeze when more
+  than 220 studs from the player.
 
 ## How this was built
 

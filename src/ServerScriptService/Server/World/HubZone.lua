@@ -391,6 +391,22 @@ function HubZone.Build(parent: Instance)
 	buildGateway(folder, "GatewayEast", center + Vector3.new(edge, groundY, 0), Vector3.new(1, 0, 0), GATEWAY_COLORS.East, "MARKET")
 	buildGateway(folder, "GatewayWest", center + Vector3.new(-edge, groundY, 0), Vector3.new(-1, 0, 0), GATEWAY_COLORS.West, "HALL OF FAME")
 	buildGateway(folder, "GatewayNorth", center + Vector3.new(0, groundY, edge), Vector3.new(0, 0, 1), GATEWAY_COLORS.North, "CTF ARENA")
+
+	-- Corner gardens on the outer ring, in the four spots between gateways
+	-- that were bare floor: a blossom tree, flower beds facing the plaza, and
+	-- a balloon cluster. Softens the plaza for a young audience and gives the
+	-- hub some green without touching any walking line (corners sit outside
+	-- the mid ring, clear of the gateways, spawn and viewing deck).
+	local cornerOffset = 63
+	for i, corner in { Vector3.new(1, 0, 1), Vector3.new(-1, 0, 1), Vector3.new(1, 0, -1), Vector3.new(-1, 0, -1) } do
+		local garden = WorldKit.Group(`CornerGarden{i}`, folder)
+		local spot = center + corner * cornerOffset + Vector3.new(0, groundY, 0)
+		local inward = -corner.Unit
+		WorldKit.Tree({ Position = spot, Height = 13, Style = "Candy", Parent = garden })
+		WorldKit.FlowerBed({ Position = spot + inward * 7 + Vector3.new(corner.Z * 3, 0, -corner.X * 3), Parent = garden })
+		WorldKit.FlowerBed({ Position = spot + inward * 7 - Vector3.new(corner.Z * 3, 0, -corner.X * 3), Parent = garden })
+		WorldKit.BalloonCluster({ Position = spot + corner.Unit * 6, Parent = garden })
+	end
 end
 
 return HubZone

@@ -196,6 +196,23 @@ relies on.
   an ice slide from the summit back down to the entrance. Reached via
   Market → Fun Park.
 
+### Landscaping and ambient life
+
+- **Ground** is grass now (`MapBuilder` BaseGround, RGB 96,170,88) so the
+  space between zones reads as a park, not a void.
+- **`LandscapeZone.lua`** (Order 200, after every real zone) scatters ~190
+  props with a fixed seed, so every server has the same park. It stays 7
+  studs clear of every zone rect and 4 studs clear of every path
+  (`PathRegistry`, filled by `MapBuilder` before zones build), with 9 studs
+  between props. Mix: round/pine/candy trees, bushes, flower beds, rocks,
+  balloon clusters, giant mushrooms.
+- **Hidden chests** in the wilds: NorthWest (-290, 420), SouthEast
+  (295, -318), West mushroom grove (-250, 250). 15 min cooldown each.
+- **Hub corner gardens**: a candy tree, two flower beds and balloons in each
+  of the four bare outer-ring corners.
+- **Ambient Brainrots** (`AmbientLifeController`): 10 client-side wanderers
+  on the lawns within 170 studs of the Hub, never inside a zone. Tap to pet.
+
 ## 7. Lighting
 
 Lighting is split in two:

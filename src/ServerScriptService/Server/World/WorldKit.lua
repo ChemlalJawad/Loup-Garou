@@ -11,6 +11,24 @@ local WorldKit = {}
 
 export type PartProps = { [string]: any }
 
+-- Props WorldKit.Part sets itself. Anything else (e.g. Shape = Ball,
+-- CanTouch, Reflectance) is passed straight through to the Part. Kept at
+-- module level so building a few thousand parts doesn't allocate this table
+-- once per part.
+local HANDLED_KEYS = {
+	Name = true,
+	Anchored = true,
+	CanCollide = true,
+	CastShadow = true,
+	Size = true,
+	Color = true,
+	Material = true,
+	Transparency = true,
+	CFrame = true,
+	Position = true,
+	Parent = true,
+}
+
 -- A plain anchored Part with sensible smooth-surface defaults. Pass any
 -- BasePart property (Size, Position/CFrame, Color, Material, Transparency,
 -- CanCollide, ...); anything omitted falls back to a safe default.
@@ -26,6 +44,12 @@ function WorldKit.Part(props: PartProps): Part
 	part.Color = props.Color or Color3.fromRGB(255, 255, 255)
 	part.Material = props.Material or Enum.Material.SmoothPlastic
 	part.Transparency = props.Transparency or 0
+	-- Optimization: parts you can't bump into (trim, glows, decor) are also
+	-- dropped from spatial queries (raycasts, overlap checks) by default.
+	-- Pass CanQuery = true explicitly to keep one queryable.
+	if props.CanCollide == false and props.CanQuery == nil then
+		part.CanQuery = false
+	end
 
 	if props.CFrame then
 		part.CFrame = props.CFrame
@@ -33,21 +57,6 @@ function WorldKit.Part(props: PartProps): Part
 		part.CFrame = CFrame.new(props.Position)
 	end
 
-	-- Pass through anything else (e.g. Shape = Enum.PartType.Ball for the
-	-- egg/beacon shapes) so callers aren't limited to the defaults above.
-	local HANDLED_KEYS = {
-		Name = true,
-		Anchored = true,
-		CanCollide = true,
-		CastShadow = true,
-		Size = true,
-		Color = true,
-		Material = true,
-		Transparency = true,
-		CFrame = true,
-		Position = true,
-		Parent = true,
-	}
 	for key, value in props do
 		if not HANDLED_KEYS[key] then
 			(part :: any)[key] = value
@@ -78,6 +87,10 @@ function WorldKit.UprightCylinder(props: PartProps): Part
 	part.Color = props.Color or Color3.fromRGB(255, 255, 255)
 	part.Material = props.Material or Enum.Material.SmoothPlastic
 	part.Transparency = props.Transparency or 0
+	-- Same rule as WorldKit.Part: non-colliding decor stays out of queries.
+	if props.CanCollide == false then
+		part.CanQuery = false
+	end
 
 	local position: Vector3 = props.Position or Vector3.new(0, 0, 0)
 	part.CFrame = CFrame.new(position) * CFrame.Angles(0, 0, math.rad(90))
@@ -135,6 +148,10 @@ function WorldKit.Sign(props: PartProps): BillboardGui
 	billboard.StudsOffset = props.StudsOffset or Vector3.new(0, 6, 0)
 	billboard.AlwaysOnTop = true
 	billboard.LightInfluence = 0
+	-- Signs are AlwaysOnTop (readable through geometry), so without a cap
+	-- every sign in the world would render on every screen. 220 studs covers
+	-- "I can see where I'm going" without drawing the whole map's signage.
+	billboard.MaxDistance = props.MaxDistance or 220
 	billboard.Parent = props.Adornee
 
 	local label = Instance.new("TextLabel")
@@ -230,6 +247,7 @@ function WorldKit.Sphere(props: PartProps): Part
 		Transparency = props.Transparency,
 		CanCollide = props.CanCollide,
 		CastShadow = props.CastShadow,
+		Reflectance = props.Reflectance,
 		Parent = props.Parent,
 	})
 end
@@ -380,23 +398,49 @@ function WorldKit.TiledFloor(props: PartProps)
 	local colorA = props.ColorA or Color3.fromRGB(27, 27, 40)
 	local colorB = props.ColorB or Color3.fromRGB(36, 36, 52)
 	local thickness = props.Thickness or 1
+	local material = props.Material or Enum.Material.SmoothPlastic
+	local baseName = props.Name or "Tile"
+
+	-- Optimization: one full-size slab in colour A carries all the collision,
+	-- and only the colour-B squares are separate parts, laid a hair above it.
+	-- Same checkerboard look for about half the parts of one-part-per-tile
+	-- (floors were the single biggest part budget in the map), and the slab
+	-- covers the whole area, so there are no gaps at the edges when the size
+	-- isn't a multiple of the tile size.
+	WorldKit.Part({
+		Name = baseName,
+		Size = Vector3.new(width, thickness, depth),
+		Position = center,
+		Color = colorA,
+		Material = material,
+		Parent = props.Parent,
+	})
 
 	local cols = math.max(1, math.floor(width / tileSize))
 	local rows = math.max(1, math.floor(depth / tileSize))
+	local overlayThickness = 0.1
+	-- Top sits 0.04 above the slab's top, bottom embedded inside it: no
+	-- coplanar faces, so no z-fighting, and a step far too small to feel.
+	local overlayY = center.Y + thickness / 2 + 0.04 - overlayThickness / 2
 
 	for col = 0, cols - 1 do
 		for row = 0, rows - 1 do
-			local isEven = (col + row) % 2 == 0
-			local x = center.X - width / 2 + tileSize / 2 + col * tileSize
-			local z = center.Z - depth / 2 + tileSize / 2 + row * tileSize
-			WorldKit.Part({
-				Name = `{props.Name or "Tile"}_{col}_{row}`,
-				Size = Vector3.new(tileSize, thickness, tileSize),
-				Position = Vector3.new(x, center.Y, z),
-				Color = if isEven then colorA else colorB,
-				Material = props.Material or Enum.Material.SmoothPlastic,
-				Parent = props.Parent,
-			})
+			if (col + row) % 2 == 1 then
+				local x = center.X - width / 2 + tileSize / 2 + col * tileSize
+				local z = center.Z - depth / 2 + tileSize / 2 + row * tileSize
+				WorldKit.Part({
+					Name = `{baseName}_{col}_{row}`,
+					Size = Vector3.new(tileSize, overlayThickness, tileSize),
+					Position = Vector3.new(x, overlayY, z),
+					Color = colorB,
+					Material = material,
+					-- Purely visual: the slab underneath does the physics.
+					CanCollide = false,
+					CanTouch = false,
+					CastShadow = false,
+					Parent = props.Parent,
+				})
+			end
 		end
 	end
 end
@@ -482,6 +526,190 @@ function WorldKit.Emitter(props: PartProps): ParticleEmitter
 end
 
 -- === Props ===================================================================
+
+-- Landscaping props. Each is 1-4 parts, uses no assets, and follows one
+-- rule for cost: the part you'd bump into collides, everything decorative on
+-- top of it (canopies, petals, balloons) is non-colliding and non-queryable,
+-- and only trees cast shadows. `props.Position` is always the point on the
+-- ground the prop stands on.
+
+-- Styles: "Round" (leafy), "Pine" (stacked cone-ish tiers), "Candy" (pink
+-- blossom - the playful look the genre's games lean into).
+function WorldKit.Tree(props: PartProps): Part
+	local base: Vector3 = props.Position or Vector3.new(0, 0, 0)
+	local height: number = props.Height or 12
+	local style: string = props.Style or "Round"
+	local scale = height / 12
+
+	local trunk = WorldKit.UprightCylinder({
+		Name = "Trunk",
+		Position = base + Vector3.new(0, height * 0.3, 0),
+		Height = height * 0.6,
+		Diameter = 1.6 * scale,
+		Color = Color3.fromRGB(110, 74, 48),
+		Material = Enum.Material.Wood,
+		Parent = props.Parent,
+	})
+
+	local canopyColor = props.CanopyColor
+		or (if style == "Candy" then Color3.fromRGB(255, 160, 200) else Color3.fromRGB(80, 170, 90))
+
+	if style == "Pine" then
+		for tier = 1, 3 do
+			local diameter = (7 - tier * 1.6) * scale
+			WorldKit.UprightCylinder({
+				Name = `PineTier{tier}`,
+				Position = base + Vector3.new(0, height * (0.45 + tier * 0.17), 0),
+				Height = height * 0.2,
+				Diameter = diameter,
+				Color = canopyColor:Lerp(Color3.fromRGB(30, 90, 50), 0.35),
+				Material = Enum.Material.Grass,
+				CanCollide = false,
+				Parent = props.Parent,
+			})
+		end
+	else
+		WorldKit.Sphere({
+			Name = "Canopy",
+			Position = base + Vector3.new(0, height * 0.72, 0),
+			Diameter = 7 * scale,
+			Color = canopyColor,
+			Material = if style == "Candy" then Enum.Material.SmoothPlastic else Enum.Material.Grass,
+			CanCollide = false,
+			Parent = props.Parent,
+		})
+		WorldKit.Sphere({
+			Name = "CanopyTop",
+			Position = base + Vector3.new(0.8 * scale, height * 0.92, -0.5 * scale),
+			Diameter = 4.6 * scale,
+			Color = canopyColor:Lerp(Color3.new(1, 1, 1), 0.12),
+			Material = if style == "Candy" then Enum.Material.SmoothPlastic else Enum.Material.Grass,
+			CanCollide = false,
+			Parent = props.Parent,
+		})
+	end
+	return trunk
+end
+
+function WorldKit.Bush(props: PartProps)
+	local base: Vector3 = props.Position or Vector3.new(0, 0, 0)
+	local size: number = props.Size or 4
+	local color = props.Color or Color3.fromRGB(70, 150, 80)
+	WorldKit.Sphere({
+		Name = "Bush",
+		Position = base + Vector3.new(0, size * 0.35, 0),
+		Diameter = size,
+		Color = color,
+		Material = Enum.Material.Grass,
+		CastShadow = false,
+		Parent = props.Parent,
+	})
+	WorldKit.Sphere({
+		Name = "BushSide",
+		Position = base + Vector3.new(size * 0.4, size * 0.25, size * 0.2),
+		Diameter = size * 0.7,
+		Color = color:Lerp(Color3.new(1, 1, 1), 0.08),
+		Material = Enum.Material.Grass,
+		CanCollide = false,
+		CastShadow = false,
+		Parent = props.Parent,
+	})
+end
+
+function WorldKit.FlowerBed(props: PartProps)
+	local base: Vector3 = props.Position or Vector3.new(0, 0, 0)
+	local colors = props.Colors
+		or { Color3.fromRGB(255, 120, 170), Color3.fromRGB(255, 214, 90), Color3.fromRGB(190, 140, 255) }
+	WorldKit.Part({
+		Name = "Soil",
+		Size = Vector3.new(5, 0.5, 3),
+		Position = base + Vector3.new(0, 0.25, 0),
+		Color = Color3.fromRGB(96, 66, 44),
+		Material = Enum.Material.Ground,
+		CastShadow = false,
+		Parent = props.Parent,
+	})
+	for i, x in { -1.6, 0, 1.6 } do
+		WorldKit.Sphere({
+			Name = `Flower{i}`,
+			Position = base + Vector3.new(x, 1, if i == 2 then 0.5 else -0.4),
+			Diameter = 1.1,
+			Color = colors[(i - 1) % #colors + 1],
+			Material = Enum.Material.SmoothPlastic,
+			CanCollide = false,
+			CastShadow = false,
+			Parent = props.Parent,
+		})
+	end
+end
+
+function WorldKit.Rock(props: PartProps)
+	local base: Vector3 = props.Position or Vector3.new(0, 0, 0)
+	local size: number = props.Size or 3
+	local yaw: number = props.Yaw or 0
+	WorldKit.Part({
+		Name = "Rock",
+		Size = Vector3.new(size * 1.3, size * 0.7, size),
+		CFrame = CFrame.new(base + Vector3.new(0, size * 0.3, 0)) * CFrame.Angles(0.12, yaw, 0.08),
+		Color = Color3.fromRGB(120, 124, 136),
+		Material = Enum.Material.Slate,
+		Parent = props.Parent,
+	})
+end
+
+-- Three floating balloons on a string, anchored in place (no physics).
+function WorldKit.BalloonCluster(props: PartProps)
+	local base: Vector3 = props.Position or Vector3.new(0, 0, 0)
+	local colors = props.Colors
+		or { Color3.fromRGB(255, 90, 110), Color3.fromRGB(90, 180, 255), Color3.fromRGB(255, 214, 90) }
+	WorldKit.Part({
+		Name = "BalloonString",
+		Size = Vector3.new(0.1, 8, 0.1),
+		Position = base + Vector3.new(0, 4, 0),
+		Color = Color3.fromRGB(240, 240, 240),
+		CanCollide = false,
+		CastShadow = false,
+		Parent = props.Parent,
+	})
+	local offsets = { Vector3.new(0, 9, 0), Vector3.new(1.3, 8.2, 0.6), Vector3.new(-1.2, 8.4, -0.5) }
+	for i, offset in offsets do
+		WorldKit.Sphere({
+			Name = `Balloon{i}`,
+			Position = base + offset,
+			Diameter = 2.2,
+			Color = colors[(i - 1) % #colors + 1],
+			Material = Enum.Material.SmoothPlastic,
+			Reflectance = 0.15,
+			CanCollide = false,
+			CastShadow = false,
+			Parent = props.Parent,
+		})
+	end
+end
+
+-- Oversized cartoon mushroom: whimsical scale-breaker that reads well from
+-- a distance and makes the open grass feel less like a flat lawn.
+function WorldKit.Mushroom(props: PartProps)
+	local base: Vector3 = props.Position or Vector3.new(0, 0, 0)
+	local height: number = props.Height or 5
+	WorldKit.UprightCylinder({
+		Name = "MushroomStem",
+		Position = base + Vector3.new(0, height * 0.4, 0),
+		Height = height * 0.8,
+		Diameter = height * 0.3,
+		Color = Color3.fromRGB(245, 235, 215),
+		Parent = props.Parent,
+	})
+	WorldKit.UprightCylinder({
+		Name = "MushroomCap",
+		Position = base + Vector3.new(0, height * 0.85, 0),
+		Height = height * 0.25,
+		Diameter = height * 0.95,
+		Color = props.CapColor or Color3.fromRGB(230, 70, 80),
+		Parent = props.Parent,
+	})
+end
+
 
 -- A claimable reward chest: a small part-built treasure chest whose base is
 -- tagged Constants.TAGS.RewardChest, with the reward/cooldown stored as

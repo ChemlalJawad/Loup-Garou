@@ -61,7 +61,15 @@ end
 -- Shared finishing touches + auto-weld-to-primary for every part we add.
 local function registerPart(ctx: Ctx, part: BasePart)
 	part.CanCollide = false -- a following companion must never body-block a player
-	part.CastShadow = true
+	-- Optimization: Brainrot models are purely visual. Moving companions with
+	-- CanTouch on generate Touched events against every flag, pad and chest
+	-- they drift over (and cost broadphase work every physics step); nothing
+	-- ever needs to touch or raycast them.
+	part.CanTouch = false
+	part.CanQuery = false
+	-- One shadow per body (the first part, which becomes PrimaryPart) reads
+	-- the same as ~15 small overlapping ones at a fraction of the cost.
+	part.CastShadow = ctx.Model.PrimaryPart == nil
 	part.Anchored = ctx.Anchored
 	part.Massless = not ctx.Anchored
 	part.Parent = ctx.Model

@@ -21,6 +21,7 @@ local Theme = require(ReplicatedStorage.Shared.Theme)
 local WorldLayout = require(ReplicatedStorage.Shared.WorldLayout)
 local WorldKit = require(script.Parent.WorldKit)
 local LightingSetup = require(script.Parent.LightingSetup)
+local PathRegistry = require(script.Parent.PathRegistry)
 
 local MapBuilder = {}
 
@@ -34,12 +35,16 @@ export type ZoneModule = {
 local function buildGround(parent: Instance): Folder
 	local groundFolder = WorldKit.Group("Ground", parent)
 
+	-- Grass between the zones: every zone brings its own floor, so this only
+	-- shows on the open ground between them. A dark slate plate made the
+	-- in-between read as a void; a bright lawn (plus LandscapeZone's trees
+	-- and flowers) makes the whole map read as one friendly park.
 	WorldKit.Part({
 		Name = "BaseGround",
 		Size = WorldLayout.GroundPlate.Size,
 		Position = WorldLayout.GroundPlate.Center,
-		Color = Color3.fromRGB(14, 14, 20),
-		Material = Enum.Material.Slate,
+		Color = Color3.fromRGB(96, 170, 88),
+		Material = Enum.Material.Grass,
 		Parent = groundFolder,
 	})
 
@@ -62,6 +67,7 @@ local function buildPath(
 	label: string?
 )
 	local size = if axis == "Z" then Vector3.new(width, 1, length) else Vector3.new(length, 1, width)
+	PathRegistry.Add(center, size)
 	WorldKit.Part({
 		Name = name,
 		Size = size,
@@ -313,6 +319,7 @@ function MapBuilder.Init()
 	end
 
 	local worldFolder = WorldKit.Group(WORLD_FOLDER_NAME, Workspace)
+	PathRegistry.Clear()
 
 	buildGround(worldFolder)
 	buildPaths(worldFolder)
