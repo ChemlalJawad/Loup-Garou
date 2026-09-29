@@ -42,7 +42,9 @@ local function buildGround(parent: Instance): Folder
 	WorldKit.Part({
 		Name = "BaseGround",
 		Size = WorldLayout.GroundPlate.Size,
-		Position = WorldLayout.GroundPlate.Center,
+		-- A hair below GroundY: paths and zone floors sit exactly on GroundY,
+		-- and two coplanar faces z-fight (flicker) at a distance.
+		Position = WorldLayout.GroundPlate.Center - Vector3.new(0, 0.05, 0),
 		Color = Color3.fromRGB(96, 170, 88),
 		Material = Enum.Material.Grass,
 		Parent = groundFolder,

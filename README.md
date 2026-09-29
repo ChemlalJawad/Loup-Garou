@@ -86,6 +86,9 @@ ice slide, with treasure chests at the top and hidden around the map.
 | Coin Rain world event | `Shared/Events`, `Services/EventService.lua`, `Controllers/EventController.lua` |
 | Landscaping + hidden wild chests | `World/LandscapeZone.lua`, `World/PathRegistry.lua`, `WorldKit` props (Tree, Bush, FlowerBed, Rock, BalloonCluster, Mushroom) |
 | Ambient wandering Brainrots (tap to pet) | `Controllers/AmbientLifeController.lua` |
+| Base biome: edge hills + boundary, horizon, lily pond, meadows, fireflies | `World/BiomeZone.lua` |
+| Sky: drifting clouds, Lucky Rainbow arc | `Controllers/SkyController.lua` |
+| Lucky Rainbow weather (Parade mutation chance x2) | `Shared/Events/EventConfig.lua`, `Services/EventService.lua` |
 
 Both `Main.server.lua` and `Main.client.lua` **auto-discover** every service/
 controller/zone that follows the file's expected shape (an `Init()`/`Build()`
@@ -131,6 +134,9 @@ to mess around in) and deliberately left out what doesn't work for kids:
 - Sign billboards stop rendering beyond 220 studs.
 - Ambient wanderers are client-only, update at 30 Hz, and freeze when more
   than 220 studs from the player.
+- Instance streaming is on (`StreamOutBehavior = Opportunistic`), and every
+  landscape prop is an Atomic Model. See `docs/RESEARCH_ROADMAP.md` for the
+  full checklist against Roblox's performance guidance, plus the roadmap.
 
 ## How this was built
 

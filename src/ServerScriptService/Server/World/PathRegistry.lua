@@ -2,6 +2,8 @@
 -- The footprint of every connector path MapBuilder lays down, so later
 -- builders (LandscapeZone) can keep props off the walkways. MapBuilder owns
 -- the paths and fills this in before any zone builds; zones only read it.
+-- BiomeZone also registers its keep-out areas here (the pond, the band of
+-- edge hills), so "near a path" really means "not free for a prop".
 -- Deliberately a separate module: a zone requiring MapBuilder itself would
 -- be a circular require, since MapBuilder is what requires the zones.
 

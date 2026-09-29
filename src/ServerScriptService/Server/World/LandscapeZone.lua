@@ -51,8 +51,8 @@ local KIND_WEIGHTS: { { Kind: Kind, Weight: number } } = {
 -- on open grass; each is still checked at build time and skipped (with a
 -- warning) if a future layout change ever puts it inside a zone or on a path.
 local HIDDEN_CHESTS = {
-	{ Id = "WildsNorthWest", Position = Vector3.new(-290, 0, 420), Label = "Forgotten Chest", Coins = 220 },
-	{ Id = "WildsSouthEast", Position = Vector3.new(295, 0, -318), Label = "Lost Explorer's Chest", Coins = 220 },
+	{ Id = "WildsNorthWest", Position = Vector3.new(-265, 0, 410), Label = "Forgotten Chest", Coins = 220 },
+	{ Id = "WildsSouthEast", Position = Vector3.new(270, 0, -300), Label = "Lost Explorer's Chest", Coins = 220 },
 	{ Id = "WildsWest", Position = Vector3.new(-250, 0, 250), Label = "Mushroom Grove Chest", Coins = 180 },
 }
 
@@ -141,9 +141,11 @@ function LandscapeZone.Build(parent: Instance)
 			if not tooClose then
 				table.insert(placed, position)
 				propCount += 1
-				-- Each prop gets its own folder so the Explorer stays readable.
-				local propFolder = WorldKit.Group(`Prop{propCount}`, folder)
-				buildProp(pickKind(rng), position, rng, propFolder)
+				-- Each prop is its own atomic Model: readable in the
+				-- Explorer, and it streams in and out whole.
+				local kind = pickKind(rng)
+				local propModel = WorldKit.PropModel(`{kind}{propCount}`, folder)
+				buildProp(kind, position, rng, propModel)
 			end
 		end
 	end

@@ -105,6 +105,7 @@ cues.RoundLose = cue("", 0.6, "somber short sting, ~0.8s, round lost")
 cues.ParadeHype = cue("", 0.75, "crowd 'ooooh' + sparkle sting, ~1s, a Legendary/Secret/Rainbow/Galaxy walks onto the Parade")
 cues.ChestOpen = cue("", 0.65, "wooden creak into a bright treasure jingle, ~0.8s, reward chest opened")
 cues.CoinRainStart = cue("", 0.7, "cheerful rising jingle with coin clinks, ~1s, Coin Rain begins")
+cues.LuckyRainbowStart = cue("", 0.7, "shimmering harp glissando + soft choir 'aah', ~1.2s, Lucky Rainbow weather begins")
 
 AudioConfig.Cues = cues
 

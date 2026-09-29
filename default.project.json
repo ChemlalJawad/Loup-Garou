@@ -32,7 +32,10 @@
     "Workspace": {
       "$className": "Workspace",
       "$properties": {
-        "FilteringEnabled": true
+        "FilteringEnabled": true,
+        "StreamingEnabled": true,
+        "StreamOutBehavior": "Opportunistic",
+        "FallenPartsDestroyHeight": -120
       }
     }
   }

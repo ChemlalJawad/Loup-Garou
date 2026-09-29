@@ -108,10 +108,17 @@ local function applyDecorLight(light: Instance, daylight: number)
 	light.Brightness = baseBrightness * (0.35 + 0.65 * nightFactor)
 end
 
-local function applyDecorEmitter(emitter: Instance)
-	if emitter:IsA("ParticleEmitter") then
-		emitter.Enabled = not lowQuality
+-- Emitters may carry a "DecorTime" attribute ("Night" = fireflies, "Day" =
+-- pollen) so ambient particles follow the day/night cycle; untagged ones
+-- just follow the quality setting.
+local function applyDecorEmitter(emitter: Instance, daylight: number)
+	if not emitter:IsA("ParticleEmitter") then
+		return
 	end
+	local isNight = daylight < LightingConfig.DECOR_LIGHT_ON_BELOW_DAYLIGHT
+	local decorTime = emitter:GetAttribute("DecorTime")
+	local timeOk = if decorTime == "Night" then isNight elseif decorTime == "Day" then not isNight else true
+	emitter.Enabled = timeOk and not lowQuality
 end
 
 local function refreshAllDecor(daylight: number)
@@ -119,7 +126,7 @@ local function refreshAllDecor(daylight: number)
 		applyDecorLight(light, daylight)
 	end
 	for _, emitter in CollectionService:GetTagged(LightingConfig.DECOR_EMITTER_TAG) do
-		applyDecorEmitter(emitter)
+		applyDecorEmitter(emitter, daylight)
 	end
 end
 
@@ -244,7 +251,9 @@ local function start()
 	CollectionService:GetInstanceAddedSignal(LightingConfig.DECOR_LIGHT_TAG):Connect(function(light)
 		applyDecorLight(light, lastDaylight)
 	end)
-	CollectionService:GetInstanceAddedSignal(LightingConfig.DECOR_EMITTER_TAG):Connect(applyDecorEmitter)
+	CollectionService:GetInstanceAddedSignal(LightingConfig.DECOR_EMITTER_TAG):Connect(function(emitter)
+		applyDecorEmitter(emitter, lastDaylight)
+	end)
 
 	local sinceCycle = math.huge
 	local sinceZone = math.huge

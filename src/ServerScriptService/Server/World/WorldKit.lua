@@ -215,6 +215,17 @@ function WorldKit.Group(name: string, parent: Instance?): Folder
 	return folder
 end
 
+-- A Model for one small self-contained prop (a tree, a bush). With
+-- instance streaming on, Atomic means the whole prop streams in and out as a
+-- unit, so nobody ever sees a canopy floating without its trunk.
+function WorldKit.PropModel(name: string, parent: Instance?): Model
+	local model = Instance.new("Model")
+	model.Name = name
+	model.ModelStreamingMode = Enum.ModelStreamingMode.Atomic
+	model.Parent = parent
+	return model
+end
+
 -- A wedge (ramp). `Rotation` is a CFrame the wedge is multiplied by, so a
 -- caller can face it any direction without recomputing the base orientation.
 function WorldKit.Wedge(props: PartProps): WedgePart

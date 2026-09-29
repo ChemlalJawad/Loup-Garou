@@ -1,5 +1,6 @@
 --!strict
--- Runs scheduled world events. Coin Rain: the server picks coin positions,
+-- Runs scheduled world events. Lucky Rainbow: sets a Workspace attribute
+-- (see EventConfig.LUCKY_RAINBOW) that ParadeService reads. Coin Rain: the server picks coin positions,
 -- tells every client (who render and animate the coins locally), and
 -- validates each pickup - the coin must exist, be unclaimed, and be near the
 -- player who claims it. First come, first served, one coin one winner.
@@ -147,6 +148,18 @@ local function runCoinRain()
 	end
 end
 
+local function runLuckyRainbow()
+	local config = EventConfig.LUCKY_RAINBOW
+	workspace:SetAttribute(config.Attribute, workspace:GetServerTimeNow() + config.Duration)
+	notifyAll("A Lucky Rainbow is out! Parade Brainrots are twice as likely to be mutated.", "Success")
+	AudioService.PlayForAll("LuckyRainbowStart")
+	task.wait(config.Duration)
+	-- The attribute's end time already expires it for every reader; clearing
+	-- it just keeps the Workspace tidy.
+	workspace:SetAttribute(config.Attribute, nil)
+	notifyAll("The rainbow fades... see you next time!", "Info")
+end
+
 function EventService.Init()
 	startedEvent = Net.GetEvent(Constants.REMOTE_NAMES.Event.Started)
 	endedEvent = Net.GetEvent(Constants.REMOTE_NAMES.Event.Ended)
@@ -185,6 +198,18 @@ function EventService.Init()
 				active = nil
 			end
 			task.wait(EventConfig.COIN_RAIN.Interval)
+		end
+	end)
+
+	task.spawn(function()
+		task.wait(EventConfig.LUCKY_RAINBOW.FirstDelay)
+		while true do
+			local ok, err = pcall(runLuckyRainbow)
+			if not ok then
+				warn("[EventService] lucky rainbow errored:", err)
+				workspace:SetAttribute(EventConfig.LUCKY_RAINBOW.Attribute, nil)
+			end
+			task.wait(EventConfig.LUCKY_RAINBOW.Interval)
 		end
 	end)
 end

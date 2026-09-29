@@ -206,12 +206,22 @@ relies on.
   (`PathRegistry`, filled by `MapBuilder` before zones build), with 9 studs
   between props. Mix: round/pine/candy trees, bushes, flower beds, rocks,
   balloon clusters, giant mushrooms.
-- **Hidden chests** in the wilds: NorthWest (-290, 420), SouthEast
-  (295, -318), West mushroom grove (-250, 250). 15 min cooldown each.
+- **Hidden chests** in the wilds: NorthWest (-265, 410), SouthEast
+  (270, -300), West mushroom grove (-250, 250). 15 min cooldown each.
 - **Hub corner gardens**: a candy tree, two flower beds and balloons in each
   of the four bare outer-ring corners.
 - **Ambient Brainrots** (`AmbientLifeController`): 10 client-side wanderers
   on the lawns within 170 studs of the Hub, never inside a zone. Tap to pet.
+
+### Base biome
+
+`BiomeZone.lua` (Order 150, before LandscapeZone) turns the plate into a
+valley: rolling edge hills with an invisible boundary wall, a darker grass
+skirt and hazy horizon hills, a lily pond at (-220, 330), meadow patches, and
+firefly/pollen emitters tagged with a `DecorTime` attribute ("Night"/"Day")
+that LightingController honours. Keep-out rects for the pond and hill band go
+into `PathRegistry`. `SkyController` adds client-side clouds and the Lucky
+Rainbow arc north of the Arena.
 
 ## 7. Lighting
 

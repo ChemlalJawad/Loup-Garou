@@ -22,6 +22,7 @@ local EggConfig = require(ReplicatedStorage.Shared.Eggs.EggConfig)
 local Mutations = require(ReplicatedStorage.Shared.Brainrots.Mutations)
 local ParadeConfig = require(ReplicatedStorage.Shared.Parade.ParadeConfig)
 local LightingConfig = require(ReplicatedStorage.Shared.LightingConfig)
+local EventConfig = require(ReplicatedStorage.Shared.Events.EventConfig)
 local DataService = require(ServerScriptService.Server.Services.DataService)
 
 local ParadeService = {}
@@ -105,7 +106,9 @@ local function spawnWalker(now: number)
 	local chances = if LightingConfig.IsNight(now)
 		then ParadeConfig.MutationChancesNight
 		else ParadeConfig.MutationChancesDay
-	local mutation = Mutations.Roll(chances, rng)
+	-- `now` is workspace:GetServerTimeNow() here, the same clock the
+	-- rainbow's end time is written in.
+	local mutation = Mutations.Roll(EventConfig.ApplyLuck(chances, now), rng)
 
 	local walker: Walker = {
 		Uid = HttpService:GenerateGUID(false),

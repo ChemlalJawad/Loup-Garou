@@ -40,4 +40,38 @@ EventConfig.COIN_RAIN = {
 	MaxPickupsPerSecond = 15, -- per player; a fast runner won't hit it, a script would
 }
 
+-- Lucky Rainbow: a "weather" window (the genre's best-loved event type) where
+-- a rainbow arcs over the map and Parade Brainrots are twice as likely to
+-- arrive mutated. Nobody has to be anywhere or do anything special to
+-- benefit, so it's pure good news for everyone on the server.
+--
+-- Broadcast as a Workspace attribute holding the server time it ends at:
+-- attributes replicate to every client (including late joiners) for free,
+-- and any server script can check it without depending on EventService.
+EventConfig.LUCKY_RAINBOW = {
+	FirstDelay = 5 * 60,
+	Interval = 14 * 60, -- between the end of one rainbow and the next
+	Duration = 150,
+	MutationMultiplier = 2,
+	Attribute = "LuckyRainbowEndsAt",
+}
+
+function EventConfig.IsLuckyRainbow(serverNow: number): boolean
+	local endsAt = workspace:GetAttribute(EventConfig.LUCKY_RAINBOW.Attribute)
+	return type(endsAt) == "number" and serverNow < endsAt
+end
+
+-- Mutation chances scaled up while the rainbow is out. Returns the input
+-- table untouched otherwise, so the common case allocates nothing.
+function EventConfig.ApplyLuck(chances: { [string]: number }, serverNow: number): { [string]: number }
+	if not EventConfig.IsLuckyRainbow(serverNow) then
+		return chances
+	end
+	local boosted = {}
+	for mutationId, chance in chances do
+		boosted[mutationId] = math.min(chance * EventConfig.LUCKY_RAINBOW.MutationMultiplier, 0.5)
+	end
+	return boosted
+end
+
 return EventConfig
