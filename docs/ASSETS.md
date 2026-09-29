@@ -94,3 +94,44 @@ Brainrot ids: see `EggConfig.SpeciesByRarity`, e.g. `PolpoMotorino`,
 **Licensing:** only use models you made, commissioned, or that the creator
 clearly allows others to use. Many "brainrot" models on the Toolbox are
 re-uploads of other people's art.
+
+## 4. Recommended models (checked September 2026)
+
+Licence, triangle count and scripts were checked on each page. Roblox's
+**20,000-triangle limit per MeshPart** matters: anything above it must be
+decimated in Blender first (Decimate modifier, ratio ≈ 0.5).
+
+### Brainrots (Sketchfab, download as FBX)
+
+| Model | Author | Licence | Tris | Use as |
+|---|---|---|---|---|
+| [Tralalero Tralala](https://sketchfab.com/3d-models/tralalero-tralala-091fffbf2972484f9c35c8a2ec8916f3) | Eks.Art | CC BY ✅ | 36.6k → decimate | `TralaleroAstrale` |
+| [BOMBARDIRO CROCODILO](https://sketchfab.com/3d-models/bombardiro-crocodilo-db92444b3c064933a6f8ae31b0c27810) | Aizen | CC BY ✅ | 10k ✅ | `CrocobrividoVulcanico` |
+| [Bombardino Crocodilo (game ready)](https://sketchfab.com/3d-models/bombardino-crocodilo-game-ready-3d-model-free-82de12bb94e948e188dbe1a4dc83dceb) | Alex CGW | CC BY ✅ | 25k → decimate | alternative `CrocobrividoVulcanico` |
+| [Tung Tung Tung Sahur](https://sketchfab.com/3d-models/tung-tung-tung-sahur-91ddd9079bd84019ba4a12e01d93a0d6) | Eks.Art | CC BY ✅ | 35.8k → decimate | a future species |
+| [Tralalero Tralala (game ready)](https://sketchfab.com/3d-models/tralalero-tralala-3d-game-ready-model-free-e043ac3561f9417b800b6cd04a0de163) | Alex CGW | **CC BY-NC ❌** | 16.8k | don't use (non-commercial, and the shoes are Nike-branded) |
+
+More (licences not yet checked, check each page): the collection
+[Italian Brainrot by e.ticoalu](https://sketchfab.com/e.ticoalu/collections/italian-brainrot-5494c32e88054a3aa52b097f0c3b2139)
+(Boneca Ambalabu, Brr Brr Patapim, Chimpanzini Bananini, Bobrito Bandito,
+Capuchino Assasino, Balerina Capuchino...).
+
+**CC BY = you must credit the author.** Put a line in the game description,
+for example "3D models: Eks.Art, Aizen (CC BY 4.0, Sketchfab)". Avoid any
+**NC** (NonCommercial) model: the game sells Robux items.
+
+Importing: in Studio, Avatar/Home tab → **Import 3D**, pick the FBX, then
+drag the resulting Model into `ReplicatedStorage/AssetOverrides/Brainrots`
+and rename it.
+
+### Eggs (Roblox Creator Store, free)
+
+| Model | Creator | Rating | Scripts | Use as |
+|---|---|---|---|---|
+| [Egg mesh](https://create.roblox.com/store/asset/5168800671/Egg-mesh) | @francherre | 96% (200+ votes) | none ✅ | all three eggs: recolour it (gold for `GoldenEgg`, dark/neon for `SecretEgg`) |
+| [Egg Pets KIT](https://create.roblox.com/store/asset/15850322685/Egg-Pets-KIT) | @Rrg_125 | 87% (100+ votes) | **has scripts** ⚠️ | take the egg models only; the drop-in slot strips the scripts, but don't put the kit itself in the game |
+
+Not individually checked: [Golden Egg](https://create.roblox.com/store/asset/14042411629/Golden-Egg),
+[Dragon Egg](https://create.roblox.com/store/asset/380074338/Dragon-Egg),
+[Black Hole Egg](https://create.roblox.com/store/asset/14551504460/Black-Hole-Egg).
+Before using them, open each one in Studio and look for Scripts.
