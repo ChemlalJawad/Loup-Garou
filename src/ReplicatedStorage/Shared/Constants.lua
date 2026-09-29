@@ -118,6 +118,7 @@ Constants.TAGS = {
 	JumpPad = "JumpPad", -- attribute LaunchVelocity: Vector3 (client applies)
 	Bouncy = "Bouncy", -- attribute BouncePower: number (client applies)
 	RewardChest = "RewardChest", -- attributes ChestId, RewardCoins, RewardXP, CooldownSeconds, Label
+	EggPodium = "EggPodium", -- on a ProximityPrompt: triggering it opens the Eggs panel (client)
 }
 
 -- === Remotes ================================================================
@@ -211,6 +212,12 @@ Constants.REMOTE_NAMES = {
 		Collect = "Event_Collect", -- client -> server (eventId, coinId)
 		CoinCollected = "Event_CoinCollected", -- (eventId, coinId)
 		RequestState = "Event_RequestState", -- client -> server ()
+	},
+	-- New-player guide. The server owns progress; the client draws it.
+	Tutorial = {
+		State = "Tutorial_State", -- (stepIndex) 0 = done
+		RequestState = "Tutorial_RequestState", -- client -> server ()
+		Skip = "Tutorial_Skip", -- client -> server ()
 	},
 	Shared = {
 		Notify = "Shared_Notify",

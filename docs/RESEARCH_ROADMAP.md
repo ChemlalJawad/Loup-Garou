@@ -65,9 +65,9 @@ instance streaming guide (`workspace/streaming/techniques`):
   `WorldKit.Palette` (cream paving, rose/cream dais, lilac stone, wood deck).
   The Hatchery and Arena still use the dark Theme colours. That's defensible
   for an indoor hatchery and a neon team arena, but worth a look in Studio.
-- **Onboarding**: no in-world arrow or quest line guiding a new player from
-  spawn to their first egg hatch. The top games do this in the first 30
-  seconds.
+- **Onboarding**: done. A 3-step guide with a glowing trail (Hatchery, then
+  first hatch, then Parade), a 250 Coin reward, and "Hatch" prompts on the
+  egg podiums.
 - **Audio has no asset ids yet** (`AudioConfig` cues are empty strings by
   design). Picking real sounds from the Creator Store is the biggest cheap
   win left for "feel".

@@ -23,6 +23,7 @@
 -- statues are available), egg podiums ~36, hall shell (pillars/roof/walls)
 -- ~20. Total roughly 160-220 parts, comfortably under the ~350/zone budget.
 
+local CollectionService = game:GetService("CollectionService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Theme = require(ReplicatedStorage.Shared.Theme)
@@ -298,6 +299,19 @@ local function buildEggPodium(parent: Instance, spec: EggSpec)
 		Range = spec.LightRange,
 		Parent = egg,
 	})
+
+	-- Walk up and tap: opens the Eggs panel (EggController listens for the
+	-- tag). The podiums used to be decoration only, so a new player had no
+	-- way to guess that hatching lives behind the egg button in the dock.
+	local prompt = Instance.new("ProximityPrompt")
+	prompt.Name = "HatchPrompt"
+	prompt.ActionText = "Hatch"
+	prompt.ObjectText = spec.Label
+	prompt.HoldDuration = 0
+	prompt.MaxActivationDistance = 14
+	prompt.RequiresLineOfSight = false
+	CollectionService:AddTag(prompt, Constants.TAGS.EggPodium)
+	prompt.Parent = egg
 
 	if spec.Emitter then
 		WorldKit.Emitter({

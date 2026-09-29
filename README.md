@@ -88,6 +88,7 @@ ice slide, with treasure chests at the top and hidden around the map.
 | Ambient wandering Brainrots (tap to pet) | `Controllers/AmbientLifeController.lua` |
 | Base biome: edge hills + boundary, horizon, lily pond + trail, giant statues, meadows, fireflies | `World/BiomeZone.lua`, `WorldLayout.Landmarks` |
 | Sky: drifting clouds, Lucky Rainbow arc | `Controllers/SkyController.lua` |
+| New-player guide (3 steps, glowing trail, reward) | `Shared/Tutorial`, `Services/TutorialService.lua`, `Controllers/TutorialController.lua` |
 | Lucky Rainbow weather (Parade mutation chance x2) | `Shared/Events/EventConfig.lua`, `Services/EventService.lua` |
 
 Both `Main.server.lua` and `Main.client.lua` **auto-discover** every service/
@@ -116,6 +117,11 @@ to mess around in) and deliberately left out what doesn't work for kids:
   coins, the day/night cycle) is animated on the client from shared server
   time, so it costs no network traffic; decorative lights and particles
   switch off on low graphics quality.
+- **Nobody is lost in their first minute.** A three-step guide (walk to the
+  Hatchery, hatch your first egg, visit the Parade) draws a glowing trail from
+  your feet to the goal, with a bouncing marker and a distance counter, and
+  pays 250 Coins at the end. The egg podiums themselves have a "Hatch"
+  prompt. Skippable, and returning players who've already hatched never see it.
 - **Something to discover everywhere.** The grass between zones is a park
   (~190 trees, bushes, flower beds, rocks, balloons, giant mushrooms) with
   three hidden chests out in the wilds, and Brainrots wander the lawns

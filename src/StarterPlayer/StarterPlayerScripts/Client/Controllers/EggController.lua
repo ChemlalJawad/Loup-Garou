@@ -4,6 +4,8 @@
 -- server-side in EggService.lua. This controller never rolls rarity, never
 -- computes a sell refund, and never decides odds - it only forwards intents.
 
+local CollectionService = game:GetService("CollectionService")
+local ProximityPromptService = game:GetService("ProximityPromptService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterPlayer = game:GetService("StarterPlayer")
 
@@ -58,6 +60,13 @@ function EggController.Init()
 		Panel = panelRoot,
 		OnClick = function() end,
 	})
+
+	-- Hatchery podium prompts open the Eggs panel.
+	ProximityPromptService.PromptTriggered:Connect(function(prompt)
+		if CollectionService:HasTag(prompt, Constants.TAGS.EggPodium) then
+			Shell.OpenPanel("NavEggs")
+		end
+	end)
 
 	Net.GetEvent(Constants.REMOTE_NAMES.Egg.HatchResult).OnClientEvent:Connect(function(payload)
 		EggUI.ShowHatchReveal(payload)

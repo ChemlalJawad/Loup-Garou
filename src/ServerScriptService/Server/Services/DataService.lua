@@ -87,6 +87,11 @@ export type Profile = {
 		EggId: string?,
 	},
 
+	-- New-player guide step (owned by TutorialService): 1..N, or 0 when done
+	-- or skipped. Old saves get 1 from reconcile(); TutorialService marks
+	-- anyone who has already hatched an egg as done on load.
+	TutorialStep: number,
+
 	Stats: {
 		FlagCaptures: number,
 		FlagReturns: number,
@@ -140,6 +145,7 @@ local function defaultProfile(): Profile
 			Enabled = false,
 			EggId = nil,
 		},
+		TutorialStep = 1,
 		Stats = {
 			FlagCaptures = 0,
 			FlagReturns = 0,
