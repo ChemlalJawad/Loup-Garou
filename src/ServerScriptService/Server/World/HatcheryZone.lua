@@ -313,6 +313,43 @@ local function buildEggPodium(parent: Instance, spec: EggSpec)
 	CollectionService:AddTag(prompt, Constants.TAGS.EggPodium)
 	prompt.Parent = egg
 
+	-- Drop-in art: a Model at ReplicatedStorage.AssetOverrides.Eggs.<EggId>
+	-- (BasicEgg / GoldenEgg / SecretEgg) replaces the procedural egg. The
+	-- original ball stays, invisible, as the anchor for the prompt and light.
+	local overrides = ReplicatedStorage:FindFirstChild("AssetOverrides")
+	local eggFolder = overrides and overrides:FindFirstChild("Eggs")
+	local eggId = string.gsub(spec.Name, "Podium$", "")
+	local source = eggFolder and eggFolder:FindFirstChild(eggId)
+	if source and source:IsA("Model") then
+		local art = source:Clone()
+		for _, descendant in art:GetDescendants() do
+			if descendant:IsA("LuaSourceContainer") then
+				descendant:Destroy()
+			elseif descendant:IsA("BasePart") then
+				descendant.Anchored = true
+				descendant.CanCollide = false
+				descendant.CanTouch = false
+				descendant.CanQuery = false
+			end
+		end
+		local _, size = art:GetBoundingBox()
+		if size.Y > 0 then
+			art:ScaleTo(art:GetScale() * spec.EggHeight / size.Y)
+		end
+		local frame, scaledSize = art:GetBoundingBox()
+		local bottom = frame.Position - Vector3.new(0, scaledSize.Y / 2, 0)
+		art:PivotTo(art:GetPivot() + (Vector3.new(baseX, platformTopY, baseZ) - bottom))
+		art.Name = spec.Name .. "_EggArt"
+		art.Parent = folder
+		egg.Transparency = 1
+		for i = 1, #spotOffsets do
+			local spot = folder:FindFirstChild(`{spec.Name}_Spot{i}`)
+			if spot then
+				spot:Destroy()
+			end
+		end
+	end
+
 	if spec.Emitter then
 		WorldKit.Emitter({
 			Name = spec.Name .. "_Sparkle",

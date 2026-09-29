@@ -1,6 +1,7 @@
 --!strict
--- The sky: puffy cartoon clouds drifting over the map, and the Lucky
--- Rainbow arc while that event is on.
+-- The sky: the Lucky Rainbow arc while that event is on, plus puffy
+-- cartoon part clouds as a fallback when there are no volumetric terrain
+-- Clouds (see TerrainZone).
 --
 -- Client-only, like the Parade walkers: each cloud's position is a pure
 -- function of workspace:GetServerTimeNow(), so every player sees the same
@@ -146,8 +147,16 @@ function SkyController.Init()
 	folder.Name = "Sky"
 	folder.Parent = Workspace
 
-	buildClouds(folder)
-	placeClouds(Workspace:GetServerTimeNow())
+	-- TerrainZone adds engine-rendered volumetric Clouds, which look far
+	-- better; the cartoon part clouds are only the fallback for when terrain
+	-- generation failed. Checked after a short wait so the Terrain's Clouds
+	-- child has time to replicate.
+	task.delay(5, function()
+		if not Workspace.Terrain:FindFirstChildOfClass("Clouds") then
+			buildClouds(folder)
+			placeClouds(Workspace:GetServerTimeNow())
+		end
+	end)
 
 	local accumulated = 0
 	RunService.Heartbeat:Connect(function(dt)

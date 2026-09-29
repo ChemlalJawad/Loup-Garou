@@ -24,6 +24,7 @@
 -- all of them non-colliding, non-queryable and shadowless.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
 
 local WorldLayout = require(ReplicatedStorage.Shared.WorldLayout)
 local EggConfig = require(ReplicatedStorage.Shared.Eggs.EggConfig)
@@ -48,6 +49,11 @@ local POND_DIAMETER = 46
 
 local MEADOW_PATCHES = 45
 local FIREFLY_SPOTS = 14
+
+-- True when TerrainZone (Order 140) built the terrain ground successfully.
+local function useTerrain(): boolean
+	return Workspace.Terrain:GetAttribute("HatchWarsTerrain") == true
+end
 
 local function insideAnyZone(position: Vector3, margin: number): boolean
 	for _, zone in WorldLayout.Zones :: { [string]: WorldLayout.ZoneRect } do
@@ -118,6 +124,12 @@ local function buildEdge(parent: Instance, rng: Random)
 			local innerPoint = centre - side.Out * (radius * 0.94)
 			if not insideAnyZone(innerPoint, 4) and not PathRegistry.IsNearPath(innerPoint, 2) then
 				local shade = rng:NextNumber(-0.06, 0.06)
+				if useTerrain() then
+					-- Smooth terrain hill: blends into the grass with no seam,
+					-- and grows the same swaying blades.
+					Workspace.Terrain:FillBall(centre + Vector3.new(0, groundY - radius * 0.35, 0), radius, Enum.Material.Grass)
+					continue
+				end
 				WorldKit.Part({
 					Name = `Hill{sideIndex}_{i}`,
 					Shape = Enum.PartType.Ball,
@@ -222,19 +234,26 @@ local function buildPond(parent: Instance, rng: Random)
 	local pond = WorldKit.Group("LilyPond", parent)
 	PathRegistry.Add(centre, Vector3.new(POND_DIAMETER + 20, 1, POND_DIAMETER + 20))
 
+	-- With terrain, TerrainZone already dug a real pond (beach, basin,
+	-- water); only the part fallback needs the flat layered discs.
+	local terrainPond = useTerrain()
 	-- Layers stacked a few hundredths apart so no two faces are coplanar.
-	decorCylinder(centre + Vector3.new(0, 0.02, 0), POND_DIAMETER + 8, 0.1, Color3.fromRGB(232, 214, 160), Enum.Material.Sand, pond, "Beach")
-	decorCylinder(centre + Vector3.new(0, 0.05, 0), POND_DIAMETER, 0.1, Color3.fromRGB(34, 86, 120), Enum.Material.SmoothPlastic, pond, "PondBed")
-	-- Non-colliding water: you wade through it ankle-deep instead of
-	-- walking on top of it.
-	decorCylinder(centre + Vector3.new(0, 0.3, 0), POND_DIAMETER, 0.5, Color3.fromRGB(90, 180, 235), Enum.Material.Glass, pond, "Water").Transparency = 0.35
+	if not terrainPond then
+		decorCylinder(centre + Vector3.new(0, 0.02, 0), POND_DIAMETER + 8, 0.1, Color3.fromRGB(232, 214, 160), Enum.Material.Sand, pond, "Beach")
+		decorCylinder(centre + Vector3.new(0, 0.05, 0), POND_DIAMETER, 0.1, Color3.fromRGB(34, 86, 120), Enum.Material.SmoothPlastic, pond, "PondBed")
+		-- Non-colliding water: you wade through it ankle-deep instead of
+		-- walking on top of it.
+		decorCylinder(centre + Vector3.new(0, 0.3, 0), POND_DIAMETER, 0.5, Color3.fromRGB(90, 180, 235), Enum.Material.Glass, pond, "Water").Transparency = 0.35
+	end
+	-- Pads float on the surface: terrain water sits just under grass level.
+	local padY = if terrainPond then -0.5 else 0.6
 
 	local radius = POND_DIAMETER / 2
 	-- Lily pads (solid, to hop across) with the odd pink flower.
 	for i = 1, 9 do
 		local angle = rng:NextNumber(0, math.pi * 2)
 		local distance = rng:NextNumber(4, radius - 5)
-		local spot = centre + Vector3.new(math.cos(angle) * distance, 0.6, math.sin(angle) * distance)
+		local spot = centre + Vector3.new(math.cos(angle) * distance, padY, math.sin(angle) * distance)
 		WorldKit.UprightCylinder({
 			Name = `LilyPad{i}`,
 			Position = spot,
@@ -493,7 +512,9 @@ local function buildMeadow(parent: Instance, rng: Random)
 		return nil
 	end
 
-	for i = 1, MEADOW_PATCHES do
+	-- Terrain grass blades already give the lawn texture, and thin patch
+	-- parts would have blades poking through them.
+	for i = 1, if useTerrain() then 0 else MEADOW_PATCHES do
 		local diameter = rng:NextNumber(14, 30)
 		local spot = randomOpenSpot(diameter / 2 + 1)
 		if spot then

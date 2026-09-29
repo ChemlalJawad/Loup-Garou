@@ -68,9 +68,9 @@ instance streaming guide (`workspace/streaming/techniques`):
 - **Onboarding**: done. A 3-step guide with a glowing trail (Hatchery, then
   first hatch, then Parade), a 250 Coin reward, and "Hatch" prompts on the
   egg podiums.
-- **Audio has no asset ids yet** (`AudioConfig` cues are empty strings by
-  design). Picking real sounds from the Creator Store is the biggest cheap
-  win left for "feel".
+- **Audio**: 32 original sounds are synthesized in `assets/sfx/`, with an
+  Open Cloud upload script. They still need uploading to your account (see
+  `docs/ASSETS.md`).
 - **No mobile playtest yet**: part count, streaming behaviour and UI scale
   need a real phone session in Studio's device emulator.
 

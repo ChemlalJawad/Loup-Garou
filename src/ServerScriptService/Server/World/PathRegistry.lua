@@ -24,6 +24,11 @@ function PathRegistry.Add(center: Vector3, size: Vector3)
 	table.insert(rects, { Center = center, Size = size })
 end
 
+-- Every registered rect (read-only - don't mutate the returned tables).
+function PathRegistry.GetRects(): { Rect }
+	return rects
+end
+
 -- True when `position` (ignoring height) is within `margin` studs of any
 -- registered path.
 function PathRegistry.IsNearPath(position: Vector3, margin: number): boolean

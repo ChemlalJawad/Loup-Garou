@@ -88,6 +88,9 @@ ice slide, with treasure chests at the top and hidden around the map.
 | Ambient wandering Brainrots (tap to pet) | `Controllers/AmbientLifeController.lua` |
 | Base biome: edge hills + boundary, horizon, lily pond + trail, giant statues, meadows, fireflies | `World/BiomeZone.lua`, `WorldLayout.Landmarks` |
 | Sky: drifting clouds, Lucky Rainbow arc | `Controllers/SkyController.lua` |
+| Smooth Terrain ground (wind-swept grass, water pond, hills, clouds) | `World/TerrainZone.lua` |
+| Original SFX + music, upload script | `assets/sfx/`, `tools/sfx/`, `Shared/Audio/AudioIds.lua` (see `docs/ASSETS.md`) |
+| Drop-in Brainrot/egg models | `ReplicatedStorage.AssetOverrides` (see `docs/ASSETS.md`) |
 | New-player guide (3 steps, glowing trail, reward) | `Shared/Tutorial`, `Services/TutorialService.lua`, `Controllers/TutorialController.lua` |
 | Lucky Rainbow weather (Parade mutation chance x2) | `Shared/Events/EventConfig.lua`, `Services/EventService.lua` |
 

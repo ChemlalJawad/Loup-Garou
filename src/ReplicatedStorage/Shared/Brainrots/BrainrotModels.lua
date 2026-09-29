@@ -787,7 +787,7 @@ characters.TralaleroAstrale = {
 
 -- === Public API ==============================================================
 
-local function build(brainrotId: string, rarity: Rarity, anchored: boolean): Model
+local function buildProcedural(brainrotId: string, rarity: Rarity, anchored: boolean): Model
 	local def = characters[brainrotId]
 	assert(def ~= nil, `BrainrotModels: unknown brainrot id "{brainrotId}"`)
 
@@ -797,6 +797,90 @@ local function build(brainrotId: string, rarity: Rarity, anchored: boolean): Mod
 
 	assert(ctx.Model.PrimaryPart ~= nil, `BrainrotModels: "{brainrotId}" built with no parts`)
 	return ctx.Model
+end
+
+-- Drop-in art: a Model at ReplicatedStorage.AssetOverrides.Brainrots.<id>
+-- (e.g. a mesh inserted from the Toolbox or your own Blender import, renamed
+-- to the brainrot id) replaces the procedural one everywhere - companions,
+-- the Parade, wanderers, statues, hatch reveals. It's normalized to behave
+-- exactly like a procedural model: scripts stripped, same size and ground
+-- line as the procedural version, same collision/shadow rules, welded for
+-- companions, and it still gets the rarity glow.
+local function findOverride(brainrotId: string): Model?
+	local root = ReplicatedStorage:FindFirstChild("AssetOverrides")
+	local folder = root and root:FindFirstChild("Brainrots")
+	local source = folder and folder:FindFirstChild(brainrotId)
+	if source and source:IsA("Model") then
+		return source
+	end
+	return nil
+end
+
+local function buildFromOverride(source: Model, brainrotId: string, rarity: Rarity, anchored: boolean): Model?
+	local copy = source:Clone()
+	-- Never run code that came with a Toolbox model.
+	for _, descendant in copy:GetDescendants() do
+		if descendant:IsA("LuaSourceContainer") or descendant:IsA("Humanoid") then
+			descendant:Destroy()
+		end
+	end
+
+	local parts: { BasePart } = {}
+	for _, descendant in copy:GetDescendants() do
+		if descendant:IsA("BasePart") then
+			table.insert(parts, descendant)
+		end
+	end
+	if #parts == 0 then
+		copy:Destroy()
+		return nil
+	end
+	-- The model's own PrimaryPart (or its biggest part) becomes the root.
+	local rootPart = copy.PrimaryPart
+	if not rootPart then
+		table.sort(parts, function(a, b)
+			return a.Size.X * a.Size.Y * a.Size.Z > b.Size.X * b.Size.Y * b.Size.Z
+		end)
+		rootPart = parts[1]
+	end
+	local ctx = newCtx(brainrotId, anchored)
+	registerPart(ctx, rootPart :: BasePart)
+	for _, part in parts do
+		if part ~= rootPart then
+			registerPart(ctx, part)
+		end
+	end
+	copy:Destroy()
+
+	-- Match the procedural model's height and ground line, so every
+	-- caller's positioning (built around the origin) keeps working.
+	local reference = buildProcedural(brainrotId, rarity, true)
+	local referenceFrame, referenceSize = reference:GetBoundingBox()
+	reference:Destroy()
+	local model = ctx.Model
+	local _, size = model:GetBoundingBox()
+	if size.Y > 0 then
+		model:ScaleTo(model:GetScale() * math.clamp(referenceSize.Y / size.Y, 0.01, 100))
+	end
+	local frame, scaledSize = model:GetBoundingBox()
+	local targetBottom = referenceFrame.Position - Vector3.new(0, referenceSize.Y / 2, 0)
+	local currentBottom = frame.Position - Vector3.new(0, scaledSize.Y / 2, 0)
+	model:PivotTo(model:GetPivot() + (targetBottom - currentBottom))
+
+	applyRarity(ctx, rarity)
+	return model
+end
+
+local function build(brainrotId: string, rarity: Rarity, anchored: boolean): Model
+	local override = findOverride(brainrotId)
+	if override then
+		local ok, result = pcall(buildFromOverride, override, brainrotId, rarity, anchored)
+		if ok and result then
+			return result
+		end
+		warn(`[BrainrotModels] override for "{brainrotId}" couldn't be used, using the built-in model: {result}`)
+	end
+	return buildProcedural(brainrotId, rarity, anchored)
 end
 
 -- A dynamic companion: unanchored, welded, collision-free, ready for

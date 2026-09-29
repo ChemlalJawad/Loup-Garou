@@ -15,13 +15,13 @@
 -- state: `AudioService`/`AudioController` treat it as "no-op, play nothing" —
 -- never as an error. The game is fully playable (silently) today.
 --
--- Before shipping:
---   1. Upload or source-license real audio for each cue (Roblox's Creator
---      Marketplace / your own uploads under the experience's Audio Library).
---   2. Fill in `SoundId = "rbxassetid://<id>"` for the cues you care about.
---      You do not have to fill in all of them — anything left empty stays
---      silent forever, gracefully.
---   3. Search this file for "TODO: upload" to find every remaining gap.
+-- Every cue already has an ORIGINAL sound, synthesized by
+-- tools/sfx/generate_sfx.py into assets/sfx/<CueId>.ogg. To hear them:
+--   1. Run tools/sfx/upload_audio.py (Open Cloud; writes AudioIds.lua), or
+--      bulk-import the .ogg files in Studio's Asset Manager and paste the ids
+--      into AudioIds.lua by hand.
+--   2. That's it - ids in AudioIds.lua are applied over the "" defaults below.
+--      Anything not uploaded yet stays silent, gracefully.
 --
 -- Do NOT invent asset ids. A made-up id either fails to load (harmless) or,
 -- worse, resolves to someone else's unrelated/inappropriate uploaded audio in
@@ -126,6 +126,26 @@ music.Arena = {
 }
 
 AudioConfig.Music = music
+
+-- Fill in every id that's been uploaded (see AudioIds.lua and
+-- tools/sfx/upload_audio.py). The sounds themselves are original,
+-- synthesized by tools/sfx/generate_sfx.py, so there's nothing to license.
+do
+	local uploaded = require(script.Parent.AudioIds) :: { [string]: string }
+	for name, soundId in uploaded do
+		if soundId ~= "" then
+			local trackId = string.match(name, "^Music_(.+)$")
+			if trackId then
+				local track = music[trackId]
+				if track then
+					track.SoundId = soundId
+				end
+			elseif cues[name] then
+				cues[name].SoundId = soundId
+			end
+		end
+	end
+end
 
 -- Returns the cue table for `cueId`, or nil if the id is unknown. Callers
 -- should treat "unknown id" and "empty SoundId" both as safe no-ops.

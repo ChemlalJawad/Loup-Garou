@@ -6,6 +6,15 @@
       "$className": "ReplicatedStorage",
       "Shared": {
         "$path": "src/ReplicatedStorage/Shared"
+      },
+      "AssetOverrides": {
+        "$className": "Folder",
+        "Brainrots": {
+          "$className": "Folder"
+        },
+        "Eggs": {
+          "$className": "Folder"
+        }
       }
     },
     "ServerScriptService": {
