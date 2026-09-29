@@ -17,6 +17,7 @@ local RunService = game:GetService("RunService")
 local Constants = require(ReplicatedStorage.Shared.Constants)
 local Net = require(ReplicatedStorage.Shared.Net)
 local BrainrotModels = require(ReplicatedStorage.Shared.Brainrots.BrainrotModels)
+local Mutations = require(ReplicatedStorage.Shared.Brainrots.Mutations)
 local DataService = require(ServerScriptService.Server.Services.DataService)
 
 local PetService = {}
@@ -120,7 +121,7 @@ end
 -- follow rig (AlignPosition/AlignOrientation driven off the player's HRP),
 -- and parents it into Workspace.Pets. Returns nil (and warns) if the model
 -- can't be built - callers must not let a bad/unknown id break spawn.
-local function spawnCompanion(player: Player, character: Model, ownedId: string, rarity: string)
+local function spawnCompanion(player: Player, character: Model, ownedId: string, rarity: string, mutation: string?)
 	local humanoidRootPart = character:FindFirstChild("HumanoidRootPart") :: BasePart?
 	if not humanoidRootPart then
 		return
@@ -132,6 +133,9 @@ local function spawnCompanion(player: Player, character: Model, ownedId: string,
 		return
 	end
 	local model = modelOrError :: Model
+	-- Gold / Diamond / Galaxy / Rainbow followers look the part, so a rare
+	-- pull is something other players can see and admire in the hub.
+	Mutations.ApplyVisual(model, mutation)
 	local primary = model.PrimaryPart
 	if not primary then
 		warn(`[PetService] companion "{ownedId}" has no PrimaryPart, skipping spawn for {player.Name}`)
@@ -224,7 +228,7 @@ local function reconcile(player: Player)
 	end
 
 	despawnCompanion(player)
-	spawnCompanion(player, character, equipped.Id, equipped.Rarity)
+	spawnCompanion(player, character, equipped.Id, equipped.Rarity, equipped.Mutation)
 
 	local respawned = companions[player]
 	if respawned then

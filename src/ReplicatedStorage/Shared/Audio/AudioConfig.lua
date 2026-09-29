@@ -101,6 +101,11 @@ cues.RoundStart = cue("", 0.7, "countdown/start klaxon, ~0.6s, CTF round startin
 cues.RoundWin = cue("", 0.8, "victory fanfare, ~1.2s, round won")
 cues.RoundLose = cue("", 0.6, "somber short sting, ~0.8s, round lost")
 
+-- === World / fun ===============================================================
+cues.ParadeHype = cue("", 0.75, "crowd 'ooooh' + sparkle sting, ~1s, a Legendary/Secret/Rainbow/Galaxy walks onto the Parade")
+cues.ChestOpen = cue("", 0.65, "wooden creak into a bright treasure jingle, ~0.8s, reward chest opened")
+cues.CoinRainStart = cue("", 0.7, "cheerful rising jingle with coin clinks, ~1s, Coin Rain begins")
+
 AudioConfig.Cues = cues
 
 -- === Music ====================================================================

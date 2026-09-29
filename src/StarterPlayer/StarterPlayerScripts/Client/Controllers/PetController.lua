@@ -15,6 +15,7 @@ local Constants = require(ReplicatedStorage.Shared.Constants)
 local Net = require(ReplicatedStorage.Shared.Net)
 local Theme = require(ReplicatedStorage.Shared.Theme)
 local EggConfig = require(ReplicatedStorage.Shared.Eggs.EggConfig)
+local Mutations = require(ReplicatedStorage.Shared.Brainrots.Mutations)
 
 local PetController = {}
 
@@ -80,8 +81,14 @@ local function buildNameplate(model: Model, ownedId: string, rarity: string)
 		return
 	end
 
-	local displayName = EggConfig.DisplayNames[ownedId] or ownedId
-	local rarityColor = Theme.RarityColor(rarity)
+	-- PetService stamps the mutation onto the model as an attribute
+	-- (Mutations.ApplyVisual), so the nameplate can show "Gold Spaghettoro"
+	-- without the remote payload having to change shape.
+	local mutationAttribute = model:GetAttribute("Mutation")
+	local mutationId = if type(mutationAttribute) == "string" then mutationAttribute else nil
+	local displayName = Mutations.DecorateName(EggConfig.DisplayNames[ownedId] or ownedId, mutationId)
+	local mutation = Mutations.Get(mutationId)
+	local rarityColor = if mutation then mutation.Color else Theme.RarityColor(rarity)
 
 	local billboard = Instance.new("BillboardGui")
 	billboard.Name = "CompanionNameplate"

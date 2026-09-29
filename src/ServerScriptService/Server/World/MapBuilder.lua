@@ -47,7 +47,10 @@ local function buildGround(parent: Instance): Folder
 end
 
 -- Straight walkway strip with neon edge trim connecting two zones. `axis` is
--- the direction the path runs along.
+-- the direction the path runs along. `label`, when given, puts a floating
+-- signpost at the path's midpoint - used for zones that aren't directly
+-- reachable from the Hub's four gateways, so players (young ones especially)
+-- can always follow a sign to every activity.
 local function buildPath(
 	parent: Instance,
 	name: string,
@@ -55,7 +58,8 @@ local function buildPath(
 	center: Vector3,
 	length: number,
 	width: number,
-	color: Color3
+	color: Color3,
+	label: string?
 )
 	local size = if axis == "Z" then Vector3.new(width, 1, length) else Vector3.new(length, 1, width)
 	WorldKit.Part({
@@ -102,7 +106,7 @@ local function buildPath(
 		local t = (i - 0.5) / postCount - 0.5
 		local along = alongAxis * (t * length)
 		local sign = if i % 2 == 0 then 1 else -1
-		WorldKit.Pillar({
+		local lampPost = WorldKit.Pillar({
 			Name = `{name}Lamp{i}`,
 			Position = center + along + perpUnit * postSideOffset * sign,
 			Height = 9,
@@ -110,6 +114,37 @@ local function buildPath(
 			Color = Color3.fromRGB(36, 36, 50),
 			CapColor = color,
 			Parent = parent,
+		})
+		-- A real pool of light on the walkway at night. Tagged as decor by
+		-- WorldKit.Light, so LightingController switches it off in daylight
+		-- and on low graphics quality.
+		WorldKit.Light({
+			Name = "LampGlow",
+			Color = color:Lerp(Color3.new(1, 1, 1), 0.45),
+			Brightness = 1.6,
+			Range = 18,
+			Parent = lampPost,
+		})
+	end
+
+	if label then
+		local signPost = WorldKit.Part({
+			Name = `{name}SignPost`,
+			Size = Vector3.new(1, 7, 1),
+			Position = center + perpUnit * (edgeOffset + 3) + Vector3.new(0, 3.5, 0),
+			Color = Color3.fromRGB(36, 36, 50),
+			Material = Enum.Material.Metal,
+			CanCollide = false,
+			Parent = parent,
+		})
+		WorldKit.Sign({
+			Name = `{name}Sign`,
+			Adornee = signPost,
+			Text = label,
+			Color = color,
+			Size = UDim2.new(0, 320, 0, 50),
+			TextSize = 24,
+			StudsOffset = Vector3.new(0, 5.5, 0),
 		})
 	end
 end
@@ -125,6 +160,8 @@ local function buildPaths(parent: Instance)
 	local arena = WorldLayout.Get("Arena")
 	local plaza = WorldLayout.Get("Plaza")
 	local lounge = WorldLayout.Get("Lounge")
+	local parade = WorldLayout.Get("Parade")
+	local funPark = WorldLayout.Get("FunPark")
 
 	-- Hub -> Hatchery (south, -Z).
 	local hubEdgeZ = hub.Center.Z - hub.Size.Z / 2
@@ -149,7 +186,8 @@ local function buildPaths(parent: Instance)
 		Vector3.new((hubEdgeX + commEdgeX) / 2, WorldLayout.GroundY, 0),
 		commEdgeX - hubEdgeX,
 		14,
-		Theme.Color.Robux
+		Theme.Color.Robux,
+		"MARKET  /  FUN PARK"
 	)
 
 	-- Hub -> Plaza (west, -X).
@@ -162,7 +200,8 @@ local function buildPaths(parent: Instance)
 		Vector3.new((hubEdgeWestX + plazaEdgeX) / 2, WorldLayout.GroundY, 0),
 		hubEdgeWestX - plazaEdgeX,
 		14,
-		Theme.Color.AccentWarning
+		Theme.Color.AccentWarning,
+		"HALL OF FAME  /  PARADE"
 	)
 
 	-- Hub -> Arena (north, +Z). The widest path: it's the route to the mode
@@ -190,6 +229,50 @@ local function buildPaths(parent: Instance)
 		commEdgeSouthZ - loungeEdgeZ,
 		12,
 		Theme.Color.AccentSecondary
+	)
+
+	-- Plaza -> Parade (south, -Z). Signed: the Parade is the headline
+	-- activity for new players and isn't visible from the Hub.
+	local plazaEdgeSouthZ = plaza.Center.Z - plaza.Size.Z / 2
+	local paradeEdgeNorthZ = parade.Center.Z + parade.Size.Z / 2
+	buildPath(
+		paths,
+		"PathPlazaParade",
+		"Z",
+		Vector3.new(parade.Center.X, WorldLayout.GroundY, (plazaEdgeSouthZ + paradeEdgeNorthZ) / 2),
+		plazaEdgeSouthZ - paradeEdgeNorthZ,
+		16,
+		Theme.Color.AccentDanger,
+		"BRAINROT PARADE"
+	)
+
+	-- Parade -> Hatchery (east, +X): closes the loop so players can walk
+	-- Hub -> Hall of Fame -> Parade -> Hatchery -> Hub without backtracking.
+	local paradeEdgeEastX = parade.Center.X + parade.Size.X / 2
+	local hatcheryEdgeWestX = hatchery.Center.X - hatchery.Size.X / 2
+	buildPath(
+		paths,
+		"PathParadeHatchery",
+		"X",
+		Vector3.new((paradeEdgeEastX + hatcheryEdgeWestX) / 2, WorldLayout.GroundY, WorldLayout.Doors.HatcheryWest.Z),
+		hatcheryEdgeWestX - paradeEdgeEastX,
+		12,
+		Theme.Color.AccentSecondary,
+		"HATCHERY"
+	)
+
+	-- Commercial -> Fun Park (north, +Z).
+	local commEdgeNorthZ = commercial.Center.Z + commercial.Size.Z / 2
+	local funParkEdgeSouthZ = funPark.Center.Z - funPark.Size.Z / 2
+	buildPath(
+		paths,
+		"PathCommercialFunPark",
+		"Z",
+		Vector3.new(funPark.Center.X, WorldLayout.GroundY, (commEdgeNorthZ + funParkEdgeSouthZ) / 2),
+		funParkEdgeSouthZ - commEdgeNorthZ,
+		16,
+		Theme.Color.AccentInfo,
+		"FUN PARK"
 	)
 end
 

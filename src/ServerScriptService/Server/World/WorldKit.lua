@@ -5,6 +5,8 @@
 -- because this project has no build step and needs to stay readable by
 -- anyone opening MapBuilder.lua (or its zone modules) cold.
 
+local CollectionService = game:GetService("CollectionService")
+
 local WorldKit = {}
 
 export type PartProps = { [string]: any }
@@ -425,6 +427,18 @@ function WorldKit.SurfaceLabel(props: PartProps): SurfaceGui
 	return surfaceGui
 end
 
+-- Lights and emitters built through WorldKit are decorative by default and
+-- get tagged so the client LightingController can manage them centrally:
+-- lights fade in at dusk and switch off in full daylight, and both are
+-- disabled on low graphics quality (phones/tablets). Their authored
+-- brightness/rate is stored as an attribute so the controller always scales
+-- from the original value rather than compounding its own changes.
+-- Pass `Gameplay = true` for a light players rely on to read the game (e.g.
+-- CTF flag stands): it is left untagged and always on.
+local DECOR_LIGHT_TAG = "DecorLight" -- mirrors LightingConfig.DECOR_LIGHT_TAG
+local DECOR_EMITTER_TAG = "DecorEmitter" -- mirrors LightingConfig.DECOR_EMITTER_TAG
+local REWARD_CHEST_TAG = "RewardChest" -- mirrors Constants.TAGS.RewardChest
+
 function WorldKit.Light(props: PartProps): PointLight
 	local light = Instance.new("PointLight")
 	light.Name = props.Name or "Light"
@@ -432,6 +446,10 @@ function WorldKit.Light(props: PartProps): PointLight
 	light.Brightness = props.Brightness or 2
 	light.Range = props.Range or 20
 	light.Shadows = if props.Shadows == nil then false else props.Shadows
+	if not props.Gameplay then
+		light:SetAttribute("BaseBrightness", light.Brightness)
+		CollectionService:AddTag(light, DECOR_LIGHT_TAG)
+	end
 	light.Parent = props.Parent
 	return light
 end
@@ -455,8 +473,88 @@ function WorldKit.Emitter(props: PartProps): ParticleEmitter
 		NumberSequenceKeypoint.new(1, 1),
 	})
 	emitter.LightEmission = props.LightEmission or 0.6
+	if not props.Gameplay then
+		emitter:SetAttribute("BaseRate", emitter.Rate)
+		CollectionService:AddTag(emitter, DECOR_EMITTER_TAG)
+	end
 	emitter.Parent = props.Parent
 	return emitter
+end
+
+-- === Props ===================================================================
+
+-- A claimable reward chest: a small part-built treasure chest whose base is
+-- tagged Constants.TAGS.RewardChest, with the reward/cooldown stored as
+-- attributes. RewardChestService finds every tagged chest and wires up the
+-- prompt, validation and payout - zones just place chests.
+--   props.ChestId (string, unique; also the cooldown key)
+--   props.RewardCoins, props.RewardXP (numbers, base values before level scaling)
+--   props.CooldownSeconds (number)
+--   props.Label (string shown on the prompt)
+--   props.Position (Vector3: centre of the chest's bottom face)
+--   props.Rotation (CFrame, optional)
+function WorldKit.RewardChest(props: PartProps): Part
+	local position: Vector3 = props.Position or Vector3.new(0, 0, 0)
+	local rotation: CFrame = props.Rotation or CFrame.new()
+	local root = CFrame.new(position) * rotation
+	local folder = WorldKit.Group(props.ChestId or "RewardChest", props.Parent)
+
+	local wood = Color3.fromRGB(120, 72, 36)
+	local gold = Color3.fromRGB(255, 196, 70)
+
+	local base = WorldKit.Part({
+		Name = "ChestBase",
+		Size = Vector3.new(4, 2.4, 2.8),
+		CFrame = root * CFrame.new(0, 1.2, 0),
+		Color = wood,
+		Material = Enum.Material.WoodPlanks,
+		Parent = folder,
+	})
+	WorldKit.Part({
+		Name = "ChestLid",
+		Size = Vector3.new(4.1, 1, 2.9),
+		CFrame = root * CFrame.new(0, 2.9, 0),
+		Color = wood,
+		Material = Enum.Material.WoodPlanks,
+		Parent = folder,
+	})
+	for _, x in { -1.6, 1.6 } do
+		WorldKit.Part({
+			Name = "ChestBand",
+			Size = Vector3.new(0.35, 3.5, 3),
+			CFrame = root * CFrame.new(x, 1.75, 0),
+			Color = gold,
+			Material = Enum.Material.Metal,
+			CanCollide = false,
+			Parent = folder,
+		})
+	end
+	WorldKit.Part({
+		Name = "ChestLock",
+		Size = Vector3.new(0.7, 0.8, 0.3),
+		CFrame = root * CFrame.new(0, 2.2, -1.5),
+		Color = gold,
+		Material = Enum.Material.Neon,
+		CanCollide = false,
+		CastShadow = false,
+		Parent = folder,
+	})
+	WorldKit.Light({
+		Name = "ChestGlow",
+		Color = gold,
+		Brightness = 1.4,
+		Range = 10,
+		Parent = base,
+	})
+
+	base:SetAttribute("ChestId", props.ChestId or "Chest")
+	base:SetAttribute("RewardCoins", props.RewardCoins or 250)
+	base:SetAttribute("RewardXP", props.RewardXP or 50)
+	base:SetAttribute("CooldownSeconds", props.CooldownSeconds or 600)
+	base:SetAttribute("Label", props.Label or "Treasure Chest")
+	CollectionService:AddTag(base, REWARD_CHEST_TAG)
+
+	return base
 end
 
 return WorldKit

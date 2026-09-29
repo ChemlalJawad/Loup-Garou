@@ -54,6 +54,14 @@ consumables — Coins/Gems, works today) and the Robux **Shop** (Game Passes,
 Gem/Coin packs — wired for real money, Studio-testable via an automatic test
 mode until real ids are set).
 
+Between those, the **Brainrot Parade** is a red carpet where Brainrots walk
+past and can be bought before they reach the exit — the only source of
+**mutations** (Gold x1.25, Diamond x1.5, Rainbow x10, and a night-only Galaxy
+x4), which boost idle income. A **day/night cycle** makes nights the time to
+hunt rare mutations; a **Coin Rain** event floods the Central Plaza every few
+minutes; and the **Fun Park** has trampolines, jump pads, an obby tower and an
+ice slide, with treasure chests at the top and hidden around the map.
+
 ## Systems
 
 | System | Files |
@@ -72,10 +80,37 @@ mode until real ids are set).
 | Capture the Flag (teams, flags, abilities, powerups, match flow) | `Shared/CTF`, `Services/CTFService.lua`, `Services/TeamService.lua` |
 | Audio cues + juice effects | `Shared/Audio`, `Shared/Effects`, `Services/AudioService.lua` |
 | World (auto-discovered zones) | `World/*Zone.lua`, `World/MapBuilder.lua`, `World/WorldKit.lua` |
+| Brainrot Parade (red carpet shop, mutations) | `Shared/Parade`, `Shared/Brainrots/Mutations.lua`, `Services/ParadeService.lua`, `Controllers/ParadeController.lua` |
+| Day/night cycle, zone moods, mobile quality scaling | `Shared/LightingConfig.lua`, `World/LightingSetup.lua`, `Controllers/LightingController.lua` |
+| Fun Park: jump pads, trampolines, reward chests | `World/FunParkZone.lua`, `Controllers/MovementController.lua`, `Services/RewardChestService.lua` |
+| Coin Rain world event | `Shared/Events`, `Services/EventService.lua`, `Controllers/EventController.lua` |
 
 Both `Main.server.lua` and `Main.client.lua` **auto-discover** every service/
 controller/zone that follows the file's expected shape (an `Init()`/`Build()`
 function) — adding a new system never requires editing a shared boot file.
+
+## Designed for young players
+
+The fun pass borrowed what works in the genre's most-played games (a red
+carpet of Brainrots to buy, mutations, scheduled world events, a playground
+to mess around in) and deliberately left out what doesn't work for kids:
+
+- **No stealing.** In the biggest brainrot game, having a Brainrot stolen by
+  another player is the most-documented source of upset children. Here the
+  only competition is being first to buy from the Parade; nothing you own
+  can be taken.
+- **Rare things are protected.** "Sell duplicates" never sells a mutated
+  Brainrot, and merges never consume one; selling one is always a single,
+  confirmed action with a warning.
+- **Everyone gets something.** Coin Rain is skill-free and shared, chests
+  refill on a timer, and rewards scale with level so nobody is priced out.
+- **Readable by default.** Daytime is the default and lasts 70% of the cycle;
+  prompts are instant taps, not holds; info boards at the Parade explain
+  prices and mutations before anyone has to ask.
+- **Built for phones.** Everything that moves every frame (Parade walkers,
+  coins, the day/night cycle) is animated on the client from shared server
+  time, so it costs no network traffic; decorative lights and particles
+  switch off on low graphics quality.
 
 ## How this was built
 

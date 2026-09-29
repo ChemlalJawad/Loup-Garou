@@ -181,43 +181,92 @@ If you're adding a new zone or prop: reuse `WorldKit.Part` /
 anchoring, smooth-surface, and rotation defaults every other zone already
 relies on.
 
+### New in the fun pass: Brainrot Parade and Fun Park
+
+- **Brainrot Parade** (`ParadeZone.lua`, rect centred (-210, -200), south of
+  the Hall of Fame): a red-carpet runway. Brainrots emerge from a glowing
+  portal at the west end, walk east, and leave through an exit arch. The
+  north half is an open shopping plaza with price and mutation info boards
+  facing the arrival path. A secret chest hides behind the stage. Reached via
+  Hall of Fame → Parade, and connected on to the Hatchery (through a doorway
+  in the Hatchery's west wall, shared via `WorldLayout.Doors`).
+- **Fun Park** (`FunParkZone.lua`, rect centred (210, 300), north of the
+  Market): candy-colored playground. Chain-bounce trampolines, jump pads onto
+  a floating island (chest), a spiral obby tower (chest at the summit), and
+  an ice slide from the summit back down to the entrance. Reached via
+  Market → Fun Park.
+
 ## 7. Lighting
 
-Configured in `LightingSetup.lua`, applied once from `MapBuilder.Init()`.
+Lighting is split in two:
 
-- **`Enum.Technology.Future`** — required for the Bloom/ColorCorrection/
-  Atmosphere combo below to render accurately; it's also what most current
-  "neon on dark" trend games ship with.
-- **`ClockTime = 20` (dusk), `Brightness = 1.6`** — moody without going
-  pitch black. Neon trim needs *some* ambient darkness to read as glowing;
-  full daylight would wash it out, but true night would hide the Parts'
-  own base colors.
-- **`BloomEffect` (Intensity 0.55, Threshold 1.35)** — tuned so `Neon`
-  material actually blooms (that's the whole point of using Neon strips as
-  trim) without blowing out `SmoothPlastic` surfaces, which sit below the
-  bloom threshold.
-- **`ColorCorrectionEffect` (+Saturation 0.15, +Contrast 0.1)** — a small
-  global saturation/contrast lift so the palette's accent colors read as
-  punchy without anyone having to hand-tune every Part's color.
-- **`Atmosphere`** (Density 0.32, Haze 1.4) — soft depth falloff so the
-  Arena (100 studs from the Hub) doesn't look like it's floating in a flat
-  void when seen from a distance; it also sells the "world has scale" read
-  without any skybox art.
-- **`SunRaysEffect`** (Intensity 0.12, Spread 0.65) — a light, cheap
-  sun-shaft glow through the Atmosphere haze at dusk. Kept low so it never
-  competes with UI or CTF readability; this is polish, not a mood swing.
-- **`Sky`** (`StarCount = 3000`, `SunAngularSize = 11`, `MoonAngularSize = 5`,
-  `CelestialBodiesShown = true`) — a deliberate starfield at dusk instead of
-  the engine's un-tuned default. No custom skybox/sun/moon texture ids are
-  set: inventing an `rbxassetid://` here would either fail to load or show
-  something unrelated, so every texture field is left at Roblox's own
-  built-in default.
-- **Path lamp posts** (`MapBuilder.buildPath`) — every connector path between
-  zones now gets `WorldKit.Pillar` lamp posts every ~24 studs, alternating
-  sides, capped in the same neon color as that path's own edge trim. Bare
-  colored strips between zones were the visually weakest link in an
-  otherwise-detailed map; this was the cheapest fix (a handful of extra Parts
-  per path) for the biggest perceived gap.
+- **`LightingSetup.lua` (server, once at boot)** creates the post effects
+  (Bloom, ColorCorrection, Atmosphere, SunRays, Sky) and a bright-afternoon
+  fallback look.
+- **`LightingController.lua` (client, continuous)** runs the day/night cycle,
+  per-zone color grading and decorative-light management, all driven by the
+  shared `LightingConfig.lua`.
+
+### Day/night cycle
+
+- The time of day is a pure function of `workspace:GetServerTimeNow()`
+  (`LightingConfig.StateAt`). Every client computes it locally, so **nothing
+  replicates `Lighting` over the network**, yet everyone sees the same sky.
+  The server uses the same function to ask "is it night?" (the Parade
+  boosts mutation odds at night).
+- **15-minute cycle, 70% daytime.** A young audience expects a bright,
+  readable world by default; night is the special moment where neon trim and
+  glowing Brainrots take over. A short cycle means a normal session always
+  sees at least one sunset.
+- Day ↔ night lerps `Brightness`, `Ambient`, `OutdoorAmbient`,
+  `ColorShift_Top` and `ExposureCompensation`, with a warm golden-hour tint
+  around sunrise/sunset. Night keeps a small exposure lift so players on
+  phones in bright rooms can still see where they're going.
+- **Bloom** follows the sun: high threshold by day (only `Neon` glows, sunlit
+  white plastic doesn't bleed), lower threshold and stronger intensity at
+  night.
+- **Sun rays** peak at golden hour, when a low sun through haze actually
+  looks like something, and switch off at night.
+- Players get a toast at dusk and dawn; at night it tells them the Parade
+  has better mutation odds, so the cycle has a gameplay reason to matter.
+
+### Zone moods
+
+Each zone in `WorldLayout` has a subtle color grade (`LightingConfig.ZoneMoods`:
+tint, saturation, contrast, atmosphere color/density). Crossing into a zone
+blends to its mood over ~1.6s, so each area *feels* like a distinct place
+without a loading screen. The Arena deliberately gets **less** haze and
+**more** contrast: readability of opponents beats mood in a PvP space. The
+Fun Park gets the most saturation so it reads as "the fun place" from across
+the map. Moods are subtle on purpose — a Legendary's rarity color must read
+the same everywhere.
+
+### Performance (mobile first)
+
+Most young players are on phones and tablets, so:
+
+- The controller writes to `Lighting` 4× per second, not every frame (every
+  frame only during a ~1.6s zone blend).
+- `WorldKit.Light` / `WorldKit.Emitter` tag decorative lights and particles
+  (`DecorLight`, `DecorEmitter`). Lamps fade in at dusk and are **disabled in
+  full daylight** — fewer active lights by day is a free win. On low graphics
+  quality (manual quality 1–3, or "Automatic" on a touch-only device) all
+  decorative lights and particles are switched off. Gameplay lights (CTF flag
+  stands) opt out with `Gameplay = true` and stay on.
+- `Lighting.Technology = Future` is set in `default.project.json` (Rojo
+  writes it into the place); the script assignment is only a `pcall`
+  fallback, because `Technology` isn't reliably writable from game scripts
+  and an unguarded failure there used to risk skipping the whole setup.
+
+### Fixed pieces
+
+- **`Sky`** — deliberate star count and sun/moon size; no custom texture ids
+  (inventing an `rbxassetid://` would fail to load or show something
+  unrelated), so textures stay at Roblox's defaults.
+- **Path lamp posts** (`MapBuilder.buildPath`) — lamp posts every ~24 studs
+  along every connector path, now with a real `PointLight` so paths are lit
+  at night. Paths leading to zones not visible from the Hub also get a
+  floating signpost.
 
 ### CoreGui recommendation (not implemented here)
 

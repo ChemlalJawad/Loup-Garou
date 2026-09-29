@@ -378,17 +378,33 @@ local function buildHallShell(parent: Instance, zone: WorldLayout.ZoneRect)
 	})
 
 	-- Side walls (low, mostly implied openness so the hall doesn't feel
-	-- boxed-in from the walking path).
-	for _, x in { minX + 1, maxX - 1 } do
+	-- boxed-in from the walking path). The west wall has a doorway where the
+	-- path from the Brainrot Parade arrives (WorldLayout.Doors.HatcheryWest),
+	-- so it's built as two segments either side of the gap.
+	local wallHeight = roofHeight * 0.55
+	local wallMinZ = roofCenterZ - roofDepth / 2
+	local wallMaxZ = roofCenterZ + roofDepth / 2
+	local door = WorldLayout.Doors.HatcheryWest
+
+	local function wallSegment(name: string, x: number, fromZ: number, toZ: number)
+		local depth = toZ - fromZ
+		if depth <= 0.5 then
+			return
+		end
 		WorldKit.Wall({
-			Name = `SideWall_{x}`,
-			Size = Vector3.new(1, roofHeight * 0.55, roofDepth),
-			Position = Vector3.new(x, roofHeight * 0.275, roofCenterZ),
+			Name = name,
+			Size = Vector3.new(1, wallHeight, depth),
+			Position = Vector3.new(x, wallHeight / 2, (fromZ + toZ) / 2),
 			Color = Theme.Color.Surface,
 			TrimColor = Theme.Color.AccentSecondary,
 			Parent = folder,
 		})
 	end
+
+	local westX = minX + 1
+	wallSegment("SideWall_West_South", westX, wallMinZ, door.Z - door.Width / 2)
+	wallSegment("SideWall_West_North", westX, door.Z + door.Width / 2, wallMaxZ)
+	wallSegment(`SideWall_{maxX - 1}`, maxX - 1, wallMinZ, wallMaxZ)
 
 	return folder
 end

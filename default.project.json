@@ -23,6 +23,12 @@
         }
       }
     },
+    "Lighting": {
+      "$className": "Lighting",
+      "$properties": {
+        "Technology": "Future"
+      }
+    },
     "Workspace": {
       "$className": "Workspace",
       "$properties": {
