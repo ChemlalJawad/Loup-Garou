@@ -223,6 +223,14 @@ that LightingController honours. Keep-out rects for the pond and hill band go
 into `PathRegistry`. `SkyController` adds client-side clouds and the Lucky
 Rainbow arc north of the Arena.
 
+**Map design pass:** paths switched from the UI's dark panel colour to warm
+cream cobblestone (the neon trim still colour-codes each route), and every
+lamp post has a flower bed at its foot. A dirt trail branches west off the
+Arena main street to the Lily Pond (signed "<- LILY POND"), which also has a
+picnic blanket on its west shore. Two giant statues (Gold Tralalero Astrale
+in the west wilds, Diamond Crocobrivido Vulcanico between the Market and Fun
+Park) are skyline landmarks, positioned via `WorldLayout.Landmarks`.
+
 ## 7. Lighting
 
 Lighting is split in two:

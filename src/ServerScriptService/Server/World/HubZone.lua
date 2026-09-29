@@ -46,8 +46,11 @@ local WorldKit = require(script.Parent.WorldKit)
 local HubZone = {}
 HubZone.Order = 10 -- built first among decorative zones: it's the spawn.
 
-local STONE = Color3.fromRGB(30, 30, 44)
-local STONE_LIGHT = Color3.fromRGB(40, 40, 58)
+-- Pastel lilac stone for arches, fountain and pillars: contrasts with the
+-- cream paving and stays playful. (Was near-black, which made the spawn -
+-- every player's first impression - read as a night-time car park.)
+local STONE = Color3.fromRGB(150, 140, 190)
+local STONE_LIGHT = Color3.fromRGB(178, 168, 214)
 
 local GATEWAY_COLORS = {
 	South = Theme.Color.AccentSecondary,
@@ -265,8 +268,9 @@ function HubZone.Build(parent: Instance)
 		Name = "PlazaOuterRing",
 		Size = Vector3.new(zone.Size.X, 1, zone.Size.Z),
 		Position = center + Vector3.new(0, groundY - 0.5, 0),
-		Color = Theme.Color.Background,
-		Material = Enum.Material.SmoothPlastic,
+		-- Same paving as the paths, so every walk flows into the plaza.
+		Color = WorldKit.Palette.Paving,
+		Material = Enum.Material.Cobblestone,
 		Parent = folder,
 	})
 
@@ -276,7 +280,7 @@ function HubZone.Build(parent: Instance)
 		Name = "PlazaMidRing",
 		Size = Vector3.new(tier1Size, 1, tier1Size),
 		Position = center + Vector3.new(0, groundY + 0.5, 0),
-		Color = Theme.Color.Surface,
+		Color = WorldKit.Palette.PavingLight,
 		Material = Enum.Material.SmoothPlastic,
 		Parent = folder,
 	})
@@ -298,8 +302,8 @@ function HubZone.Build(parent: Instance)
 		TileSize = 5.75,
 		Thickness = 1,
 		Position = center + Vector3.new(0, groundY + 1.5, 0),
-		ColorA = Theme.Color.SurfaceRaised,
-		ColorB = Theme.Color.Surface,
+		ColorA = WorldKit.Palette.TileCream,
+		ColorB = WorldKit.Palette.TileRose,
 		Parent = folder,
 	})
 	WorldKit.NeonBorder({
@@ -360,8 +364,8 @@ function HubZone.Build(parent: Instance)
 		Name = "ViewingDeck",
 		Size = Vector3.new(16, 1, 10),
 		Position = deckCenter,
-		Color = Theme.Color.SurfaceRaised,
-		Material = Enum.Material.SmoothPlastic,
+		Color = WorldKit.Palette.Wood,
+		Material = Enum.Material.WoodPlanks,
 		Parent = folder,
 	})
 	WorldKit.Stairs({
@@ -372,7 +376,7 @@ function HubZone.Build(parent: Instance)
 		Run = 8,
 		Axis = "Z",
 		Position = deckCenter + Vector3.new(0, -4, 8),
-		Color = Theme.Color.SurfaceRaised,
+		Color = WorldKit.Palette.Wood,
 		Parent = folder,
 	})
 	WorldKit.Railing({

@@ -86,7 +86,7 @@ ice slide, with treasure chests at the top and hidden around the map.
 | Coin Rain world event | `Shared/Events`, `Services/EventService.lua`, `Controllers/EventController.lua` |
 | Landscaping + hidden wild chests | `World/LandscapeZone.lua`, `World/PathRegistry.lua`, `WorldKit` props (Tree, Bush, FlowerBed, Rock, BalloonCluster, Mushroom) |
 | Ambient wandering Brainrots (tap to pet) | `Controllers/AmbientLifeController.lua` |
-| Base biome: edge hills + boundary, horizon, lily pond, meadows, fireflies | `World/BiomeZone.lua` |
+| Base biome: edge hills + boundary, horizon, lily pond + trail, giant statues, meadows, fireflies | `World/BiomeZone.lua`, `WorldLayout.Landmarks` |
 | Sky: drifting clouds, Lucky Rainbow arc | `Controllers/SkyController.lua` |
 | Lucky Rainbow weather (Parade mutation chance x2) | `Shared/Events/EventConfig.lua`, `Services/EventService.lua` |
 

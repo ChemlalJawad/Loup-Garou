@@ -53,6 +53,27 @@ instance streaming guide (`workspace/streaming/techniques`):
 | Disconnect connections, clean tables | MovementController detaches on stream-out |
 | `FallenPartsDestroyHeight` | Raised to -120 so anyone who falls respawns quickly |
 
+## Map design pass (done)
+
+- Paths: cream cobblestone instead of dark navy, with flower beds at every lamp.
+- A dirt trail to the Lily Pond, plus a picnic spot.
+- Two giant Gold/Diamond Brainrot statues as landmarks you can see from anywhere.
+
+## Still to improve (found in the audit)
+
+- **Dark UI palette in zones**: fixed for the Hub (spawn) with a new
+  `WorldKit.Palette` (cream paving, rose/cream dais, lilac stone, wood deck).
+  The Hatchery and Arena still use the dark Theme colours. That's defensible
+  for an indoor hatchery and a neon team arena, but worth a look in Studio.
+- **Onboarding**: no in-world arrow or quest line guiding a new player from
+  spawn to their first egg hatch. The top games do this in the first 30
+  seconds.
+- **Audio has no asset ids yet** (`AudioConfig` cues are empty strings by
+  design). Picking real sounds from the Creator Store is the biggest cheap
+  win left for "feel".
+- **No mobile playtest yet**: part count, streaming behaviour and UI scale
+  need a real phone session in Studio's device emulator.
+
 ## Roadmap (not built yet)
 
 Ranked by fun per effort for a young audience:

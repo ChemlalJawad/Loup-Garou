@@ -95,6 +95,15 @@ WorldLayout.Doors = {
 	HatcheryWest = { Z = -205, Width = 14 },
 }
 
+-- Points of interest out in the open ground (not zones: they own no rect).
+-- Shared so the thing and the trail/sign leading to it can't drift apart.
+WorldLayout.Landmarks = {
+	LilyPond = Vector3.new(-220, WorldLayout.GroundY, 330),
+	-- Giant golden Brainrot statues: skyline landmarks you can steer by.
+	StatueWest = Vector3.new(-250, WorldLayout.GroundY, 175),
+	StatueEast = Vector3.new(255, WorldLayout.GroundY, 150),
+}
+
 function WorldLayout.Get(zoneId: string): ZoneRect
 	local zone = (WorldLayout.Zones :: any)[zoneId]
 	assert(zone, `WorldLayout: unknown zone "{zoneId}"`)

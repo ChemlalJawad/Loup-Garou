@@ -11,6 +11,18 @@ local WorldKit = {}
 
 export type PartProps = { [string]: any }
 
+-- World palette: the outdoor park's colours. Deliberately separate from the
+-- UI Theme, whose near-black panel colours made floors read as asphalt next
+-- to bright grass. Neon accents still come from Theme so each area keeps
+-- its identity colour.
+WorldKit.Palette = {
+	Paving = Color3.fromRGB(226, 208, 170), -- paths, plaza outer ring
+	PavingLight = Color3.fromRGB(246, 236, 214), -- raised plaza tiers
+	TileRose = Color3.fromRGB(255, 208, 222), -- playful dais tiles
+	TileCream = Color3.fromRGB(255, 244, 216),
+	Wood = Color3.fromRGB(176, 124, 80), -- decks, stairs, docks
+}
+
 -- Props WorldKit.Part sets itself. Anything else (e.g. Shape = Ball,
 -- CanTouch, Reflectance) is passed straight through to the Part. Kept at
 -- module level so building a few thousand parts doesn't allocate this table

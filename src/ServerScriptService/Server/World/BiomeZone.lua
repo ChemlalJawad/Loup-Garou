@@ -6,7 +6,9 @@
 --     so nobody (especially a young player) can walk off the world.
 --   * A grass skirt and a ring of big distant hills out past the edge, so the
 --     horizon is countryside instead of void.
---   * A lily pond with a wooden dock in the north-west wilds.
+--   * A lily pond with a wooden dock in the north-west wilds (a dirt trail
+--     from the Arena street leads there - see MapBuilder).
+--   * Two giant golden/diamond Brainrot statues as skyline landmarks.
 --   * Meadow patches (lighter/darker grass) that break up the flat lawn.
 --   * Fireflies at night and drifting pollen by day (tagged DecorEmitter +
 --     DecorTime, so LightingController follows the day/night cycle and turns
@@ -24,6 +26,9 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local WorldLayout = require(ReplicatedStorage.Shared.WorldLayout)
+local EggConfig = require(ReplicatedStorage.Shared.Eggs.EggConfig)
+local BrainrotModels = require(ReplicatedStorage.Shared.Brainrots.BrainrotModels)
+local Mutations = require(ReplicatedStorage.Shared.Brainrots.Mutations)
 local WorldKit = require(script.Parent.WorldKit)
 local PathRegistry = require(script.Parent.PathRegistry)
 
@@ -38,7 +43,7 @@ local HILL_OUTWARD_OFFSET = 8 -- hill centres sit just outside the edge
 local HILL_BAND = 30 -- how far hills reach inward; kept free of props
 local WALL_HEIGHT = 220 -- tall enough that jump pads can't clear it
 
-local POND_CENTER = Vector3.new(-220, 0, 330)
+local POND_CENTER = WorldLayout.Landmarks.LilyPond
 local POND_DIAMETER = 46
 
 local MEADOW_PATCHES = 45
@@ -209,8 +214,9 @@ end
 local function buildPond(parent: Instance, rng: Random)
 	local groundY = WorldLayout.GroundY
 	local centre = Vector3.new(POND_CENTER.X, groundY, POND_CENTER.Z)
-	if not isOpenGround(centre, POND_DIAMETER / 2 + 8) then
-		warn("[BiomeZone] pond site overlaps a zone or path - skipped")
+	-- Zones only: MapBuilder's trail deliberately runs right up to the beach.
+	if insideAnyZone(centre, POND_DIAMETER / 2 + 8) then
+		warn("[BiomeZone] pond site overlaps a zone - skipped")
 		return
 	end
 	local pond = WorldKit.Group("LilyPond", parent)
@@ -317,6 +323,30 @@ local function buildPond(parent: Instance, rng: Random)
 		MaxDistance = 90,
 	})
 
+	-- Picnic blanket on the west shore: a hangout spot to sit with friends.
+	local picnic = centre + Vector3.new(-(radius + 7), 0, 4)
+	for row = 0, 1 do
+		for col = 0, 1 do
+			decor({
+				Name = "PicnicBlanket",
+				Size = Vector3.new(3, 0.1, 3),
+				Position = picnic + Vector3.new(col * 3 - 1.5, 0.03, row * 3 - 1.5),
+				Color = if (row + col) % 2 == 0 then Color3.fromRGB(230, 70, 80) else Color3.fromRGB(250, 245, 235),
+				Material = Enum.Material.Fabric,
+				Parent = pond,
+			})
+		end
+	end
+	WorldKit.Part({
+		Name = "PicnicBasket",
+		Size = Vector3.new(1.6, 1.1, 1.1),
+		Position = picnic + Vector3.new(1.2, 0.6, 1.2),
+		Color = Color3.fromRGB(176, 124, 70),
+		Material = Enum.Material.Wood,
+		CastShadow = false,
+		Parent = pond,
+	})
+
 	-- Fireflies over the water at night, pollen by day.
 	local anchor = decor({
 		Name = "PondMotes",
@@ -341,6 +371,98 @@ local function buildPond(parent: Instance, rng: Random)
 		Parent = anchor,
 	})
 	fireflies:SetAttribute("DecorTime", "Night")
+end
+
+-- === Giant Brainrot statues =================================================
+
+-- The two rarest characters, cast in gold and diamond, five times life size,
+-- facing the Central Plaza. Skyline landmarks ("meet at the gold shark!")
+-- and a preview of what the rarest eggs hold.
+local STATUES = {
+	{ Spot = WorldLayout.Landmarks.StatueWest, Species = "TralaleroAstrale", Rarity = "Secret", Mutation = "Gold" },
+	{ Spot = WorldLayout.Landmarks.StatueEast, Species = "CrocobrividoVulcanico", Rarity = "Legendary", Mutation = "Diamond" },
+}
+local STATUE_SCALE = 5
+local PEDESTAL_DIAMETER = 14
+local PEDESTAL_HEIGHT = 3
+
+local function buildStatue(parent: Instance, statue: { Spot: Vector3, Species: string, Rarity: string, Mutation: string })
+	local spot = Vector3.new(statue.Spot.X, WorldLayout.GroundY, statue.Spot.Z)
+	if not isOpenGround(spot, PEDESTAL_DIAMETER / 2 + 2) then
+		warn(`[BiomeZone] statue site for {statue.Species} overlaps a zone or path - skipped`)
+		return
+	end
+	PathRegistry.Add(spot, Vector3.new(PEDESTAL_DIAMETER + 8, 1, PEDESTAL_DIAMETER + 8))
+
+	local group = WorldKit.Group(`Statue_{statue.Species}`, parent)
+	WorldKit.UprightCylinder({
+		Name = "Pedestal",
+		Position = spot + Vector3.new(0, PEDESTAL_HEIGHT / 2, 0),
+		Height = PEDESTAL_HEIGHT,
+		Diameter = PEDESTAL_DIAMETER,
+		Color = Color3.fromRGB(236, 230, 214),
+		Material = Enum.Material.Marble,
+		Parent = group,
+	})
+	WorldKit.UprightCylinder({
+		Name = "PedestalTrim",
+		Position = spot + Vector3.new(0, PEDESTAL_HEIGHT + 0.1, 0),
+		Height = 0.2,
+		Diameter = PEDESTAL_DIAMETER + 0.6,
+		Color = Color3.fromRGB(255, 205, 80),
+		Material = Enum.Material.Neon,
+		CanCollide = false,
+		CastShadow = false,
+		Parent = group,
+	})
+
+	local ok, result = pcall(BrainrotModels.BuildStatic, statue.Species, statue.Rarity :: any)
+	if not ok or typeof(result) ~= "Instance" then
+		warn(`[BiomeZone] could not build statue {statue.Species}: {result}`)
+		return
+	end
+	local model = result :: Model
+	model.Name = "Statue"
+	model:ScaleTo(STATUE_SCALE)
+	-- Models are built around the origin; face the Plaza, then sit the
+	-- model's lowest point on the pedestal.
+	local buildPivot = model:GetPivot()
+	local hub = WorldLayout.Get("Hub").Center
+	local lookAt = Vector3.new(hub.X, spot.Y, hub.Z)
+	model:PivotTo(CFrame.lookAt(spot, lookAt) * buildPivot)
+	local boxCFrame, boxSize = model:GetBoundingBox()
+	local bottom = boxCFrame.Position.Y - boxSize.Y / 2
+	model:PivotTo(model:GetPivot() + Vector3.new(0, spot.Y + PEDESTAL_HEIGHT + 0.2 - bottom, 0))
+	Mutations.ApplyVisual(model, statue.Mutation)
+	for _, descendant in model:GetDescendants() do
+		if descendant:IsA("BasePart") then
+			descendant.Anchored = true
+			-- Giant statue: solid, so kids can climb onto its feet.
+			-- (BrainrotModels already limits shadows to the root part.)
+			descendant.CanCollide = true
+		end
+	end
+	model.Parent = group
+
+	local plaque = WorldKit.Part({
+		Name = "Plaque",
+		Size = Vector3.new(0.5, 0.5, 0.5),
+		Position = spot + Vector3.new(0, PEDESTAL_HEIGHT, 0),
+		Transparency = 1,
+		CanCollide = false,
+		CastShadow = false,
+		Parent = group,
+	})
+	WorldKit.Sign({
+		Name = "StatueSign",
+		Adornee = plaque,
+		Text = Mutations.DecorateName(EggConfig.DisplayName(statue.Species), statue.Mutation),
+		Color = Color3.fromRGB(255, 225, 120),
+		Size = UDim2.new(0, 300, 0, 44),
+		TextSize = 22,
+		StudsOffset = Vector3.new(0, boxSize.Y + 4, 0),
+		MaxDistance = 160,
+	})
 end
 
 -- === Meadow patches + fireflies ==============================================
@@ -431,6 +553,9 @@ function BiomeZone.Build(parent: Instance)
 	local rng = Random.new(SEED)
 	buildEdge(folder, rng)
 	buildPond(folder, rng)
+	for _, statue in STATUES do
+		buildStatue(folder, statue)
+	end
 	buildMeadow(folder, rng)
 end
 
