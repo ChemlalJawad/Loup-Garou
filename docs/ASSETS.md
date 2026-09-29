@@ -120,6 +120,16 @@ Capuchino Assasino, Balerina Capuchino...).
 for example "3D models: Eks.Art, Aizen (CC BY 4.0, Sketchfab)". Avoid any
 **NC** (NonCommercial) model: the game sells Robux items.
 
+**Download them in one command** (licence-checked, refuses NC/ND, writes the
+credits file). Needs your Sketchfab API token (Settings → Password & API):
+
+```bash
+export SKETCHFAB_TOKEN=...        # Windows PowerShell: $env:SKETCHFAB_TOKEN="..."
+python tools/models/download_models.py
+```
+
+Files land in `assets/models/` (git-ignored) with `CREDITS.txt`.
+
 Importing: in Studio, Avatar/Home tab → **Import 3D**, pick the FBX, then
 drag the resulting Model into `ReplicatedStorage/AssetOverrides/Brainrots`
 and rename it.
@@ -130,6 +140,16 @@ and rename it.
 |---|---|---|---|---|
 | [Egg mesh](https://create.roblox.com/store/asset/5168800671/Egg-mesh) | @francherre | 96% (200+ votes) | none ✅ | all three eggs: recolour it (gold for `GoldenEgg`, dark/neon for `SecretEgg`) |
 | [Egg Pets KIT](https://create.roblox.com/store/asset/15850322685/Egg-Pets-KIT) | @Rrg_125 | 87% (100+ votes) | **has scripts** ⚠️ | take the egg models only; the drop-in slot strips the scripts, but don't put the kit itself in the game |
+
+Fastest way to get the Egg mesh: paste this into Studio's **Command Bar**
+(View → Command Bar) and press Enter. It inserts the free model into
+`AssetOverrides/Eggs` for all three eggs:
+
+```lua
+local eggs = game.ReplicatedStorage.AssetOverrides.Eggs; for name, color in { BasicEgg = Color3.fromRGB(245, 240, 225), GoldenEgg = Color3.fromRGB(255, 200, 60), SecretEgg = Color3.fromRGB(120, 60, 200) } do local m = game:GetService("InsertService"):LoadAsset(5168800671); local egg = m:FindFirstChildWhichIsA("Model") or m; egg.Name = name; for _, p in egg:GetDescendants() do if p:IsA("BasePart") then p.Color = color end end; egg.Parent = eggs; if egg ~= m then m:Destroy() end end
+```
+
+Then save the place (Ctrl+S).
 
 Not individually checked: [Golden Egg](https://create.roblox.com/store/asset/14042411629/Golden-Egg),
 [Dragon Egg](https://create.roblox.com/store/asset/380074338/Dragon-Egg),

@@ -16,3 +16,6 @@ Thumbs.db
 .vscode/*
 !.vscode/extensions.json
 !.vscode/settings.json
+
+# Downloaded third-party models (tools/models/download_models.py): not redistributed via git
+assets/models/
