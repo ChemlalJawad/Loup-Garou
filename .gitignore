@@ -17,5 +17,7 @@ Thumbs.db
 !.vscode/extensions.json
 !.vscode/settings.json
 
-# Downloaded third-party models (tools/models/download_models.py): not redistributed via git
-assets/models/
+# Raw downloads from tools/models/download_models.py (the prepared,
+# Roblox-ready .fbx files in assets/models/ ARE committed)
+assets/models/*.glb
+assets/models/*_gltf.zip

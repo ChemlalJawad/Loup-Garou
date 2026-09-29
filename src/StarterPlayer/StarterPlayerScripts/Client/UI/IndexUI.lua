@@ -1,6 +1,6 @@
 --!strict
 -- Builds the Collection Index screen entirely from UIKit components: a
--- completion meter, a rarity tab bar over a grid of all 16 Brainrots
+-- completion meter, a rarity tab bar over a grid of all 17 Brainrots
 -- (discovered entries show name/rarity/hatch count, undiscovered show the
 -- ItemCard `Locked` silhouette state), and a milestones list with CLAIM
 -- buttons that light up once satisfied.

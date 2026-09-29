@@ -95,7 +95,43 @@ Brainrot ids: see `EggConfig.SpeciesByRarity`, e.g. `PolpoMotorino`,
 clearly allows others to use. Many "brainrot" models on the Toolbox are
 re-uploads of other people's art.
 
-## 4. Recommended models (checked September 2026)
+## 4. Ready-to-import models (already prepared, in `assets/models/`)
+
+Three models are **already prepared** for Roblox:
+
+- Tralalero, Crocodilo and Tung Tung, from the Sketchfab zips.
+- Decimated to at most 15k triangles, with a 1024 px texture embedded.
+- Turned to face −Z, which is what the game expects.
+- The Nike logos on Tralalero's shoes are painted out.
+
+See `assets/models/preview.png`.
+
+| File | Game id | Tris |
+|---|---|---|
+| `CrocobrividoVulcanico.fbx` | `CrocobrividoVulcanico` (Legendary) | 10,000 |
+| `TralaleroAstrale.fbx` | `TralaleroAstrale` (Secret) | 15,000 |
+| `TungTungTamburo.fbx` | `TungTungTamburo` (new Epic species) | 15,000 |
+
+For each file:
+
+1. In Studio, open **Home → Import 3D**, pick the `.fbx`, and import with
+   default settings. If it comes in untextured, drop the matching
+   `*_texture.png` on the MeshPart's `TextureID`.
+2. Rename the imported Model to the game id.
+3. Drag it into `ReplicatedStorage → AssetOverrides → Brainrots`.
+4. Save the place.
+
+The game resizes it, strips scripts, and adds the rarity glow. If a model
+walks backwards, rotate it 180° in Studio before step 3.
+
+**Credits are mandatory (CC BY):** paste the last line of
+`assets/models/CREDITS.txt` into the game description.
+
+Rebuild from the original zips with `tools/models/prepare_models.py`
+(Blender as a Python module: `pip install bpy`), and remove the logo with
+`tools/models/clean_logo.py`.
+
+## 5. Recommended models (checked September 2026)
 
 Licence, triangle count and scripts were checked on each page. Roblox's
 **20,000-triangle limit per MeshPart** matters: anything above it must be

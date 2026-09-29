@@ -186,6 +186,17 @@ local abilities: { [string]: AbilityDefinition } = {
 		KnockbackForce = 90,
 	},
 
+	TungTungTamburo = {
+		Id = "TungTungTamburo",
+		DisplayName = "Bat Bonk",
+		Archetype = "AreaEffect",
+		Cooldown = 14,
+		Radius = 9,
+		SlowMultiplier = 0,
+		Duration = 1.2,
+		Stun = true,
+	},
+
 	-- Legendary -----------------------------------------------------------
 	CrocobrividoVulcanico = {
 		Id = "CrocobrividoVulcanico",

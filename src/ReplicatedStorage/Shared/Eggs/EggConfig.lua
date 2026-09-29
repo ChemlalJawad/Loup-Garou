@@ -48,6 +48,7 @@ local speciesByRarity: { [string]: { string } } = {
 		"FenicotteroPizzaiolo",
 		"PipistrelloMarinaro",
 		"CannoloTrombonini",
+		"TungTungTamburo",
 	},
 	Legendary = {
 		"CrocobrividoVulcanico",
@@ -74,6 +75,7 @@ local displayNames: { [string]: string } = {
 	FenicotteroPizzaiolo = "Fenicottero Pizzaiolo",
 	PipistrelloMarinaro = "Pipistrello Marinaro",
 	CannoloTrombonini = "Cannolo Trombonini",
+	TungTungTamburo = "Tung Tung Tamburo",
 	CrocobrividoVulcanico = "Crocobrivido Vulcanico",
 	SqualezzaFerroviaria = "Squalezza Ferroviaria",
 	TralaleroAstrale = "Tralalero Astrale",

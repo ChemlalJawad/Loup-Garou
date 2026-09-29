@@ -1,5 +1,5 @@
 --!strict
--- Procedural part-built factory for the 16 canonical Brainrots
+-- Procedural part-built factory for the 17 canonical Brainrots
 -- (docs/BRAINROT_ROSTER.md). No mesh/import pipeline exists in this project,
 -- so every character is assembled from primitive Parts/WedgeParts welded
 -- into a Model, in code, here.
@@ -785,6 +785,33 @@ characters.TralaleroAstrale = {
 	end,
 }
 
+-- Tung Tung Tamburo - a walking wooden log with a big grin and a bat.
+characters.TungTungTamburo = {
+	Id = "TungTungTamburo",
+	Build = function(ctx)
+		local wood = Color3.fromRGB(150, 105, 65)
+		local legLength = 0.9
+		local logHeight = 1.8
+		local logCenterY = legLength + logHeight / 2
+		addCylinderY(ctx, "Torso", 1.1, logHeight, CFrame.new(0, logCenterY, 0), wood, Enum.Material.Wood)
+		-- Cut rings on top of the log.
+		addCylinderY(ctx, "LogTop", 1.0, 0.06, CFrame.new(0, legLength + logHeight + 0.01, 0), Color3.fromRGB(200, 155, 100), Enum.Material.Wood)
+		-- Big cartoon eyes and a grin, on the -Z (front) side.
+		for i, x in { 0.22, -0.22 } do
+			addBall(ctx, `Eye{i}`, 0.32, CFrame.new(x, logCenterY + 0.45, -0.46), Color3.fromRGB(250, 250, 245))
+			addBall(ctx, `Pupil{i}`, 0.15, CFrame.new(x, logCenterY + 0.45, -0.61), Color3.fromRGB(25, 20, 18))
+		end
+		addBlock(ctx, "Grin", Vector3.new(0.45, 0.08, 0.06), CFrame.new(0, logCenterY + 0.1, -0.55), Color3.fromRGB(60, 35, 25))
+		-- Skinny arms and legs.
+		addBlock(ctx, "ArmLeft", Vector3.new(0.14, 0.9, 0.14), CFrame.new(-0.66, logCenterY - 0.1, 0) * CFrame.Angles(0, 0, math.rad(-12)), wood)
+		addBlock(ctx, "ArmRight", Vector3.new(0.14, 0.9, 0.14), CFrame.new(0.66, logCenterY - 0.1, -0.1) * CFrame.Angles(math.rad(-20), 0, math.rad(12)), wood)
+		addCylinderY(ctx, "LegLeft", 0.18, legLength, CFrame.new(-0.25, legLength / 2, 0), Color3.fromRGB(120, 85, 55))
+		addCylinderY(ctx, "LegRight", 0.18, legLength, CFrame.new(0.25, legLength / 2, 0), Color3.fromRGB(120, 85, 55))
+		-- The bat: its signature detail, so it's the accent that lights up.
+		accent(ctx, addCylinderY(ctx, "Bat", 0.22, 1.4, CFrame.new(0.78, logCenterY - 0.45, -0.45) * CFrame.Angles(math.rad(-35), 0, 0), Color3.fromRGB(220, 180, 120), ACCENT_NEON))
+	end,
+}
+
 -- === Public API ==============================================================
 
 local function buildProcedural(brainrotId: string, rarity: Rarity, anchored: boolean): Model
@@ -859,8 +886,12 @@ local function buildFromOverride(source: Model, brainrotId: string, rarity: Rari
 	reference:Destroy()
 	local model = ctx.Model
 	local _, size = model:GetBoundingBox()
-	if size.Y > 0 then
-		model:ScaleTo(model:GetScale() * math.clamp(referenceSize.Y / size.Y, 0.01, 100))
+	-- Match on the largest dimension, not height: a flat, plane-shaped model
+	-- (Crocobrivido's bomber) matched on height alone would come out huge.
+	local largest = math.max(size.X, size.Y, size.Z)
+	local referenceLargest = math.max(referenceSize.X, referenceSize.Y, referenceSize.Z)
+	if largest > 0 then
+		model:ScaleTo(model:GetScale() * math.clamp(referenceLargest / largest, 0.01, 100))
 	end
 	local frame, scaledSize = model:GetBoundingBox()
 	local targetBottom = referenceFrame.Position - Vector3.new(0, referenceSize.Y / 2, 0)

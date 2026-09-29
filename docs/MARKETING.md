@@ -11,8 +11,9 @@ Everything below assumes the confirmed core loop: hatch an Egg (Basic /
 Golden / Secret, paid in Coins or Gems) → roll a Brainrot across 5 rarities
 (Common → Rare → Epic → Legendary → Secret) → equip one → its unique ability
 fires in Capture the Flag (Team Ember vs. Team Frost) → win rounds, earn
-Coins, hatch more. All 16 Brainrots are original designs in the meme's
-Italian-absurdist style — never market them as *the* famous viral
+Coins, hatch more. All 17 Brainrots are original designs in the meme's
+Italian-absurdist style (optional imported 3D models are community-made,
+CC BY, credited in the game description; see docs/ASSETS.md) — never market them as *the* famous viral
 characters. That's both a legal safety rail and a copy angle: "our own
 unhinged cast," not a knockoff.
 
