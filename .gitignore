@@ -4,9 +4,9 @@
 *.rbxm
 *.rbxmx
 
-# Aftman / Foreman tool binaries
+# Aftman / Foreman / Rokit tool binaries (tools/ itself holds our scripts)
 .aftman/
-/tools/
+.rokit/
 
 # OS
 .DS_Store
