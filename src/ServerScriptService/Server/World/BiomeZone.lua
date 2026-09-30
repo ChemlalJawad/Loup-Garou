@@ -435,33 +435,43 @@ local function buildStatue(parent: Instance, statue: { Spot: Vector3, Species: s
 		Parent = group,
 	})
 
-	local ok, result = pcall(BrainrotModels.BuildStatic, statue.Species, statue.Rarity :: any)
-	if not ok or typeof(result) ~= "Instance" then
-		warn(`[BiomeZone] could not build statue {statue.Species}: {result}`)
-		return
-	end
-	local model = result :: Model
-	model.Name = "Statue"
-	model:ScaleTo(STATUE_SCALE)
-	-- Models are built around the origin; face the Plaza, then sit the
-	-- model's lowest point on the pedestal.
-	local buildPivot = model:GetPivot()
-	local hub = WorldLayout.Get("Hub").Center
-	local lookAt = Vector3.new(hub.X, spot.Y, hub.Z)
-	model:PivotTo(CFrame.lookAt(spot, lookAt) * buildPivot)
-	local boxCFrame, boxSize = model:GetBoundingBox()
-	local bottom = boxCFrame.Position.Y - boxSize.Y / 2
-	model:PivotTo(model:GetPivot() + Vector3.new(0, spot.Y + PEDESTAL_HEIGHT + 0.2 - bottom, 0))
-	Mutations.ApplyVisual(model, statue.Mutation)
-	for _, descendant in model:GetDescendants() do
-		if descendant:IsA("BasePart") then
-			descendant.Anchored = true
-			-- Giant statue: solid, so kids can climb onto its feet.
-			-- (BrainrotModels already limits shadows to the root part.)
-			descendant.CanCollide = true
+	-- Builds (or rebuilds) the statue itself; returns its size, or nil.
+	local current: Model? = nil
+	local function placeStatue(): Vector3?
+		local ok, result = pcall(BrainrotModels.BuildStatic, statue.Species, statue.Rarity :: any)
+		if not ok or typeof(result) ~= "Instance" then
+			warn(`[BiomeZone] could not build statue {statue.Species}: {result}`)
+			return nil
 		end
+		local model = result :: Model
+		model.Name = "Statue"
+		model:ScaleTo(STATUE_SCALE)
+		-- Models are built around the origin; face the Plaza, then sit the
+		-- model's lowest point on the pedestal.
+		local buildPivot = model:GetPivot()
+		local hub = WorldLayout.Get("Hub").Center
+		local lookAt = Vector3.new(hub.X, spot.Y, hub.Z)
+		model:PivotTo(CFrame.lookAt(spot, lookAt) * buildPivot)
+		local boxCFrame, boxSize = model:GetBoundingBox()
+		local bottom = boxCFrame.Position.Y - boxSize.Y / 2
+		model:PivotTo(model:GetPivot() + Vector3.new(0, spot.Y + PEDESTAL_HEIGHT + 0.2 - bottom, 0))
+		Mutations.ApplyVisual(model, statue.Mutation)
+		for _, descendant in model:GetDescendants() do
+			if descendant:IsA("BasePart") then
+				descendant.Anchored = true
+				-- Giant statue: solid, so kids can climb onto its feet.
+				-- (BrainrotModels already limits shadows to the root part.)
+				descendant.CanCollide = true
+			end
+		end
+		if current then
+			current:Destroy()
+		end
+		current = model
+		model.Parent = group
+		return boxSize
 	end
-	model.Parent = group
+	local boxSize = placeStatue() or Vector3.new(0, 10, 0)
 
 	local plaque = WorldKit.Part({
 		Name = "Plaque",
@@ -482,6 +492,16 @@ local function buildStatue(parent: Instance, statue: { Spot: Vector3, Species: s
 		StudsOffset = Vector3.new(0, boxSize.Y + 4, 0),
 		MaxDistance = 160,
 	})
+
+	-- Imported art (ModelAssetService) can arrive after the map is built;
+	-- swap the statue over to it the moment it does.
+	BrainrotModels.WatchOverride(statue.Species, function()
+		local newSize = placeStatue()
+		local sign = plaque:FindFirstChild("StatueSign")
+		if newSize and sign and sign:IsA("BillboardGui") then
+			sign.StudsOffset = Vector3.new(0, newSize.Y + 4, 0)
+		end
+	end)
 end
 
 -- === Meadow patches + fireflies ==============================================

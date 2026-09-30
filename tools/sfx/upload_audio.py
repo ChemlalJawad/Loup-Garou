@@ -82,11 +82,13 @@ def request(method: str, url: str, api_key: str, body: bytes | None = None, cont
         raise RuntimeError(f"HTTP {e.code}: {e.read().decode('utf-8', 'replace')}") from None
 
 
-def upload(path: str, name: str, api_key: str, creator: dict) -> str:
+def upload_file(path: str, display_name: str, asset_type: str, content_type: str, api_key: str, creator: dict) -> str:
+    """Creates one asset via Open Cloud and waits for it; returns the asset id.
+    Shared with tools/models/upload_models.py."""
     meta = {
-        "assetType": "Audio",
-        "displayName": f"BHW {name}"[:50],
-        "description": "Brainrot Hatch Wars sound effect (original, synthesized).",
+        "assetType": asset_type,
+        "displayName": display_name[:50],
+        "description": "Brainrot Hatch Wars asset.",
         "creationContext": {"creator": creator},
     }
     boundary = uuid.uuid4().hex
@@ -96,22 +98,26 @@ def upload(path: str, name: str, api_key: str, creator: dict) -> str:
         f"--{boundary}\r\nContent-Disposition: form-data; name=\"request\"\r\n\r\n".encode(),
         json.dumps(meta).encode(),
         f"\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"fileContent\"; filename=\"{os.path.basename(path)}\"\r\n"
-        "Content-Type: audio/ogg\r\n\r\n".encode(),
+        f"Content-Type: {content_type}\r\n\r\n".encode(),
         file_bytes,
         f"\r\n--{boundary}--\r\n".encode(),
     ])
     op = request("POST", f"{API}/assets", api_key, body, f"multipart/form-data; boundary={boundary}")
     op_path = op.get("path") or f"operations/{op.get('operationId')}"
-    for _ in range(60):
+    for _ in range(90):
         if op.get("done"):
             break
         time.sleep(2)
         op = request("GET", f"{API}/{op_path}", api_key)
     if not op.get("done"):
-        raise RuntimeError("upload still processing after 2 minutes - check Creator Dashboard")
+        raise RuntimeError("upload still processing after 3 minutes - check Creator Dashboard")
     if "error" in op:
         raise RuntimeError(json.dumps(op["error"]))
     return op["response"]["assetId"]
+
+
+def upload(path: str, name: str, api_key: str, creator: dict) -> str:
+    return upload_file(path, f"BHW {name}", "Audio", "audio/ogg", api_key, creator)
 
 
 def main() -> int:

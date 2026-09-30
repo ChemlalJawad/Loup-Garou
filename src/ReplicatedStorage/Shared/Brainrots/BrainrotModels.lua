@@ -927,6 +927,22 @@ function BrainrotModels.BuildStatic(brainrotId: string, rarity: Rarity): Model
 	return build(brainrotId, rarity, true)
 end
 
+-- Calls `callback` whenever override art for `brainrotId` appears in
+-- ReplicatedStorage.AssetOverrides.Brainrots (e.g. loaded at runtime by
+-- ModelAssetService), so things built earlier can rebuild with it.
+function BrainrotModels.WatchOverride(brainrotId: string, callback: () -> ()): RBXScriptConnection?
+	local root = ReplicatedStorage:FindFirstChild("AssetOverrides")
+	local folder = root and root:FindFirstChild("Brainrots")
+	if not folder then
+		return nil
+	end
+	return folder.ChildAdded:Connect(function(child)
+		if child.Name == brainrotId then
+			task.defer(callback)
+		end
+	end)
+end
+
 -- Every buildable id, for callers that want to sanity-check or iterate (e.g.
 -- a showcase that spawns one of each).
 function BrainrotModels.GetKnownIds(): { string }
