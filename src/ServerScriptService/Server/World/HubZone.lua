@@ -44,6 +44,7 @@ local Constants = require(ReplicatedStorage.Shared.Constants)
 local Theme = require(ReplicatedStorage.Shared.Theme)
 local WorldLayout = require(ReplicatedStorage.Shared.WorldLayout)
 local WorldKit = require(script.Parent.WorldKit)
+local HubWelcome = require(script.Parent.HubWelcome)
 
 local HubZone = {}
 HubZone.Order = 10 -- built first among decorative zones: it's the spawn.
@@ -375,6 +376,9 @@ function HubZone.Build(parent: Instance)
 		StudsOffset = Vector3.new(0, 11, 0),
 		MaxDistance = 90,
 	})
+	-- Rainbow arch, bunting, map board, flowers (see HubWelcome).
+	HubWelcome.Build(folder, Vector3.new(spawnCentre.X, groundY + 2, spawnCentre.Z))
+
 	-- Sparkles rising off the pad (decor: off on low graphics quality).
 	WorldKit.Emitter({
 		Name = "SpawnSparkles",

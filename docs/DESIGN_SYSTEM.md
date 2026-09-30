@@ -244,6 +244,17 @@ Park) are skyline landmarks, positioned via `WorldLayout.Landmarks`.
   tag).
 - **Respawn**: 3 s instead of Roblox's default 5 (`Players.RespawnTime` in
   `default.project.json`).
+- **Welcome corner** (`HubWelcome.lua`), built around the pad:
+  - a pastel rainbow arch just behind the pad, with cloud feet. The default
+    camera sits behind the character, so it frames the first view;
+  - bunting from the arch to the colonnade;
+  - flower beds;
+  - a **"WHERE TO GO" map board** drawn from `WorldLayout`, with a "YOU ARE
+    HERE" marker.
+- **Greeters** (`GreeterController`, client-only): Pinguino, Tung Tung and
+  Cannolini stand around the pad, sway, turn to face nearby players, and
+  chat in speech bubbles. "Say hi" makes them hop and throw hearts.
+- **Confetti**: the first spawn of each session gets a confetti pop.
 
 ### Themed wilds (`WildsZone.lua`, Order 160)
 

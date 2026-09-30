@@ -19,6 +19,13 @@ local SpawnController = {}
 
 local localPlayer = Players.LocalPlayer
 local welcomed = false
+local CONFETTI = {
+	Color3.fromRGB(255, 120, 150),
+	Color3.fromRGB(255, 210, 90),
+	Color3.fromRGB(130, 220, 150),
+	Color3.fromRGB(120, 190, 255),
+	Color3.fromRGB(200, 150, 255),
+}
 
 local function onCharacter(character: Model)
 	local root = character:WaitForChild("HumanoidRootPart", 10)
@@ -32,6 +39,12 @@ local function onCharacter(character: Model)
 	FX.Shockwave(feet + Vector3.new(0, 0.2, 0), Theme.Color.AccentPrimary)
 	if not welcomed then
 		welcomed = true
+		-- First arrival of the session: a confetti pop in party colours.
+		for i, color in CONFETTI do
+			task.delay(i * 0.08, function()
+				FX.Burst(feet + Vector3.new(0, 4 + i * 0.4, 0), color, 16)
+			end)
+		end
 		Shell.Notify(`Welcome to {Constants.GAME_NAME}!`, "Success")
 	end
 end
