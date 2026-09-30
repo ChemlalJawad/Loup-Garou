@@ -230,6 +230,21 @@ function WorldKit.Group(name: string, parent: Instance?): Folder
 	return folder
 end
 
+-- The terrain surface height under `position` (the ground rolls a little,
+-- see GroundSculpt). Falls back to the given Y when there's no terrain
+-- there. Only terrain is hit, so props already placed never stack.
+local groundParams = RaycastParams.new()
+groundParams.FilterType = Enum.RaycastFilterType.Include
+groundParams.FilterDescendantsInstances = { workspace.Terrain }
+
+function WorldKit.GroundAt(position: Vector3): Vector3
+	local hit = workspace:Raycast(position + Vector3.new(0, 20, 0), Vector3.new(0, -40, 0), groundParams)
+	if hit and hit.Material ~= Enum.Material.Water then
+		return Vector3.new(position.X, hit.Position.Y, position.Z)
+	end
+	return position
+end
+
 -- A Model for one small self-contained prop (a tree, a bush). With
 -- instance streaming on, Atomic means the whole prop streams in and out as a
 -- unit, so nobody ever sees a canopy floating without its trunk.

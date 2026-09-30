@@ -256,6 +256,27 @@ Park) are skyline landmarks, positioned via `WorldLayout.Landmarks`.
   chat in speech bubbles. "Say hi" makes them hop and throw hearts.
 - **Confetti**: the first spawn of each session gets a confetti pop.
 
+### Ground (`GroundSculpt.lua`, run by TerrainZone)
+
+The lawn follows the DevForum terraining guides' recipe for good-looking
+Smooth Terrain:
+
+- **Material patchwork**: soft patches of short, sunny LeafyGrass (about 25%
+  of the lawn) among long, blade-animated Grass, plus the odd bare-earth patch.
+- **Rolling ground**: up to 1.6 studs of gentle undulation. It stays
+  perfectly flat within 6 studs of zones, paths, wilds and landmarks, then
+  fades in over 16 studs.
+- **Worn edges**: a broken band of dirt along paths and zone edges, and a
+  dirt disc under every tree and bush.
+- **Layered detail**: wildflower scatters, a new LandscapeZone prop kind
+  (230 props now, up from 190).
+- **Colours**: cartoon-bright grass (100,178,82), sunny short grass
+  (132,198,92), warm soil (158,122,84).
+
+Props snap to the terrain surface with `WorldKit.GroundAt`; ambient
+wanderers raycast the ground as they walk. One ReadVoxels/WriteVoxels pass,
+deterministic `math.noise`. Preview: `docs/ground-preview.png`.
+
 ### Themed wilds (`WildsZone.lua`, Order 160)
 
 Rects live in `WorldLayout.Wilds`; plan in `docs/map-plan.png`.

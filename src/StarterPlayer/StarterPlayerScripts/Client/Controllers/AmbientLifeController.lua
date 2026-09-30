@@ -45,6 +45,16 @@ local localPlayer = Players.LocalPlayer
 local rng = Random.new()
 local wanderers: { Wanderer } = {}
 
+-- The lawn rolls gently (GroundSculpt): follow the terrain surface.
+local groundParams = RaycastParams.new()
+groundParams.FilterType = Enum.RaycastFilterType.Include
+groundParams.FilterDescendantsInstances = { Workspace.Terrain }
+
+local function groundHeight(position: Vector3): number
+	local hit = Workspace:Raycast(position + Vector3.new(0, 12, 0), Vector3.new(0, -24, 0), groundParams)
+	return if hit then hit.Position.Y else WorldLayout.GroundY
+end
+
 local function insideAnyZone(position: Vector3): boolean
 	for _, zone in WorldLayout.Zones :: { [string]: WorldLayout.ZoneRect } do
 		if
@@ -124,15 +134,18 @@ end
 local function step(wanderer: Wanderer, now: number, dt: number)
 	if now >= wanderer.IdleUntil then
 		local toTarget = wanderer.Target - wanderer.Position
-		local distance = toTarget.Magnitude
+		local distance = Vector3.new(toTarget.X, 0, toTarget.Z).Magnitude
 		if distance < 0.5 then
 			-- Arrived: idle a moment, then choose somewhere new near home.
 			wanderer.IdleUntil = now + rng:NextNumber(2, 5)
 			wanderer.Target = randomLawnPoint(wanderer.Home, WANDER_RADIUS) or wanderer.Home
 		else
-			local direction = toTarget / distance
+			-- Walk on the flat plane, then sit on the terrain surface.
+			local flat = Vector3.new(toTarget.X, 0, toTarget.Z)
+			local direction = if flat.Magnitude > 0.01 then flat.Unit else Vector3.new(0, 0, -1)
 			wanderer.Facing = direction
-			wanderer.Position += direction * math.min(distance, WALK_SPEED * dt)
+			local moved = wanderer.Position + direction * math.min(flat.Magnitude, WALK_SPEED * dt)
+			wanderer.Position = Vector3.new(moved.X, groundHeight(moved), moved.Z)
 		end
 	end
 

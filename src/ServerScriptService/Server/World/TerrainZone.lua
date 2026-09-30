@@ -24,6 +24,7 @@ local Workspace = game:GetService("Workspace")
 
 local WorldLayout = require(ReplicatedStorage.Shared.WorldLayout)
 local PathRegistry = require(script.Parent.PathRegistry)
+local GroundSculpt = require(script.Parent.GroundSculpt)
 
 local TerrainZone = {}
 TerrainZone.Order = 140
@@ -38,7 +39,7 @@ local BEACH_RADIUS = 26
 local POND_DEPTH = 6
 local WATER_SURFACE_BELOW_GRASS = 0.5
 
-local GRASS = Color3.fromRGB(96, 170, 88)
+local GRASS = Color3.fromRGB(100, 178, 82)
 
 local function surfaceLayer(terrain: Terrain, centre: Vector3, size: Vector3, material: Enum.Material)
 	terrain:FillBlock(
@@ -62,10 +63,13 @@ local function build(parent: Instance)
 		surfaceLayer(terrain, zone.Center, zone.Size, Enum.Material.LeafyGrass)
 	end
 	-- Paths (and the pond trail) are registered by MapBuilder before any
-	-- zone builds. A 2-stud margin keeps blades off the path edges.
+	-- zone builds. A 2-stud trodden-dirt margin keeps blades off the edges.
 	for _, rect in PathRegistry.GetRects() do
-		surfaceLayer(terrain, rect.Center, rect.Size + Vector3.new(4, 0, 4), Enum.Material.LeafyGrass)
+		surfaceLayer(terrain, rect.Center, rect.Size + Vector3.new(4, 0, 4), Enum.Material.Ground)
 	end
+
+	-- Patchwork, rolling ground and worn edges on the open lawn.
+	GroundSculpt.Apply(terrain, SURFACE_Y)
 
 	-- The pond: beach ring, dig the basin, sand bed, then water.
 	local pond = WorldLayout.Landmarks.LilyPond
@@ -80,9 +84,11 @@ local function build(parent: Instance)
 	-- Look: grass blades, colours matched to the part-built world, and water
 	-- tuned bright and gentle (a pond, not an ocean).
 	terrain.Decoration = true
+	-- Cartoon-bright, per the terraining guides: saturated long grass, a
+	-- sunnier short grass for the patchwork, warm soil.
 	terrain:SetMaterialColor(Enum.Material.Grass, GRASS)
-	terrain:SetMaterialColor(Enum.Material.LeafyGrass, GRASS)
-	terrain:SetMaterialColor(Enum.Material.Ground, Color3.fromRGB(150, 118, 84))
+	terrain:SetMaterialColor(Enum.Material.LeafyGrass, Color3.fromRGB(132, 198, 92))
+	terrain:SetMaterialColor(Enum.Material.Ground, Color3.fromRGB(158, 122, 84))
 	terrain:SetMaterialColor(Enum.Material.Sand, Color3.fromRGB(232, 214, 160))
 	terrain.WaterColor = Color3.fromRGB(60, 165, 215)
 	terrain.WaterTransparency = 0.6

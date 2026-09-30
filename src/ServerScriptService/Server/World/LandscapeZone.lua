@@ -18,6 +18,7 @@
 -- roughly the part count it had before.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
 
 local WorldLayout = require(ReplicatedStorage.Shared.WorldLayout)
 local WorldKit = require(script.Parent.WorldKit)
@@ -27,14 +28,14 @@ local LandscapeZone = {}
 LandscapeZone.Order = 200
 
 local SEED = 20260929
-local PROP_COUNT = 190
+local PROP_COUNT = 230
 local MAX_ATTEMPTS = PROP_COUNT * 25
 local MIN_SPACING = 9 -- studs between props, so it reads as a park, not a pile
 local ZONE_MARGIN = 7
 local PATH_MARGIN = 4
 local EDGE_MARGIN = 6
 
-type Kind = "RoundTree" | "PineTree" | "CandyTree" | "Bush" | "FlowerBed" | "Rock" | "Balloons" | "Mushroom"
+type Kind = "RoundTree" | "PineTree" | "CandyTree" | "Bush" | "FlowerBed" | "Rock" | "Balloons" | "Mushroom" | "Wildflowers"
 
 local KIND_WEIGHTS: { { Kind: Kind, Weight: number } } = {
 	{ Kind = "RoundTree", Weight = 24 },
@@ -45,6 +46,7 @@ local KIND_WEIGHTS: { { Kind: Kind, Weight: number } } = {
 	{ Kind = "Rock", Weight = 9 },
 	{ Kind = "Balloons", Weight = 5 },
 	{ Kind = "Mushroom", Weight = 6 },
+	{ Kind = "Wildflowers", Weight = 16 },
 }
 
 -- Treasure out in the wilds, far from any sign. Positions were picked to sit
@@ -87,6 +89,14 @@ local function pickKind(rng: Random): Kind
 	return "Bush"
 end
 
+local WILDFLOWER_COLORS = {
+	Color3.fromRGB(255, 220, 80),
+	Color3.fromRGB(255, 140, 190),
+	Color3.fromRGB(170, 140, 255),
+	Color3.fromRGB(120, 190, 255),
+}
+local TREE_KINDS = { RoundTree = true, PineTree = true, CandyTree = true, Bush = true }
+
 local function buildProp(kind: Kind, position: Vector3, rng: Random, parent: Instance)
 	if kind == "RoundTree" then
 		WorldKit.Tree({ Position = position, Height = rng:NextNumber(10, 16), Style = "Round", Parent = parent })
@@ -104,6 +114,31 @@ local function buildProp(kind: Kind, position: Vector3, rng: Random, parent: Ins
 		WorldKit.BalloonCluster({ Position = position, Parent = parent })
 	elseif kind == "Mushroom" then
 		WorldKit.Mushroom({ Position = position, Height = rng:NextNumber(4, 8), Parent = parent })
+	elseif kind == "Wildflowers" then
+		-- A loose scatter of tiny blooms half-hidden in the grass blades: the
+		-- cheap version of the layered grass detail the best maps use.
+		local color = WILDFLOWER_COLORS[rng:NextInteger(1, #WILDFLOWER_COLORS)]
+		for i = 1, rng:NextInteger(5, 8) do
+			local angle = rng:NextNumber(0, math.pi * 2)
+			local distance = rng:NextNumber(0, 2.2)
+			local size = rng:NextNumber(0.45, 0.7)
+			WorldKit.Part({
+				Name = `Bloom{i}`,
+				Shape = Enum.PartType.Ball,
+				Size = Vector3.new(size, size, size),
+				Position = position + Vector3.new(math.cos(angle) * distance, 0.55, math.sin(angle) * distance),
+				Color = if i % 3 == 0 then Color3.fromRGB(255, 255, 240) else color,
+				CanCollide = false,
+				CanTouch = false,
+				CastShadow = false,
+				Parent = parent,
+			})
+		end
+	end
+
+	-- Worn soil under trees and bushes: grass doesn't grow right up to a trunk.
+	if TREE_KINDS[kind] and Workspace.Terrain:GetAttribute("HatchWarsTerrain") == true then
+		Workspace.Terrain:FillCylinder(CFrame.new(position - Vector3.new(0, 1.8, 0)), 3.5, rng:NextNumber(2.2, 3.2), Enum.Material.Ground)
 	end
 end
 
@@ -145,7 +180,8 @@ function LandscapeZone.Build(parent: Instance)
 				-- Explorer, and it streams in and out whole.
 				local kind = pickKind(rng)
 				local propModel = WorldKit.PropModel(`{kind}{propCount}`, folder)
-				buildProp(kind, position, rng, propModel)
+				-- Sit it on the (gently rolling) terrain surface.
+				buildProp(kind, WorldKit.GroundAt(position), rng, propModel)
 			end
 		end
 	end
@@ -158,7 +194,7 @@ function LandscapeZone.Build(parent: Instance)
 				RewardCoins = chest.Coins,
 				RewardXP = 50,
 				CooldownSeconds = 15 * 60,
-				Position = chest.Position,
+				Position = WorldKit.GroundAt(chest.Position),
 				Parent = folder,
 			})
 		else
