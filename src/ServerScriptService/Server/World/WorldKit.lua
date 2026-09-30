@@ -192,6 +192,9 @@ function WorldKit.Spawn(props: PartProps): SpawnLocation
 	spawn.CanCollide = if props.CanCollide == nil then true else props.CanCollide
 	spawn.TopSurface = Enum.SurfaceType.Smooth
 	spawn.BottomSurface = Enum.SurfaceType.Smooth
+	if props.Shape then
+		spawn.Shape = props.Shape -- set before Size: Shape can reshape Size
+	end
 	spawn.Size = props.Size or Vector3.new(12, 1, 12)
 	spawn.Color = props.Color or Color3.fromRGB(255, 255, 255)
 	spawn.Material = props.Material or Enum.Material.SmoothPlastic

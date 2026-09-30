@@ -231,6 +231,20 @@ picnic blanket on its west shore. Two giant statues (Gold Tralalero Astrale
 in the west wilds, Diamond Crocobrivido Vulcanico between the Market and Fun
 Park) are skyline landmarks, positioned via `WorldLayout.Landmarks`.
 
+### Spawn
+
+- **The pad**: a round marble pad with a neon rim on the Hub dais, clear of
+  the fountain basin (they used to overlap).
+- **Facing**: `-Z`, so the first frame looks across the fountain toward the
+  Hatchery, the first stop of the new-player guide.
+- **Welcome**: a floating "WELCOME" sign and rising sparkles over the pad.
+  `SpawnController` plays a sparkle burst and a shockwave at your feet on
+  every spawn, plus a welcome toast once per session.
+- **Fountain shard**: now a tilted neon crystal the client spins (`Spinner`
+  tag).
+- **Respawn**: 3 s instead of Roblox's default 5 (`Players.RespawnTime` in
+  `default.project.json`).
+
 ### Themed wilds (`WildsZone.lua`, Order 160)
 
 Rects live in `WorldLayout.Wilds`; plan in `docs/map-plan.png`.

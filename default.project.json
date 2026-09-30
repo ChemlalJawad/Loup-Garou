@@ -46,6 +46,12 @@
         "StreamOutBehavior": "Opportunistic",
         "FallenPartsDestroyHeight": -120
       }
+    },
+    "Players": {
+      "$className": "Players",
+      "$properties": {
+        "RespawnTime": 3
+      }
     }
   }
 }

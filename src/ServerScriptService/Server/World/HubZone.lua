@@ -37,8 +37,10 @@
 --   Spawn pad + spawn = 2
 --   Total ~ 110 parts, comfortably under the ~400 guideline.
 
+local CollectionService = game:GetService("CollectionService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local Constants = require(ReplicatedStorage.Shared.Constants)
 local Theme = require(ReplicatedStorage.Shared.Theme)
 local WorldLayout = require(ReplicatedStorage.Shared.WorldLayout)
 local WorldKit = require(script.Parent.WorldKit)
@@ -201,16 +203,25 @@ local function buildLandmark(folder: Instance, base: Vector3)
 		})
 	end
 
-	WorldKit.Sphere({
-		Name = "LandmarkShard",
-		Position = base + Vector3.new(0, y + 2, 0),
-		Diameter = 4,
+	-- The shard: a tilted neon crystal the client spins (Spinner tag), so
+	-- the plaza's centrepiece is always moving - an eye-catcher from spawn.
+	local shardModel = Instance.new("Model")
+	shardModel.Name = "LandmarkShard"
+	local shard = WorldKit.Part({
+		Name = "Shard",
+		Size = Vector3.new(2.6, 5, 2.6),
+		CFrame = CFrame.new(base + Vector3.new(0, y + 3, 0)) * CFrame.Angles(math.rad(35), 0, math.rad(35)),
 		Color = Theme.Color.AccentPrimary,
 		Material = Enum.Material.Neon,
 		CanCollide = false,
 		CastShadow = false,
-		Parent = folder,
+		Parent = shardModel,
 	})
+	shardModel.PrimaryPart = shard
+	shardModel:SetAttribute("SpinAxis", "Y")
+	shardModel:SetAttribute("SpinSpeed", 40)
+	CollectionService:AddTag(shardModel, Constants.TAGS.Spinner)
+	shardModel.Parent = folder
 	WorldKit.Light({
 		Name = "LandmarkLight",
 		Parent = WorldKit.Part({
@@ -315,16 +326,64 @@ function HubZone.Build(parent: Instance)
 		Parent = folder,
 	})
 
-	-- The one Neutral spawn every player lands at, on the dais facing the
-	-- landmark (which sits a few studs further in), so the very first frame
-	-- shows the plaza centrepiece and the four gateways beyond it.
+	-- The one Neutral spawn every player lands at: a round marble pad on the
+	-- dais, just south of the fountain basin (clear of it - they used to
+	-- overlap and z-fight), facing -Z so the first frame looks across the
+	-- fountain toward the Hatchery, the new-player guide's first stop.
+	-- Rotating about Z to stand the cylinder up keeps LookVector at -Z.
+	local spawnCentre = center + Vector3.new(0, groundY + 2.5, 17.5)
+	local spawnDiameter = 11
 	WorldKit.Spawn({
 		Name = "HubSpawn",
-		Position = center + Vector3.new(0, groundY + 2.5, 16),
-		Size = Vector3.new(14, 1, 14),
-		Color = Theme.Color.AccentPrimary,
+		CFrame = CFrame.new(spawnCentre) * CFrame.Angles(0, 0, math.rad(90)),
+		Shape = Enum.PartType.Cylinder,
+		Size = Vector3.new(1, spawnDiameter, spawnDiameter),
+		Color = WorldKit.Palette.TileCream,
+		Material = Enum.Material.Marble,
 		Neutral = true,
 		Parent = folder,
+	})
+	-- Glowing rim: a slightly wider neon disc just under the pad's top.
+	WorldKit.UprightCylinder({
+		Name = "HubSpawnRim",
+		Position = spawnCentre + Vector3.new(0, -0.1, 0),
+		Height = 0.9,
+		Diameter = spawnDiameter + 1,
+		Color = Theme.Color.AccentPrimary,
+		Material = Enum.Material.Neon,
+		CanCollide = false,
+		CastShadow = false,
+		Parent = folder,
+	})
+	-- A floating welcome over the pad, readable from the whole plaza.
+	local welcomeAnchor = WorldKit.Part({
+		Name = "WelcomeAnchor",
+		Size = Vector3.new(1, 1, 1),
+		Position = spawnCentre + Vector3.new(0, 1, 0),
+		Transparency = 1,
+		CanCollide = false,
+		CastShadow = false,
+		Parent = folder,
+	})
+	WorldKit.Sign({
+		Name = "WelcomeSign",
+		Adornee = welcomeAnchor,
+		Text = "WELCOME TO BRAINROT HATCH WARS!",
+		Color = Color3.fromRGB(255, 225, 120),
+		Size = UDim2.new(0, 420, 0, 50),
+		TextSize = 26,
+		StudsOffset = Vector3.new(0, 11, 0),
+		MaxDistance = 90,
+	})
+	-- Sparkles rising off the pad (decor: off on low graphics quality).
+	WorldKit.Emitter({
+		Name = "SpawnSparkles",
+		Parent = welcomeAnchor,
+		Color = Color3.fromRGB(255, 240, 170),
+		Rate = 4,
+		Lifetime = NumberRange.new(1.5, 2.5),
+		Speed = NumberRange.new(1.5, 3),
+		SpreadAngle = Vector2.new(60, 60),
 	})
 
 	buildLandmark(folder, center + Vector3.new(0, groundY + 2, 0))
