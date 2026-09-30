@@ -10,11 +10,14 @@
       "AssetOverrides": {
         "$className": "Folder",
         "Brainrots": {
-          "$className": "Folder"
+          "$className": "Folder",
+          "$ignoreUnknownInstances": true
         },
         "Eggs": {
-          "$className": "Folder"
-        }
+          "$className": "Folder",
+          "$ignoreUnknownInstances": true
+        },
+        "$ignoreUnknownInstances": true
       }
     },
     "ServerScriptService": {
