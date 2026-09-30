@@ -258,7 +258,7 @@ function EconomyService.Init()
 		EconomyService.TryRebirth(player)
 	end)
 
-	DataService.ProfileLoaded:Connect(function(player)
+	DataService.ProfileLoaded.Event:Connect(function(player)
 		pushState(player)
 	end)
 
@@ -266,7 +266,7 @@ function EconomyService.Init()
 	-- caused it. Throttled per player so a burst of mutations (e.g. a x10 hatch
 	-- granting 10 entries) collapses into one push instead of ten.
 	local pushQueued: { [Player]: boolean } = {}
-	DataService.ProfileChanged:Connect(function(player: Player)
+	DataService.ProfileChanged.Event:Connect(function(player: Player)
 		if pushQueued[player] then
 			return
 		end

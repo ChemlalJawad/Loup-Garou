@@ -12,6 +12,9 @@ published. Built as a [Rojo](https://rojo.space) project: everything is
 plain Luau text in this repo, synced into Roblox Studio with no manual
 copy/paste and no build step.
 
+> This repo also contains a second, separate game: **Giant Hunters**, a
+> grapple-rig giant-slaying game. See [`GiantHunters/README.md`](GiantHunters/README.md).
+
 ## Running it
 
 1. Install [Rojo](https://rojo.space/docs/installation/) (via
