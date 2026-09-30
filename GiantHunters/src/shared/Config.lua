@@ -6,17 +6,27 @@ local Config = {}
 Config.GAME_NAME = "Giant Hunters"
 
 -- === Grapple rig (client-simulated movement) ================================
+-- Modelled on the anime's gear: hooks fly out and bite, the cables stay taut
+-- (they auto-wind any slack), so letting gravity take you makes you SWING
+-- around the anchor. Gas reels you in hard, or boosts you when unhooked.
 Config.Grapple = {
 	Range = 170, -- studs a hook can reach
-	PullAcceleration = 150, -- studs/s^2 toward each attached hook
-	BoostAcceleration = 95, -- studs/s^2 along the camera while boosting
-	MaxSpeed = 160,
-	LaunchImpulse = 45, -- upward kick when you hook from the ground
+	HookSpeed = 480, -- studs/s the hook flies before it bites
+	ReelSpeed = 70, -- studs/s the cable shortens while reeling (gas)
+	ReelAcceleration = 110, -- extra pull toward the anchor while reeling
+	SlackPull = 18, -- gentle pull while just hanging on, keeps swings lively
+	BoostAcceleration = 90, -- unhooked gas burst along the camera
+	AirControl = 35, -- studs/s^2 of WASD steering in the air
+	DashImpulse = 60, -- side/forward dash (tap Shift)
+	DashCooldown = 0.6,
+	MaxSpeed = 170,
+	LaunchImpulse = 40, -- upward kick when you hook from the ground
 	HookSideOffset = 7, -- left/right hooks aim this far either side of the crosshair
-	ReleaseDistance = 5, -- let go automatically when this close to the anchor
+	ReleaseDistance = 4, -- let go automatically when this close to the anchor
 	GasMax = 100,
-	GasPerSecondHooked = 3,
+	GasPerSecondReel = 11, -- per reeling hook
 	GasPerSecondBoost = 16,
+	GasPerDash = 8,
 	GasRegenPerSecondGrounded = 6, -- kind to young players: slow refill on foot
 }
 
@@ -91,6 +101,7 @@ Config.Remotes = {
 	Resupplied = "GH_Resupplied", -- server -> client ()
 	Caught = "GH_Caught", -- server -> client (giantName)
 	Wave = "GH_Wave", -- server -> all ({ Wave, Alive, Phase, Countdown })
+	Hook = "GH_Hook", -- client -> server (side, part?, localPosition?); server -> others (player, side, part?, localPosition?)
 }
 
 Config.Tags = {

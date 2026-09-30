@@ -1,14 +1,20 @@
 --!strict
--- Builds a giant: a big, goofy, part-built humanoid with a glowing weak
--- spot on the back of its neck (the Nape). Child-friendly by design: bright
--- clothes, cartoon faces, and no gore anywhere - defeated giants just puff
--- away into steam (see GiantService).
+-- Builds a giant: a big, goofy-creepy humanoid with a glowing weak spot on
+-- the back of its neck (the Nape). Child-friendly by design: cartoon faces,
+-- shorts, no gore - defeated giants just puff away into steam.
 --
--- Rig: an invisible Root at hip height carries everything. Legs hang from
--- it and arms from the torso on Motor6Ds, so clients can swing them for a
--- walk cycle (GiantAnimator) without the server sending any animation.
--- Every part is non-colliding (giants stride through the town) but
--- queryable, so hunters can hook onto a giant's body.
+-- Look: soft, rounded shapes only (capsule limbs, a rounded trunk, ball
+-- joints), a hunched posture with the head pushed forward, a jutting
+-- muzzle with a wide toothy grin, big round eyes. Every giant rolls a body
+-- type (lanky, stocky, chubby, or a short-legged "bighead"), skin, hair
+-- style and shorts, so a wave never looks like a copy-paste crowd.
+--
+-- Rig: an invisible Root at hip height carries everything. Waist, hips,
+-- knees, shoulders, elbows and the neck are Motor6Ds, so clients animate
+-- the lumbering walk, the grab and the head tracking (GiantAnimator)
+-- without the server sending any animation. Every part is non-colliding
+-- (giants stride through town) but queryable, so hunters can hook onto a
+-- giant's body.
 
 local CollectionService = game:GetService("CollectionService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -19,23 +25,42 @@ local GiantFactory = {}
 
 local SKIN = {
 	Color3.fromRGB(240, 200, 170),
-	Color3.fromRGB(214, 160, 120),
-	Color3.fromRGB(170, 115, 80),
-	Color3.fromRGB(120, 80, 55),
+	Color3.fromRGB(226, 178, 142),
+	Color3.fromRGB(196, 140, 104),
+	Color3.fromRGB(160, 108, 76),
+	Color3.fromRGB(118, 80, 58),
 }
-local SHIRTS = {
-	Color3.fromRGB(90, 130, 200),
-	Color3.fromRGB(200, 90, 90),
-	Color3.fromRGB(110, 170, 100),
-	Color3.fromRGB(220, 170, 70),
-	Color3.fromRGB(150, 110, 190),
+local SHORTS = {
+	Color3.fromRGB(90, 110, 160),
+	Color3.fromRGB(150, 80, 70),
+	Color3.fromRGB(96, 130, 90),
+	Color3.fromRGB(120, 100, 80),
+	Color3.fromRGB(110, 80, 130),
 }
 local HAIR = {
 	Color3.fromRGB(60, 40, 30),
 	Color3.fromRGB(150, 100, 50),
 	Color3.fromRGB(230, 200, 120),
 	Color3.fromRGB(30, 30, 35),
+	Color3.fromRGB(170, 70, 40),
 }
+local LIPS = Color3.fromRGB(70, 25, 30)
+local TEETH = Color3.fromRGB(250, 248, 236)
+
+-- Body types: multipliers on the base proportions, plus how far forward
+-- the giant slouches (radians). Bighead is the classic odd one out: short
+-- legs, a huge head and a grin you can see from the top of the wall.
+local BODY_TYPES = {
+	Lanky = { Width = 0.8, LimbLength = 1.08, Belly = 0.7, Head = 1, Hunch = 0.14 },
+	Stocky = { Width = 1.2, LimbLength = 0.92, Belly = 0.9, Head = 0.95, Hunch = 0.08 },
+	Chubby = { Width = 1.1, LimbLength = 0.95, Belly = 1.35, Head = 1.05, Hunch = 0.06 },
+	Bighead = { Width = 0.95, LimbLength = 0.86, Belly = 0.85, Head = 1.4, Hunch = 0.1 },
+}
+local BODY_TYPE_NAMES = { "Lanky", "Stocky", "Chubby", "Bighead" }
+local HAIR_STYLES = { "Bald", "Cap", "Mop", "Spiky" }
+
+-- Cylinders run along their local X; this turns one upright.
+local UPRIGHT = CFrame.Angles(0, 0, math.rad(90))
 
 export type Rig = {
 	Model: Model,
@@ -46,9 +71,12 @@ export type Rig = {
 	TorsoDepth: number,
 }
 
-local function limb(model: Model, name: string, size: Vector3, cframe: CFrame, color: Color3, material: Enum.Material?): Part
+local function part(model: Model, name: string, size: Vector3, cframe: CFrame, color: Color3, shape: Enum.PartType?, material: Enum.Material?): Part
 	local p = Instance.new("Part")
 	p.Name = name
+	if shape then
+		p.Shape = shape
+	end
 	p.Size = size
 	p.CFrame = cframe
 	p.Color = color
@@ -69,67 +97,192 @@ local function weld(a: BasePart, b: BasePart)
 	w.Parent = b
 end
 
-local function motor(name: string, part0: BasePart, part1: BasePart, c0: CFrame, c1: CFrame)
+-- A Motor6D pivoting at `joint` (a world CFrame). Both offsets come from
+-- where the parts already are, so part shapes and turns don't matter and
+-- the animator's angles mean the same thing on every joint (joint frames
+-- are level with the body: X = swing forward/back). `rest` is baked into
+-- C0: the pose the joint holds on the server and with no animation.
+local function motor(name: string, part0: BasePart, part1: BasePart, joint: CFrame, rest: CFrame?)
 	local m = Instance.new("Motor6D")
 	m.Name = name
 	m.Part0 = part0
 	m.Part1 = part1
-	m.C0 = c0
-	m.C1 = c1
+	m.C0 = part0.CFrame:ToObjectSpace(joint) * (rest or CFrame.new())
+	m.C1 = part1.CFrame:ToObjectSpace(joint)
 	m.Parent = part0
+end
+
+-- A capsule limb segment hanging below `cframe`'s top end: an upright
+-- cylinder with a ball of the same width on its joint end. Chained
+-- segments read as round, fleshy limbs rather than a stack of bricks.
+local function segment(model: Model, name: string, width: number, length: number, cframe: CFrame, color: Color3, material: Enum.Material?): Part
+	local main = part(model, name, Vector3.new(length, width, width), cframe * UPRIGHT, color, Enum.PartType.Cylinder, material)
+	local knob = part(model, `{name}Joint`, Vector3.one * width, cframe * CFrame.new(0, length / 2, 0), color, Enum.PartType.Ball, material)
+	weld(main, knob)
+	return main
+end
+
+-- A soft upright block: three upright cylinders side by side (no flat face
+-- to catch the light like the side of a crate) and, with roundTop, a roll
+-- along the top with a ball on each top corner. Everything is welded to
+-- the returned middle cylinder.
+local function softBlock(model: Model, name: string, size: Vector3, cframe: CFrame, color: Color3, material: Enum.Material?, roundTop: boolean): Part
+	local width, height, depth = size.X, size.Y, size.Z
+	local r = depth / 2
+	local bodyHeight = if roundTop then height - r else height
+	local bodyCentre = cframe * CFrame.new(0, if roundTop then -r / 2 else 0, 0)
+	local core = part(model, name, Vector3.new(bodyHeight, depth, depth), bodyCentre * UPRIGHT, color, Enum.PartType.Cylinder, material)
+	for i, side in { -1, 1 } do
+		local x = side * (width / 2 - r)
+		weld(core, part(model, `{name}Side{i}`, Vector3.new(bodyHeight, depth, depth), bodyCentre * CFrame.new(x, 0, 0) * UPRIGHT, color, Enum.PartType.Cylinder, material))
+		if roundTop then
+			weld(core, part(model, `{name}Corner{i}`, Vector3.one * depth, cframe * CFrame.new(x, height / 2 - r, 0), color, Enum.PartType.Ball, material))
+		end
+	end
+	if roundTop then
+		weld(core, part(model, `{name}Top`, Vector3.new(width - depth, depth, depth), cframe * CFrame.new(0, height / 2 - r, 0), color, Enum.PartType.Cylinder, material))
+	end
+	return core
+end
+
+-- A point on a ball's surface, in the ball's frame: `turn` radians round to
+-- the giant's right, `up` studs above the centre, `out` studs proud of it.
+local function onBall(radius: number, turn: number, up: number, out: number): Vector3
+	local ring = math.sqrt(math.max(radius * radius - up * up, 0)) + out
+	return Vector3.new(ring * math.sin(turn), up, -ring * math.cos(turn))
 end
 
 function GiantFactory.Build(kindName: string, position: Vector3, rng: Random): Rig
 	local kind = Config.GiantKinds[kindName]
 	assert(kind, `GiantFactory: unknown kind {kindName}`)
+	local bodyName = BODY_TYPE_NAMES[rng:NextInteger(1, #BODY_TYPE_NAMES)]
+	local body = BODY_TYPES[bodyName]
 	local h = kind.Height
-	local legLength, legWidth = h * 0.42, h * 0.12
-	local torsoHeight, torsoWidth, torsoDepth = h * 0.32, h * 0.3, h * 0.16
-	local headSize = h * 0.18
-	local armLength, armWidth = h * 0.36, h * 0.09
+
+	local thigh, shin = h * 0.21 * body.LimbLength, h * 0.2 * body.LimbLength
+	local legLength = thigh + shin
+	local legWidth = h * 0.11 * body.Width
+	local pelvisHeight = h * 0.08
+	local torsoHeight, torsoWidth, torsoDepth = h * 0.26, h * 0.28 * body.Width, h * 0.15 * body.Width
+	local upperArm, foreArm = h * 0.17 * body.LimbLength, h * 0.16 * body.LimbLength
+	local armWidth = h * 0.085 * body.Width
+	local neckLength = h * 0.05
+	local headSize = h * 0.17 * body.Head
 
 	local skin = SKIN[rng:NextInteger(1, #SKIN)]
-	local shirt = SHIRTS[rng:NextInteger(1, #SHIRTS)]
-	local pants = Color3.fromRGB(80, 70, 60):Lerp(shirt, 0.2)
+	local darker = skin:Lerp(Color3.new(0, 0, 0), 0.12)
+	local shortsColor = SHORTS[rng:NextInteger(1, #SHORTS)]
+	local hairColor = HAIR[rng:NextInteger(1, #HAIR)]
 
 	local model = Instance.new("Model")
 	model.Name = `{kindName}Giant`
+	local base = CFrame.new(position) -- built facing -Z, feet on `position`
 
-	-- Everything is laid out facing -Z, at `position` on the ground.
-	local base = CFrame.new(position)
-	local root = limb(model, "Root", Vector3.new(torsoWidth, h * 0.05, torsoDepth), base * CFrame.new(0, legLength, 0), skin)
+	-- Root at hip height (top of the legs).
+	local hipY = legLength
+	local root = part(model, "Root", Vector3.new(torsoWidth, h * 0.04, torsoDepth), base * CFrame.new(0, hipY, 0), skin)
 	root.Transparency = 1
 	root.Massless = false
 	root.CanQuery = false
 	model.PrimaryPart = root
 
-	local torso = limb(model, "Torso", Vector3.new(torsoWidth, torsoHeight, torsoDepth), base * CFrame.new(0, legLength + torsoHeight / 2, 0), shirt, Enum.Material.Fabric)
-	weld(root, torso)
-	-- Belly button... no. A belt, for a bit of costume.
-	weld(torso, limb(model, "Belt", Vector3.new(torsoWidth + 0.2, h * 0.03, torsoDepth + 0.2), base * CFrame.new(0, legLength + h * 0.02, 0), Color3.fromRGB(90, 60, 40)))
+	-- Shorts: a rounded band from just below the hips to the waist.
+	local waistY = hipY + pelvisHeight
+	local pelvis = softBlock(model, "Pelvis", Vector3.new(torsoWidth * 1.03, pelvisHeight + h * 0.03, torsoDepth * 1.06), base * CFrame.new(0, waistY - (pelvisHeight + h * 0.03) / 2, 0), shortsColor, Enum.Material.Fabric, false)
+	weld(root, pelvis)
 
-	local headCentre = base * CFrame.new(0, legLength + torsoHeight + headSize / 2, 0)
-	local head = limb(model, "Head", Vector3.new(headSize, headSize, headSize * 0.9), headCentre, skin)
-	weld(torso, head)
-	-- Hair cap, cartoon eyes (whites + pupils) and a big grin, on the front (-Z).
-	weld(head, limb(model, "Hair", Vector3.new(headSize * 1.05, headSize * 0.3, headSize * 0.95), headCentre * CFrame.new(0, headSize * 0.4, 0.02 * h), HAIR[rng:NextInteger(1, #HAIR)]))
-	for i, x in { -0.22, 0.22 } do
-		local eye = limb(model, `Eye{i}`, Vector3.new(headSize * 0.22, headSize * 0.22, headSize * 0.05), headCentre * CFrame.new(x * headSize, headSize * 0.08, -headSize * 0.46), Color3.fromRGB(250, 250, 250))
-		weld(head, eye)
-		weld(head, limb(model, `Pupil{i}`, Vector3.new(headSize * 0.1, headSize * 0.1, headSize * 0.05), headCentre * CFrame.new(x * headSize, headSize * 0.06, -headSize * 0.49), Color3.fromRGB(30, 25, 25)))
+	-- Trunk: a rounded box on a waist motor (the slouch, the sway of the
+	-- walk and the lunge of a grab all happen here), a belly and shoulders.
+	-- It reaches down inside the shorts so leaning never opens a gap.
+	local torsoCentreY = waistY + torsoHeight / 2
+	local tuck = h * 0.04
+	local torso = softBlock(model, "Torso", Vector3.new(torsoWidth, torsoHeight + tuck, torsoDepth), base * CFrame.new(0, torsoCentreY - tuck / 2, 0), skin, nil, true)
+	motor("Waist", root, torso, base * CFrame.new(0, waistY, 0), CFrame.Angles(-body.Hunch, 0, 0))
+	weld(torso, part(model, "Belly", Vector3.one * torsoWidth * 0.62 * body.Belly, base * CFrame.new(0, waistY + torsoHeight * 0.3, -torsoDepth * 0.28), skin, Enum.PartType.Ball))
+	for i, side in { -1, 1 } do
+		weld(torso, part(model, `ShoulderCap{i}`, Vector3.one * armWidth * 1.45, base * CFrame.new(side * (torsoWidth / 2 + armWidth * 0.2), torsoCentreY + torsoHeight / 2 - armWidth * 0.55, 0), skin, Enum.PartType.Ball))
 	end
-	weld(head, limb(model, "Grin", Vector3.new(headSize * 0.5, headSize * 0.08, headSize * 0.05), headCentre * CFrame.new(0, -headSize * 0.22, -headSize * 0.46), Color3.fromRGB(90, 40, 40)))
 
-	-- The weak spot: a glowing patch on the back of the neck (+Z side).
-	local nape = limb(
-		model,
-		"Nape",
-		Vector3.new(headSize * 0.8, headSize * 0.45, h * 0.03),
-		base * CFrame.new(0, legLength + torsoHeight + headSize * 0.1, torsoDepth / 2 + h * 0.01),
-		Color3.fromRGB(255, 120, 60),
-		Enum.Material.Neon
-	)
-	nape.Transparency = 0.2
+	-- Neck and head. The head juts forward and its motor leans back against
+	-- the slouch, so the face stays level and stares straight ahead.
+	local neckBaseY = waistY + torsoHeight
+	local headForward = headSize * 0.12
+	local headCentre = base * CFrame.new(0, neckBaseY + neckLength + headSize * 0.45, -headForward)
+	local neckFrom = base * Vector3.new(0, neckBaseY - headSize * 0.1, 0)
+	local neckTo = headCentre.Position
+	local neck = part(model, "Neck", Vector3.new((neckTo - neckFrom).Magnitude, headSize * 0.5, headSize * 0.5), CFrame.lookAt((neckFrom + neckTo) / 2, neckTo) * CFrame.Angles(0, math.rad(90), 0), skin, Enum.PartType.Cylinder)
+	weld(torso, neck)
+	local head = part(model, "Head", Vector3.one * headSize, headCentre, skin, Enum.PartType.Ball)
+	motor("Neck", torso, head, headCentre, CFrame.Angles(body.Hunch, 0, 0))
+	local function face(name: string, size: Vector3, offset: CFrame, color: Color3, shape: Enum.PartType?)
+		weld(head, part(model, name, size, headCentre * offset, color, shape))
+	end
+	local skull = headSize / 2
+
+	-- A jutting muzzle: the jaw and cheeks, carrying the grin.
+	local muzzleAt = Vector3.new(0, -headSize * 0.2, -headSize * 0.13)
+	local muzzleRadius = headSize * 0.4
+	face("Muzzle", Vector3.one * muzzleRadius * 2, CFrame.new(muzzleAt), skin, Enum.PartType.Ball)
+
+	-- The grin: a wide, toothy smile wrapped round the muzzle, corners
+	-- turned up. Goofy from afar, a little unsettling up close - on brand.
+	local GRIN_SPAN, GRIN_PIECES = 0.75, 5
+	local function grinPoint(turn: number): Vector3
+		local lift = headSize * 0.08 * (turn / GRIN_SPAN) ^ 2
+		return muzzleAt + onBall(muzzleRadius, turn, -headSize * 0.02 + lift, 0)
+	end
+	for g = 1, GRIN_PIECES do
+		local a = grinPoint(-GRIN_SPAN + (g - 1) * 2 * GRIN_SPAN / GRIN_PIECES)
+		local b = grinPoint(-GRIN_SPAN + g * 2 * GRIN_SPAN / GRIN_PIECES)
+		local along = (b - a).Unit
+		local middle = (a + b) / 2
+		local outward = Vector3.new(middle.X - muzzleAt.X, 0, middle.Z - muzzleAt.Z).Unit
+		local up = (-outward):Cross(along).Unit
+		local frame = CFrame.fromMatrix(middle, along, up)
+		local length = (b - a).Magnitude * 1.06
+		face(`Grin{g}`, Vector3.new(length, headSize * 0.1, headSize * 0.05), frame, LIPS)
+		for t, x in { -0.24, 0.24 } do
+			face(`Tooth{g}{t}`, Vector3.new(length * 0.4, headSize * 0.045, headSize * 0.03), frame * CFrame.new(x * length, headSize * 0.028, -headSize * 0.025), TEETH)
+		end
+	end
+
+	-- Big round eyes looking straight ahead, worried brows, a round nose,
+	-- round ears.
+	for i, side in { -1, 1 } do
+		local eye = onBall(skull, side * 0.38, headSize * 0.1, -headSize * 0.08)
+		face(`Eye{i}`, Vector3.one * headSize * 0.26, CFrame.new(eye), Color3.fromRGB(250, 250, 250), Enum.PartType.Ball)
+		face(`Pupil{i}`, Vector3.one * headSize * 0.1, CFrame.new(eye + Vector3.new(0, 0, -headSize * 0.115)), Color3.fromRGB(30, 25, 25), Enum.PartType.Ball)
+		local brow = onBall(skull, side * 0.38, headSize * 0.27, 0)
+		face(`Brow{i}`, Vector3.new(headSize * 0.26, headSize * 0.055, headSize * 0.07), CFrame.new(brow) * CFrame.Angles(0, -side * 0.38, side * -0.25), hairColor)
+		face(`Ear{i}`, Vector3.new(headSize * 0.1, headSize * 0.24, headSize * 0.24), CFrame.new(side * skull, -headSize * 0.02, headSize * 0.02), darker, Enum.PartType.Cylinder)
+	end
+	face("Nose", Vector3.one * headSize * 0.2, CFrame.new(onBall(skull, 0, -headSize * 0.04, 0)), darker, Enum.PartType.Ball)
+
+	-- Hair.
+	local style = HAIR_STYLES[rng:NextInteger(1, #HAIR_STYLES)]
+	if style == "Cap" then
+		-- Balls are always uniform: a slightly bigger sphere pushed up and back
+		-- covers the crown and the back of the head, leaving the face clear.
+		face("Hair", Vector3.one * headSize * 1.04, CFrame.new(0, headSize * 0.12, headSize * 0.1), hairColor, Enum.PartType.Ball)
+	elseif style == "Mop" then
+		face("Hair", Vector3.one * headSize * 1.1, CFrame.new(0, headSize * 0.14, headSize * 0.1), hairColor, Enum.PartType.Ball)
+		for b, turn in { -0.5, -0.17, 0.17, 0.5 } do
+			face(`Bang{b}`, Vector3.one * headSize * 0.28, CFrame.new(onBall(skull, turn, headSize * 0.31, -headSize * 0.04)), hairColor, Enum.PartType.Ball)
+		end
+	elseif style == "Spiky" then
+		for s = 1, 5 do
+			local angle = (s - 3) * 0.35
+			face(`Spike{s}`, Vector3.new(headSize * 0.18, headSize * 0.4, headSize * 0.18), CFrame.new(math.sin(angle) * headSize * 0.35, headSize * 0.48, headSize * 0.05) * CFrame.Angles(0, 0, -angle), hairColor)
+		end
+	end
+
+	-- The weak spot: a glowing lump set into the back of the neck (+Z
+	-- side). Narrower than the neck, so it only shows from behind and the
+	-- sides.
+	local napeY = neckBaseY + neckLength * 0.55
+	local napeAxis = neckFrom + (neckTo - neckFrom) * ((napeY - neckFrom.Y) / (neckTo.Y - neckFrom.Y))
+	local nape = part(model, "Nape", Vector3.one * headSize * 0.46, CFrame.new(napeAxis + Vector3.new(0, 0, headSize * 0.15)), Color3.fromRGB(255, 120, 60), Enum.PartType.Ball, Enum.Material.Neon)
+	nape.Transparency = 0.1
 	weld(torso, nape)
 	local glow = Instance.new("PointLight")
 	glow.Color = nape.Color
@@ -137,17 +290,31 @@ function GiantFactory.Build(kindName: string, position: Vector3, rng: Random): R
 	glow.Brightness = 1.5
 	glow.Parent = nape
 
-	-- Legs on hip motors (pivot at the top of each leg).
-	for i, side in { -1, 1 } do
-		local leg = limb(model, if side < 0 then "LeftLeg" else "RightLeg", Vector3.new(legWidth, legLength, legWidth * 1.1), base * CFrame.new(side * legWidth * 0.6, legLength / 2, 0), pants, Enum.Material.Fabric)
-		motor(if side < 0 then "LeftHip" else "RightHip", root, leg, CFrame.new(side * legWidth * 0.6, 0, 0), CFrame.new(0, legLength / 2, 0))
-		weld(leg, limb(model, `Foot{i}`, Vector3.new(legWidth * 1.1, h * 0.04, legWidth * 1.6), base * CFrame.new(side * legWidth * 0.6, h * 0.02, -legWidth * 0.3), Color3.fromRGB(70, 50, 40)))
-	end
-	-- Arms on shoulder motors (pivot at the top of each arm).
+	-- Legs: thigh on a hip motor, shin on a knee motor, then a foot. The
+	-- shorts' legs ride on the thighs.
 	for _, side in { -1, 1 } do
-		local shoulder = CFrame.new(side * (torsoWidth / 2 + armWidth / 2), torsoHeight / 2 - armWidth / 2, 0)
-		local arm = limb(model, if side < 0 then "LeftArm" else "RightArm", Vector3.new(armWidth, armLength, armWidth), base * CFrame.new(0, legLength + torsoHeight / 2, 0) * shoulder * CFrame.new(0, -armLength / 2 + armWidth / 2, 0), skin)
-		motor(if side < 0 then "LeftShoulder" else "RightShoulder", torso, arm, shoulder, CFrame.new(0, armLength / 2 - armWidth / 2, 0))
+		local prefix = if side < 0 then "Left" else "Right"
+		local x = side * torsoWidth * 0.26
+		local thighPart = segment(model, `{prefix}Thigh`, legWidth, thigh, base * CFrame.new(x, hipY - thigh / 2, 0), skin)
+		motor(`{prefix}Hip`, root, thighPart, base * CFrame.new(x, hipY, 0))
+		weld(thighPart, part(model, `{prefix}ShortsLeg`, Vector3.new(thigh * 0.42, legWidth * 1.22, legWidth * 1.22), base * CFrame.new(x, hipY - thigh * 0.19, 0) * UPRIGHT, shortsColor, Enum.PartType.Cylinder, Enum.Material.Fabric))
+		local shinPart = segment(model, `{prefix}Shin`, legWidth * 0.85, shin, base * CFrame.new(x, shin / 2, 0), skin)
+		motor(`{prefix}Knee`, thighPart, shinPart, base * CFrame.new(x, shin, 0))
+		weld(shinPart, part(model, `{prefix}Foot`, Vector3.new(legWidth * 0.95, h * 0.045, legWidth * 1.4), base * CFrame.new(x, h * 0.0225, -legWidth * 0.25), darker))
+		weld(shinPart, part(model, `{prefix}Toes`, Vector3.one * legWidth * 0.95, base * CFrame.new(x, legWidth * 0.3, -legWidth * 0.8), darker, Enum.PartType.Ball))
+	end
+
+	-- Arms: upper arm on a shoulder motor, forearm on an elbow, then a big
+	-- hand (all the better to grab with).
+	for _, side in { -1, 1 } do
+		local prefix = if side < 0 then "Left" else "Right"
+		local shoulder = base * CFrame.new(side * (torsoWidth / 2 + armWidth * 0.45), torsoCentreY + torsoHeight / 2 - armWidth * 0.5, 0)
+		local upper = segment(model, `{prefix}UpperArm`, armWidth, upperArm, shoulder * CFrame.new(0, -upperArm / 2, 0), skin)
+		motor(`{prefix}Shoulder`, torso, upper, shoulder)
+		local fore = segment(model, `{prefix}ForeArm`, armWidth * 0.9, foreArm, shoulder * CFrame.new(0, -upperArm - foreArm / 2, 0), skin)
+		motor(`{prefix}Elbow`, upper, fore, shoulder * CFrame.new(0, -upperArm, 0))
+		local hand = part(model, `{prefix}Hand`, Vector3.one * armWidth * 1.35, shoulder * CFrame.new(0, -upperArm - foreArm - armWidth * 0.55, 0), skin, Enum.PartType.Ball)
+		weld(fore, hand)
 	end
 
 	-- Kinematic movement: the server steers these; physics does the gliding.
@@ -173,6 +340,7 @@ function GiantFactory.Build(kindName: string, position: Vector3, rng: Random): R
 	alignOrientation.Parent = root
 
 	model:SetAttribute("Kind", kindName)
+	model:SetAttribute("Body", bodyName)
 	model:SetAttribute("Height", h)
 	model:SetAttribute("NapeHealth", kind.NapeHealth)
 	model:SetAttribute("MaxNapeHealth", kind.NapeHealth)
@@ -183,7 +351,7 @@ function GiantFactory.Build(kindName: string, position: Vector3, rng: Random): R
 		Root = root,
 		Torso = torso,
 		Nape = nape,
-		TorsoHeight = torsoHeight,
+		TorsoHeight = pelvisHeight + torsoHeight,
 		TorsoDepth = torsoDepth,
 	}
 end

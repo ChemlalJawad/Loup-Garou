@@ -170,11 +170,11 @@ local function build()
 	-- Controls card (hidden on touch, where the buttons speak for themselves).
 	if not UserInputService.TouchEnabled then
 		local help = new("TextLabel", {
-			Position = UDim2.new(0, 16, 1, -150),
-			Size = UDim2.new(0, 300, 0, 126),
+			Position = UDim2.new(0, 16, 1, -176),
+			Size = UDim2.new(0, 380, 0, 152),
 			BackgroundColor3 = Color3.fromRGB(25, 28, 40),
 			BackgroundTransparency = 0.3,
-			Text = "  HOLD Q / E - left / right hook\n  SPACE (in the air) / SHIFT - gas boost\n  CLICK or F - slash\n  Aim for the GLOWING NECK!\n  Crates with blue beams - resupply",
+			Text = "  HOLD Q / E - left / right hook, then swing\n  HOLD SPACE - reel in (hooked) / gas (in the air)\n  SHIFT - gas dash\n  CLICK or F - slash with both blades (spins in the air)\n  Aim for the GLOWING NECK!\n  Crates with blue beams - resupply",
 			Font = Enum.Font.GothamMedium,
 			TextSize = 14,
 			TextColor3 = Color3.fromRGB(235, 240, 250),
