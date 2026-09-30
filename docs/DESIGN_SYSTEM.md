@@ -231,6 +231,23 @@ picnic blanket on its west shore. Two giant statues (Gold Tralalero Astrale
 in the west wilds, Diamond Crocobrivido Vulcanico between the Market and Fun
 Park) are skyline landmarks, positioned via `WorldLayout.Landmarks`.
 
+### Themed wilds (`WildsZone.lua`, Order 160)
+
+Rects live in `WorldLayout.Wilds`; plan in `docs/map-plan.png`.
+
+- **Candy Land** (around the Fun Park path, 210,152): pink "sugar" terrain
+  (Salt), lollipops, candy canes, glassy gumdrops you can hop on, and
+  cotton-candy trees.
+- **Crystal Grove** (north of the pond): violet Slate ground, glass crystal
+  clusters with neon cores. One cluster in three carries a night light;
+  sparkles drift over the grove.
+- **Tulip Fields** (south strip): colour-striped beds on dirt ridges and a
+  windmill. The sails are spun client-side via the `Spinner` tag.
+- **Rock outcrops**: 22 terrain boulders in open grass.
+- **Backdrops** (`WorldLayout.Backdrops`): a smoking volcano beyond the south
+  edge (lava crater, glowing streams, embers) and snow-capped mountains
+  behind the Arena. They're outside the boundary wall: scenery only.
+
 ## 7. Lighting
 
 Lighting is split in two:

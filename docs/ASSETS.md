@@ -112,7 +112,19 @@ See `assets/models/preview.png`.
 | `TralaleroAstrale.fbx` | `TralaleroAstrale` (Secret) | 15,000 |
 | `TungTungTamburo.fbx` | `TungTungTamburo` (new Epic species) | 15,000 |
 
-For each file:
+**Easiest: no Studio import at all.** Upload them with the same Open Cloud
+API key as the sounds:
+
+```bash
+python tools/models/upload_models.py --user <your user id>    # or --group <id>
+```
+
+This writes the ids into `src/ReplicatedStorage/Shared/Assets/ModelIds.lua`.
+At the next server start, `ModelAssetService` loads the models into the game
+by itself. The game must belong to the same user or group that uploaded
+them.
+
+**Or by hand in Studio**, for each file:
 
 1. In Studio, open **Home → Import 3D**, pick the `.fbx`, and import with
    default settings. If it comes in untextured, drop the matching

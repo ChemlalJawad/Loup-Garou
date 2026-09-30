@@ -90,6 +90,8 @@ ice slide, with treasure chests at the top and hidden around the map.
 | Sky: drifting clouds, Lucky Rainbow arc | `Controllers/SkyController.lua` |
 | Smooth Terrain ground (wind-swept grass, water pond, hills, clouds) | `World/TerrainZone.lua` |
 | Original SFX + music, upload script | `assets/sfx/`, `tools/sfx/`, `Shared/Audio/AudioIds.lua` (see `docs/ASSETS.md`) |
+| Themed wilds: Candy Land, Crystal Grove, Tulip Fields + windmill, rock outcrops, volcano & snowy-mountain backdrops (plan: `docs/map-plan.png`) | `World/WildsZone.lua`, `Controllers/SpinnerController.lua` |
+| Uploaded Brainrot models, auto-loaded at server start | `tools/models/upload_models.py`, `Shared/Assets/ModelIds.lua`, `Services/ModelAssetService.lua` |
 | Drop-in Brainrot/egg models | `ReplicatedStorage.AssetOverrides` (see `docs/ASSETS.md`) |
 | New-player guide (3 steps, glowing trail, reward) | `Shared/Tutorial`, `Services/TutorialService.lua`, `Controllers/TutorialController.lua` |
 | Lucky Rainbow weather (Parade mutation chance x2) | `Shared/Events/EventConfig.lua`, `Services/EventService.lua` |

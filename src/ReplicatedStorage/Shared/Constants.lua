@@ -119,6 +119,7 @@ Constants.TAGS = {
 	Bouncy = "Bouncy", -- attribute BouncePower: number (client applies)
 	RewardChest = "RewardChest", -- attributes ChestId, RewardCoins, RewardXP, CooldownSeconds, Label
 	EggPodium = "EggPodium", -- on a ProximityPrompt: triggering it opens the Eggs panel (client)
+	Spinner = "Spinner", -- on a Model: client spins it around its pivot; attributes SpinAxis ("X"|"Y"|"Z"), SpinSpeed (deg/s)
 }
 
 -- === Remotes ================================================================

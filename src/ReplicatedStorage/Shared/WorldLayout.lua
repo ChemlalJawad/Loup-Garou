@@ -104,6 +104,28 @@ WorldLayout.Landmarks = {
 	StatueEast = Vector3.new(255, WorldLayout.GroundY, 150),
 }
 
+-- Themed wild areas in the open ground between zones (WildsZone builds
+-- them). Rects, like zones, but they aren't WorldLayout.Zones: no floor, no
+-- gameplay - scenery you can walk through.
+WorldLayout.Wilds = {
+	-- Between the Market and the Fun Park, around the Fun Park path.
+	CandyLand = { Center = Vector3.new(210, WorldLayout.GroundY, 152), Size = Vector3.new(128, 1, 136) },
+	-- North of the Lily Pond.
+	CrystalGrove = { Center = Vector3.new(-185, WorldLayout.GroundY, 399), Size = Vector3.new(88, 1, 50) },
+	-- The southern strip below the Parade, Hatchery and Lounge.
+	TulipFields = { Center = Vector3.new(-15, WorldLayout.GroundY, -290), Size = Vector3.new(500, 1, 30) },
+}
+
+-- Scenery beyond the boundary: seen, never reached.
+WorldLayout.Backdrops = {
+	Volcano = Vector3.new(140, WorldLayout.GroundY, -480),
+	Mountains = {
+		{ Center = Vector3.new(-170, WorldLayout.GroundY, 600), Radius = 130, Height = 120 },
+		{ Center = Vector3.new(40, WorldLayout.GroundY, 650), Radius = 150, Height = 150 },
+		{ Center = Vector3.new(230, WorldLayout.GroundY, 595), Radius = 120, Height = 110 },
+	},
+}
+
 function WorldLayout.Get(zoneId: string): ZoneRect
 	local zone = (WorldLayout.Zones :: any)[zoneId]
 	assert(zone, `WorldLayout: unknown zone "{zoneId}"`)
