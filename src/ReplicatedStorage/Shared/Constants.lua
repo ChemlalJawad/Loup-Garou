@@ -111,6 +111,17 @@ Constants.LEADERBOARD_KEYS = { "Coins", "FlagCaptures", "EggsHatched", "Level" }
 Constants.LEADERBOARD_SIZE = 25
 Constants.LEADERBOARD_REFRESH_SECONDS = 60
 
+-- === CollectionService tags ==================================================
+-- Gameplay props are found by tag (not by name or path), so any zone can
+-- place them and the systems that drive them pick them up automatically.
+Constants.TAGS = {
+	JumpPad = "JumpPad", -- attribute LaunchVelocity: Vector3 (client applies)
+	Bouncy = "Bouncy", -- attribute BouncePower: number (client applies)
+	RewardChest = "RewardChest", -- attributes ChestId, RewardCoins, RewardXP, CooldownSeconds, Label
+	EggPodium = "EggPodium", -- on a ProximityPrompt: triggering it opens the Eggs panel (client)
+	Spinner = "Spinner", -- on a Model: client spins it around its pivot; attributes SpinAxis ("X"|"Y"|"Z"), SpinSpeed (deg/s)
+}
+
 -- === Remotes ================================================================
 
 Constants.REMOTE_NAMES = {
@@ -183,6 +194,31 @@ Constants.REMOTE_NAMES = {
 	},
 	Audio = {
 		PlaySfx = "Audio_PlaySfx",
+	},
+	-- Brainrot Parade (red carpet): the server decides what walks and when;
+	-- clients animate positions locally from server time, so nothing on the
+	-- carpet costs per-frame replication.
+	Parade = {
+		Spawned = "Parade_Spawned", -- (walker)
+		Sold = "Parade_Sold", -- (uid, buyerName)
+		Buy = "Parade_Buy", -- client -> server (uid)
+		RequestState = "Parade_RequestState", -- client -> server ()
+		State = "Parade_State", -- ({ walker })
+	},
+	-- World events (Coin Rain). Same split as the parade: server owns the
+	-- coin list and validates pickups, clients render and animate locally.
+	Event = {
+		Started = "Event_Started", -- (eventPayload)
+		Ended = "Event_Ended", -- (eventId)
+		Collect = "Event_Collect", -- client -> server (eventId, coinId)
+		CoinCollected = "Event_CoinCollected", -- (eventId, coinId)
+		RequestState = "Event_RequestState", -- client -> server ()
+	},
+	-- New-player guide. The server owns progress; the client draws it.
+	Tutorial = {
+		State = "Tutorial_State", -- (stepIndex) 0 = done
+		RequestState = "Tutorial_RequestState", -- client -> server ()
+		Skip = "Tutorial_Skip", -- client -> server ()
 	},
 	Shared = {
 		Notify = "Shared_Notify",

@@ -11,6 +11,7 @@ local ServerScriptService = game:GetService("ServerScriptService")
 local Constants = require(ReplicatedStorage.Shared.Constants)
 local Net = require(ReplicatedStorage.Shared.Net)
 local EggConfig = require(ReplicatedStorage.Shared.Eggs.EggConfig)
+local Mutations = require(ReplicatedStorage.Shared.Brainrots.Mutations)
 local DataService = require(ServerScriptService.Server.Services.DataService)
 local EconomyService = require(ServerScriptService.Server.Services.EconomyService)
 
@@ -297,8 +298,12 @@ local function onSellBrainrot(player: Player, uid: unknown)
 		return
 	end
 
-	local refund = Constants.SELL_VALUE[removed.Rarity] or 0
-	EconomyService.AwardCoins(player, refund, `Sold {EggConfig.DisplayName(removed.Id)}`)
+	local refund = math.floor((Constants.SELL_VALUE[removed.Rarity] or 0) * Mutations.IncomeMultiplier(removed.Mutation))
+	EconomyService.AwardCoins(
+		player,
+		refund,
+		`Sold {Mutations.DecorateName(EggConfig.DisplayName(removed.Id), removed.Mutation)}`
+	)
 	DataService.IncrementStat(player, "BrainrotsSold", 1)
 	pushInventoryFor(player)
 end
@@ -330,16 +335,26 @@ local function onSellDuplicates(player: Player, options: unknown)
 		end
 	end
 	for _, owned in profile.OwnedBrainrots do
-		if not keepUidBySpecies[owned.Id] then
+		if not keepUidBySpecies[owned.Id] and owned.Mutation == nil then
 			keepUidBySpecies[owned.Id] = owned.Uid
 		end
 	end
 
+	-- Mutated Brainrots are never bulk-sold: they're rare, worth far more than
+	-- a normal duplicate, and "Sell duplicates" is exactly the kind of button a
+	-- young player taps without reading. Selling one must be a deliberate,
+	-- one-at-a-time action.
 	local uidsToSell: { string } = {}
 	local totalRefund = 0
 	for _, owned in profile.OwnedBrainrots do
 		local rarityIndex = EggConfig.RarityIndex(owned.Rarity) or 1
-		if owned.Uid ~= keepUidBySpecies[owned.Id] and owned.Uid ~= equippedUid and rarityIndex <= maxIndex then
+		local isMutated = owned.Mutation ~= nil
+		if
+			not isMutated
+			and owned.Uid ~= keepUidBySpecies[owned.Id]
+			and owned.Uid ~= equippedUid
+			and rarityIndex <= maxIndex
+		then
 			table.insert(uidsToSell, owned.Uid)
 			totalRefund += Constants.SELL_VALUE[owned.Rarity] or 0
 		end
@@ -376,9 +391,23 @@ local function onMergeBrainrots(player: Player, brainrotId: unknown)
 		return
 	end
 
-	local owned = DataService.CountBrainrotsOfId(player, brainrotId)
+	-- Only normal (non-mutated) copies are merge fuel: a Rainbow must never
+	-- be silently consumed as one of five duplicates.
+	local profileForCount = DataService.Get(player)
+	local owned = 0
+	if profileForCount then
+		for _, entry in profileForCount.OwnedBrainrots do
+			if entry.Id == brainrotId and entry.Mutation == nil then
+				owned += 1
+			end
+		end
+	end
 	if owned < Constants.MERGE_COST then
-		notify(player, `Need {Constants.MERGE_COST}x {EggConfig.DisplayName(brainrotId)} to merge.`, "Warning")
+		notify(
+			player,
+			`Need {Constants.MERGE_COST}x normal (non-mutated) {EggConfig.DisplayName(brainrotId)} to merge.`,
+			"Warning"
+		)
 		return
 	end
 
@@ -398,13 +427,23 @@ local function onMergeBrainrots(player: Player, brainrotId: unknown)
 	local equippedUid = profile.EquippedBrainrotUid
 	local uidsToRemove: { string } = {}
 	for _, entry in profile.OwnedBrainrots do
-		if entry.Id == brainrotId and entry.Uid ~= equippedUid and #uidsToRemove < Constants.MERGE_COST then
+		if
+			entry.Id == brainrotId
+			and entry.Mutation == nil
+			and entry.Uid ~= equippedUid
+			and #uidsToRemove < Constants.MERGE_COST
+		then
 			table.insert(uidsToRemove, entry.Uid)
 		end
 	end
 	if #uidsToRemove < Constants.MERGE_COST then
 		for _, entry in profile.OwnedBrainrots do
-			if entry.Id == brainrotId and entry.Uid == equippedUid and #uidsToRemove < Constants.MERGE_COST then
+			if
+				entry.Id == brainrotId
+				and entry.Mutation == nil
+				and entry.Uid == equippedUid
+				and #uidsToRemove < Constants.MERGE_COST
+			then
 				table.insert(uidsToRemove, entry.Uid)
 			end
 		end
@@ -421,7 +460,7 @@ local function onMergeBrainrots(player: Player, brainrotId: unknown)
 	end
 
 	local newSpecies = EggConfig.RollSpecies(nextRarity, rng)
-	local granted = DataService.AddBrainrot(player, newSpecies, nextRarity)
+	local granted = DataService.AddBrainrot(player, newSpecies, nextRarity, nil, "Merge")
 	if not granted then
 		-- Extremely unlikely race (slots filled between the check above and
 		-- this mutation). The duplicates are already spent; tell the player

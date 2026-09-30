@@ -18,7 +18,16 @@ export type OwnedBrainrot = {
 	Id: string,
 	Rarity: string,
 	HatchedAt: number,
+	-- Optional variant (see Shared/Brainrots/Mutations): "Gold", "Diamond",
+	-- "Galaxy", "Rainbow". Absent for a normal Brainrot, so every save
+	-- written before mutations existed is already valid.
+	Mutation: string?,
 }
+
+-- How a Brainrot was obtained. Only hatches count toward the EggsHatched
+-- stat (quests and the leaderboard read it), so buying from the Parade can't
+-- be used to farm "hatch N eggs" progress.
+export type GrantSource = "Egg" | "Merge" | "Parade" | "Reward"
 
 export type QuestProgress = {
 	Id: string,
@@ -68,10 +77,20 @@ export type Profile = {
 	-- upgradeId -> owned tier/level.
 	Upgrades: { [string]: number },
 
+	-- Generic per-player cooldowns: key -> os.time() when it was last used
+	-- (e.g. "Chest:ObbyTop" for RewardChestService). Persisted so logging out
+	-- and back in doesn't reset a cooldown.
+	Cooldowns: { [string]: number },
+
 	AutoHatch: {
 		Enabled: boolean,
 		EggId: string?,
 	},
+
+	-- New-player guide step (owned by TutorialService): 1..N, or 0 when done
+	-- or skipped. Old saves get 1 from reconcile(); TutorialService marks
+	-- anyone who has already hatched an egg as done on load.
+	TutorialStep: number,
 
 	Stats: {
 		FlagCaptures: number,
@@ -82,6 +101,7 @@ export type Profile = {
 		RoundsPlayed: number,
 		CoinsEarned: number,
 		BrainrotsSold: number,
+		ParadeBuys: number,
 	},
 	Settings: {
 		Music: boolean,
@@ -120,10 +140,12 @@ local function defaultProfile(): Profile
 		CodesRedeemed = {},
 		Boosts = {},
 		Upgrades = {},
+		Cooldowns = {},
 		AutoHatch = {
 			Enabled = false,
 			EggId = nil,
 		},
+		TutorialStep = 1,
 		Stats = {
 			FlagCaptures = 0,
 			FlagReturns = 0,
@@ -133,6 +155,7 @@ local function defaultProfile(): Profile
 			RoundsPlayed = 0,
 			CoinsEarned = 0,
 			BrainrotsSold = 0,
+			ParadeBuys = 0,
 		},
 		Settings = {
 			Music = true,
@@ -290,7 +313,15 @@ function DataService.TrySpendGems(player: Player, amount: number): boolean
 end
 
 -- Returns the new OwnedBrainrot entry, or nil if the inventory is full.
-function DataService.AddBrainrot(player: Player, id: string, rarity: string): DataService.OwnedBrainrot?
+-- `mutation` and `source` are optional so every existing call site (eggs,
+-- merges) keeps working unchanged; `source` defaults to "Egg".
+function DataService.AddBrainrot(
+	player: Player,
+	id: string,
+	rarity: string,
+	mutation: string?,
+	source: GrantSource?
+): DataService.OwnedBrainrot?
 	local profile = profiles[player]
 	if not profile then
 		return nil
@@ -304,9 +335,16 @@ function DataService.AddBrainrot(player: Player, id: string, rarity: string): Da
 		Id = id,
 		Rarity = rarity,
 		HatchedAt = os.time(),
+		Mutation = mutation,
 	}
 	table.insert(profile.OwnedBrainrots, entry)
-	profile.Stats.EggsHatched += 1
+
+	local grantSource = source or "Egg"
+	if grantSource == "Egg" then
+		profile.Stats.EggsHatched += 1
+	elseif grantSource == "Parade" then
+		profile.Stats.ParadeBuys += 1
+	end
 
 	-- Collection index bookkeeping lives here rather than in IndexService so
 	-- that *every* grant path (hatch, merge, code reward, quest reward) counts

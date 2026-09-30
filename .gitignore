@@ -4,9 +4,9 @@
 *.rbxm
 *.rbxmx
 
-# Aftman / Foreman tool binaries
+# Aftman / Foreman / Rokit tool binaries (tools/ itself holds our scripts)
 .aftman/
-/tools/
+.rokit/
 
 # OS
 .DS_Store
@@ -16,3 +16,8 @@ Thumbs.db
 .vscode/*
 !.vscode/extensions.json
 !.vscode/settings.json
+
+# Raw downloads from tools/models/download_models.py (the prepared,
+# Roblox-ready .fbx files in assets/models/ ARE committed)
+assets/models/*.glb
+assets/models/*_gltf.zip

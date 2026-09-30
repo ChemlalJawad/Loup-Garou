@@ -1,0 +1,13 @@
+3D models - Creative Commons Attribution 4.0 (CC BY 4.0), via Sketchfab.
+Modified for Roblox: decimated to 15k triangles, texture resized to 1024px,
+re-oriented, normal map dropped; Tralalero's shoe logos painted out.
+
+CrocobrividoVulcanico.fbx - "BOMBARDIRO CROCODILO" by Aizen
+  https://sketchfab.com/3d-models/bombardiro-crocodilo-db92444b3c064933a6f8ae31b0c27810
+TralaleroAstrale.fbx - "Tralalero Tralala" by Eks.Art
+  https://sketchfab.com/3d-models/tralalero-tralala-091fffbf2972484f9c35c8a2ec8916f3
+TungTungTamburo.fbx - "Tung Tung Tung Sahur" by Eks.Art
+  https://sketchfab.com/3d-models/tung-tung-tung-sahur-91ddd9079bd84019ba4a12e01d93a0d6
+
+Game description line:
+  3D models: Aizen, Eks.Art (CC BY 4.0, Sketchfab)

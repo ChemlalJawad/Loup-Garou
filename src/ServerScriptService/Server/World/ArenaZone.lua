@@ -169,6 +169,9 @@ local function buildHalf(folder: Instance, arenaCenter: Vector3, groundY: number
 	})
 	WorldKit.Light({
 		Name = `{teamId}FlagStandLight`,
+		-- Players navigate by this at night: keep it on regardless of time of
+		-- day or graphics quality.
+		Gameplay = true,
 		Parent = WorldKit.Part({
 			Name = `{teamId}FlagStandLightAnchor`,
 			Size = Vector3.new(1, 1, 1),

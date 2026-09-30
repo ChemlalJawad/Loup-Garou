@@ -1,5 +1,5 @@
 --!strict
--- Pure data + pure helpers for the Collection Index. The canonical 16
+-- Pure data + pure helpers for the Collection Index. The canonical 17
 -- Brainrots (sourced from docs/BRAINROT_ROSTER.md) and the milestone reward
 -- ladder that turns "I got a duplicate" into "I need 3 more for Epic tier."
 --
@@ -43,7 +43,7 @@ export type Milestone = {
 	PermanentLuckBoost: boolean?,
 }
 
--- === The 16 canonical Brainrots ============================================
+-- === The 17 canonical Brainrots ============================================
 -- Order matches docs/BRAINROT_ROSTER.md (rarity-grouped, roster order within
 -- each rarity). Do not add/remove/rename entries here without updating the
 -- roster doc first - Egg/CTF systems read the same ids.
@@ -61,10 +61,11 @@ local entries: { IndexEntry } = {
 	{ Id = "RondineRavioli", Name = "Rondine Ravioli", Rarity = "Rare" },
 	{ Id = "ScoiattoloCannoncino", Name = "Scoiattolo Cannoncino", Rarity = "Rare" },
 	{ Id = "TartarugaVespaccia", Name = "Tartaruga Vespaccia", Rarity = "Rare" },
-	-- Epic (3)
+	-- Epic (4)
 	{ Id = "FenicotteroPizzaiolo", Name = "Fenicottero Pizzaiolo", Rarity = "Epic" },
 	{ Id = "PipistrelloMarinaro", Name = "Pipistrello Marinaro", Rarity = "Epic" },
 	{ Id = "CannoloTrombonini", Name = "Cannolo Trombonini", Rarity = "Epic" },
+	{ Id = "TungTungTamburo", Name = "Tung Tung Tamburo", Rarity = "Epic" },
 	-- Legendary (2)
 	{ Id = "CrocobrividoVulcanico", Name = "Crocobrivido Vulcanico", Rarity = "Legendary" },
 	{ Id = "SqualezzaFerroviaria", Name = "Squalezza Ferroviaria", Rarity = "Legendary" },
@@ -115,7 +116,7 @@ function IndexConfig.IsDiscovered(indexTable: IndexTable, id: string): boolean
 	return count ~= nil and count > 0
 end
 
--- Counts only the canonical 16 ids, so stray/legacy keys in profile.Index
+-- Counts only the canonical 17 ids, so stray/legacy keys in profile.Index
 -- (e.g. a removed test id) never inflate the total.
 function IndexConfig.DiscoveredCount(indexTable: IndexTable): number
 	local count = 0
@@ -139,7 +140,7 @@ end
 
 -- === Milestones ==============================================================
 -- Per-rarity completion rewards scale steeply by tier, overall discovery
--- counts reward earlier partial progress, and the 16/16 capstone pays out big
+-- counts reward earlier partial progress, and the 17/17 capstone pays out big
 -- plus a permanent Luck boost (granted by IndexService via the existing
 -- EconomyService.BOOST_LUCK_2X boost name with a ~100 year duration - see
 -- IndexService for the grant call).
@@ -165,7 +166,7 @@ local milestones: { Milestone } = {
 	{
 		Id = "RarityComplete_Epic",
 		Label = "Epic Collector",
-		Description = "Discover all 3 Epic Brainrots.",
+		Description = "Discover all 4 Epic Brainrots.",
 		Kind = "RarityComplete",
 		Rarity = "Epic",
 		Reward = { Coins = 50000, Gems = 60, XP = 3000 },
@@ -213,13 +214,13 @@ local milestones: { Milestone } = {
 		Reward = { Coins = 25000, Gems = 40, XP = 2500 },
 	},
 
-	-- Capstone: the full 16/16 collection.
+	-- Capstone: the full collection (every entry above).
 	{
 		Id = "FullCollection",
 		Label = "Index Complete",
-		Description = "Discover all 16 Brainrots.",
+		Description = "Discover all 17 Brainrots.",
 		Kind = "FullCollection",
-		Count = 16,
+		Count = 17,
 		Reward = { Coins = 500000, Gems = 500, XP = 20000 },
 		PermanentLuckBoost = true,
 	},

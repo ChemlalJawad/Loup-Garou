@@ -6,6 +6,18 @@
       "$className": "ReplicatedStorage",
       "Shared": {
         "$path": "src/ReplicatedStorage/Shared"
+      },
+      "AssetOverrides": {
+        "$className": "Folder",
+        "Brainrots": {
+          "$className": "Folder",
+          "$ignoreUnknownInstances": true
+        },
+        "Eggs": {
+          "$className": "Folder",
+          "$ignoreUnknownInstances": true
+        },
+        "$ignoreUnknownInstances": true
       }
     },
     "ServerScriptService": {
@@ -23,10 +35,25 @@
         }
       }
     },
+    "Lighting": {
+      "$className": "Lighting",
+      "$properties": {
+        "Technology": "Future"
+      }
+    },
     "Workspace": {
       "$className": "Workspace",
       "$properties": {
-        "FilteringEnabled": true
+        "FilteringEnabled": true,
+        "StreamingEnabled": true,
+        "StreamOutBehavior": "Opportunistic",
+        "FallenPartsDestroyHeight": -120
+      }
+    },
+    "Players": {
+      "$className": "Players",
+      "$properties": {
+        "RespawnTime": 3
       }
     }
   }

@@ -16,6 +16,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
 
 local Constants = require(ReplicatedStorage.Shared.Constants)
+local Mutations = require(ReplicatedStorage.Shared.Brainrots.Mutations)
 local DataService = require(ServerScriptService.Server.Services.DataService)
 local EconomyService = require(ServerScriptService.Server.Services.EconomyService)
 
@@ -102,7 +103,10 @@ local function tick(tickSeconds: number)
 		end
 
 		local storeMultiplier = idleIncomeStoreMultiplier(player)
-		local raw = (baseRate * storeMultiplier * tickSeconds) + (remainders[player] or 0)
+		-- Mutated Brainrots (Gold x1.25 ... Rainbow x10) earn more; this is
+		-- the main reason a mutation is worth chasing on the Parade.
+		local mutationMultiplier = Mutations.IncomeMultiplier(equipped.Mutation)
+		local raw = (baseRate * storeMultiplier * mutationMultiplier * tickSeconds) + (remainders[player] or 0)
 		local whole = math.floor(raw)
 		remainders[player] = raw - whole
 

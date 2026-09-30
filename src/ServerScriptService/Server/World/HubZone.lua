@@ -37,17 +37,23 @@
 --   Spawn pad + spawn = 2
 --   Total ~ 110 parts, comfortably under the ~400 guideline.
 
+local CollectionService = game:GetService("CollectionService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local Constants = require(ReplicatedStorage.Shared.Constants)
 local Theme = require(ReplicatedStorage.Shared.Theme)
 local WorldLayout = require(ReplicatedStorage.Shared.WorldLayout)
 local WorldKit = require(script.Parent.WorldKit)
+local HubWelcome = require(script.Parent.HubWelcome)
 
 local HubZone = {}
 HubZone.Order = 10 -- built first among decorative zones: it's the spawn.
 
-local STONE = Color3.fromRGB(30, 30, 44)
-local STONE_LIGHT = Color3.fromRGB(40, 40, 58)
+-- Pastel lilac stone for arches, fountain and pillars: contrasts with the
+-- cream paving and stays playful. (Was near-black, which made the spawn -
+-- every player's first impression - read as a night-time car park.)
+local STONE = Color3.fromRGB(150, 140, 190)
+local STONE_LIGHT = Color3.fromRGB(178, 168, 214)
 
 local GATEWAY_COLORS = {
 	South = Theme.Color.AccentSecondary,
@@ -198,16 +204,25 @@ local function buildLandmark(folder: Instance, base: Vector3)
 		})
 	end
 
-	WorldKit.Sphere({
-		Name = "LandmarkShard",
-		Position = base + Vector3.new(0, y + 2, 0),
-		Diameter = 4,
+	-- The shard: a tilted neon crystal the client spins (Spinner tag), so
+	-- the plaza's centrepiece is always moving - an eye-catcher from spawn.
+	local shardModel = Instance.new("Model")
+	shardModel.Name = "LandmarkShard"
+	local shard = WorldKit.Part({
+		Name = "Shard",
+		Size = Vector3.new(2.6, 5, 2.6),
+		CFrame = CFrame.new(base + Vector3.new(0, y + 3, 0)) * CFrame.Angles(math.rad(35), 0, math.rad(35)),
 		Color = Theme.Color.AccentPrimary,
 		Material = Enum.Material.Neon,
 		CanCollide = false,
 		CastShadow = false,
-		Parent = folder,
+		Parent = shardModel,
 	})
+	shardModel.PrimaryPart = shard
+	shardModel:SetAttribute("SpinAxis", "Y")
+	shardModel:SetAttribute("SpinSpeed", 40)
+	CollectionService:AddTag(shardModel, Constants.TAGS.Spinner)
+	shardModel.Parent = folder
 	WorldKit.Light({
 		Name = "LandmarkLight",
 		Parent = WorldKit.Part({
@@ -265,8 +280,9 @@ function HubZone.Build(parent: Instance)
 		Name = "PlazaOuterRing",
 		Size = Vector3.new(zone.Size.X, 1, zone.Size.Z),
 		Position = center + Vector3.new(0, groundY - 0.5, 0),
-		Color = Theme.Color.Background,
-		Material = Enum.Material.SmoothPlastic,
+		-- Same paving as the paths, so every walk flows into the plaza.
+		Color = WorldKit.Palette.Paving,
+		Material = Enum.Material.Cobblestone,
 		Parent = folder,
 	})
 
@@ -276,7 +292,7 @@ function HubZone.Build(parent: Instance)
 		Name = "PlazaMidRing",
 		Size = Vector3.new(tier1Size, 1, tier1Size),
 		Position = center + Vector3.new(0, groundY + 0.5, 0),
-		Color = Theme.Color.Surface,
+		Color = WorldKit.Palette.PavingLight,
 		Material = Enum.Material.SmoothPlastic,
 		Parent = folder,
 	})
@@ -298,8 +314,8 @@ function HubZone.Build(parent: Instance)
 		TileSize = 5.75,
 		Thickness = 1,
 		Position = center + Vector3.new(0, groundY + 1.5, 0),
-		ColorA = Theme.Color.SurfaceRaised,
-		ColorB = Theme.Color.Surface,
+		ColorA = WorldKit.Palette.TileCream,
+		ColorB = WorldKit.Palette.TileRose,
 		Parent = folder,
 	})
 	WorldKit.NeonBorder({
@@ -311,16 +327,67 @@ function HubZone.Build(parent: Instance)
 		Parent = folder,
 	})
 
-	-- The one Neutral spawn every player lands at, on the dais facing the
-	-- landmark (which sits a few studs further in), so the very first frame
-	-- shows the plaza centrepiece and the four gateways beyond it.
+	-- The one Neutral spawn every player lands at: a round marble pad on the
+	-- dais, just south of the fountain basin (clear of it - they used to
+	-- overlap and z-fight), facing -Z so the first frame looks across the
+	-- fountain toward the Hatchery, the new-player guide's first stop.
+	-- Rotating about Z to stand the cylinder up keeps LookVector at -Z.
+	local spawnCentre = center + Vector3.new(0, groundY + 2.5, 17.5)
+	local spawnDiameter = 11
 	WorldKit.Spawn({
 		Name = "HubSpawn",
-		Position = center + Vector3.new(0, groundY + 2.5, 16),
-		Size = Vector3.new(14, 1, 14),
-		Color = Theme.Color.AccentPrimary,
+		CFrame = CFrame.new(spawnCentre) * CFrame.Angles(0, 0, math.rad(90)),
+		Shape = Enum.PartType.Cylinder,
+		Size = Vector3.new(1, spawnDiameter, spawnDiameter),
+		Color = WorldKit.Palette.TileCream,
+		Material = Enum.Material.Marble,
 		Neutral = true,
 		Parent = folder,
+	})
+	-- Glowing rim: a slightly wider neon disc just under the pad's top.
+	WorldKit.UprightCylinder({
+		Name = "HubSpawnRim",
+		Position = spawnCentre + Vector3.new(0, -0.1, 0),
+		Height = 0.9,
+		Diameter = spawnDiameter + 1,
+		Color = Theme.Color.AccentPrimary,
+		Material = Enum.Material.Neon,
+		CanCollide = false,
+		CastShadow = false,
+		Parent = folder,
+	})
+	-- A floating welcome over the pad, readable from the whole plaza.
+	local welcomeAnchor = WorldKit.Part({
+		Name = "WelcomeAnchor",
+		Size = Vector3.new(1, 1, 1),
+		Position = spawnCentre + Vector3.new(0, 1, 0),
+		Transparency = 1,
+		CanCollide = false,
+		CastShadow = false,
+		Parent = folder,
+	})
+	WorldKit.Sign({
+		Name = "WelcomeSign",
+		Adornee = welcomeAnchor,
+		Text = "WELCOME TO BRAINROT HATCH WARS!",
+		Color = Color3.fromRGB(255, 225, 120),
+		Size = UDim2.new(0, 420, 0, 50),
+		TextSize = 26,
+		StudsOffset = Vector3.new(0, 11, 0),
+		MaxDistance = 90,
+	})
+	-- Rainbow arch, bunting, map board, flowers (see HubWelcome).
+	HubWelcome.Build(folder, Vector3.new(spawnCentre.X, groundY + 2, spawnCentre.Z))
+
+	-- Sparkles rising off the pad (decor: off on low graphics quality).
+	WorldKit.Emitter({
+		Name = "SpawnSparkles",
+		Parent = welcomeAnchor,
+		Color = Color3.fromRGB(255, 240, 170),
+		Rate = 4,
+		Lifetime = NumberRange.new(1.5, 2.5),
+		Speed = NumberRange.new(1.5, 3),
+		SpreadAngle = Vector2.new(60, 60),
 	})
 
 	buildLandmark(folder, center + Vector3.new(0, groundY + 2, 0))
@@ -360,8 +427,8 @@ function HubZone.Build(parent: Instance)
 		Name = "ViewingDeck",
 		Size = Vector3.new(16, 1, 10),
 		Position = deckCenter,
-		Color = Theme.Color.SurfaceRaised,
-		Material = Enum.Material.SmoothPlastic,
+		Color = WorldKit.Palette.Wood,
+		Material = Enum.Material.WoodPlanks,
 		Parent = folder,
 	})
 	WorldKit.Stairs({
@@ -372,7 +439,7 @@ function HubZone.Build(parent: Instance)
 		Run = 8,
 		Axis = "Z",
 		Position = deckCenter + Vector3.new(0, -4, 8),
-		Color = Theme.Color.SurfaceRaised,
+		Color = WorldKit.Palette.Wood,
 		Parent = folder,
 	})
 	WorldKit.Railing({
@@ -391,6 +458,22 @@ function HubZone.Build(parent: Instance)
 	buildGateway(folder, "GatewayEast", center + Vector3.new(edge, groundY, 0), Vector3.new(1, 0, 0), GATEWAY_COLORS.East, "MARKET")
 	buildGateway(folder, "GatewayWest", center + Vector3.new(-edge, groundY, 0), Vector3.new(-1, 0, 0), GATEWAY_COLORS.West, "HALL OF FAME")
 	buildGateway(folder, "GatewayNorth", center + Vector3.new(0, groundY, edge), Vector3.new(0, 0, 1), GATEWAY_COLORS.North, "CTF ARENA")
+
+	-- Corner gardens on the outer ring, in the four spots between gateways
+	-- that were bare floor: a blossom tree, flower beds facing the plaza, and
+	-- a balloon cluster. Softens the plaza for a young audience and gives the
+	-- hub some green without touching any walking line (corners sit outside
+	-- the mid ring, clear of the gateways, spawn and viewing deck).
+	local cornerOffset = 63
+	for i, corner in { Vector3.new(1, 0, 1), Vector3.new(-1, 0, 1), Vector3.new(1, 0, -1), Vector3.new(-1, 0, -1) } do
+		local garden = WorldKit.Group(`CornerGarden{i}`, folder)
+		local spot = center + corner * cornerOffset + Vector3.new(0, groundY, 0)
+		local inward = -corner.Unit
+		WorldKit.Tree({ Position = spot, Height = 13, Style = "Candy", Parent = garden })
+		WorldKit.FlowerBed({ Position = spot + inward * 7 + Vector3.new(corner.Z * 3, 0, -corner.X * 3), Parent = garden })
+		WorldKit.FlowerBed({ Position = spot + inward * 7 - Vector3.new(corner.Z * 3, 0, -corner.X * 3), Parent = garden })
+		WorldKit.BalloonCluster({ Position = spot + corner.Unit * 6, Parent = garden })
+	end
 end
 
 return HubZone

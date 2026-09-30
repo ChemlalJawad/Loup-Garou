@@ -29,6 +29,7 @@ column, `ClassName` used by both `EggConfig` and `CTFConfig`.
 | `FenicotteroPizzaiolo` | Fenicottero Pizzaiolo | Epic | Flamingo spinning pizza dough on one leg | **Dough Toss** — spinning pizza disc tags & stuns at range |
 | `PipistrelloMarinaro` | Pipistrello Marinaro | Epic | Bat in a sailor cap, sail-shaped wings | **Night Glide** — brief flight, crosses gaps, ignores fall damage |
 | `CannoloTrombonini` | Cannolo Trombonini | Epic | Walking cannoli playing a trombone | **Brass Boom** — knockback shockwave, clears a path |
+| `TungTungTamburo` | Tung Tung Tamburo | Epic | Walking wooden log with a big grin and a bat | **Bat Bonk** — short-range AoE stun |
 | `CrocobrividoVulcanico` | Crocobrivido Vulcanico | Legendary | Volcanic crocodile, lava cracks & bomber jacket | **Magma Slam** — AoE stun slam, strong flag-stand defense |
 | `SqualezzaFerroviaria` | Squalezza Ferroviaria | Legendary | Shark fused with a locomotive front, steam plume | **Rail Charge** — unstoppable charge, knocks enemies aside |
 | `TralaleroAstrale` | Tralalero Astrale | Secret | Cosmic three-legged shark-sneaker hybrid wreathed in starlight | **Starlight Warp** — short teleport dash, longest-range escape/flank in the game |

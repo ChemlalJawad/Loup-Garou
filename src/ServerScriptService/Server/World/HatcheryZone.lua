@@ -23,6 +23,7 @@
 -- statues are available), egg podiums ~36, hall shell (pillars/roof/walls)
 -- ~20. Total roughly 160-220 parts, comfortably under the ~350/zone budget.
 
+local CollectionService = game:GetService("CollectionService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Theme = require(ReplicatedStorage.Shared.Theme)
@@ -299,6 +300,56 @@ local function buildEggPodium(parent: Instance, spec: EggSpec)
 		Parent = egg,
 	})
 
+	-- Walk up and tap: opens the Eggs panel (EggController listens for the
+	-- tag). The podiums used to be decoration only, so a new player had no
+	-- way to guess that hatching lives behind the egg button in the dock.
+	local prompt = Instance.new("ProximityPrompt")
+	prompt.Name = "HatchPrompt"
+	prompt.ActionText = "Hatch"
+	prompt.ObjectText = spec.Label
+	prompt.HoldDuration = 0
+	prompt.MaxActivationDistance = 14
+	prompt.RequiresLineOfSight = false
+	CollectionService:AddTag(prompt, Constants.TAGS.EggPodium)
+	prompt.Parent = egg
+
+	-- Drop-in art: a Model at ReplicatedStorage.AssetOverrides.Eggs.<EggId>
+	-- (BasicEgg / GoldenEgg / SecretEgg) replaces the procedural egg. The
+	-- original ball stays, invisible, as the anchor for the prompt and light.
+	local overrides = ReplicatedStorage:FindFirstChild("AssetOverrides")
+	local eggFolder = overrides and overrides:FindFirstChild("Eggs")
+	local eggId = string.gsub(spec.Name, "Podium$", "")
+	local source = eggFolder and eggFolder:FindFirstChild(eggId)
+	if source and source:IsA("Model") then
+		local art = source:Clone()
+		for _, descendant in art:GetDescendants() do
+			if descendant:IsA("LuaSourceContainer") then
+				descendant:Destroy()
+			elseif descendant:IsA("BasePart") then
+				descendant.Anchored = true
+				descendant.CanCollide = false
+				descendant.CanTouch = false
+				descendant.CanQuery = false
+			end
+		end
+		local _, size = art:GetBoundingBox()
+		if size.Y > 0 then
+			art:ScaleTo(art:GetScale() * spec.EggHeight / size.Y)
+		end
+		local frame, scaledSize = art:GetBoundingBox()
+		local bottom = frame.Position - Vector3.new(0, scaledSize.Y / 2, 0)
+		art:PivotTo(art:GetPivot() + (Vector3.new(baseX, platformTopY, baseZ) - bottom))
+		art.Name = spec.Name .. "_EggArt"
+		art.Parent = folder
+		egg.Transparency = 1
+		for i = 1, #spotOffsets do
+			local spot = folder:FindFirstChild(`{spec.Name}_Spot{i}`)
+			if spot then
+				spot:Destroy()
+			end
+		end
+	end
+
 	if spec.Emitter then
 		WorldKit.Emitter({
 			Name = spec.Name .. "_Sparkle",
@@ -378,17 +429,33 @@ local function buildHallShell(parent: Instance, zone: WorldLayout.ZoneRect)
 	})
 
 	-- Side walls (low, mostly implied openness so the hall doesn't feel
-	-- boxed-in from the walking path).
-	for _, x in { minX + 1, maxX - 1 } do
+	-- boxed-in from the walking path). The west wall has a doorway where the
+	-- path from the Brainrot Parade arrives (WorldLayout.Doors.HatcheryWest),
+	-- so it's built as two segments either side of the gap.
+	local wallHeight = roofHeight * 0.55
+	local wallMinZ = roofCenterZ - roofDepth / 2
+	local wallMaxZ = roofCenterZ + roofDepth / 2
+	local door = WorldLayout.Doors.HatcheryWest
+
+	local function wallSegment(name: string, x: number, fromZ: number, toZ: number)
+		local depth = toZ - fromZ
+		if depth <= 0.5 then
+			return
+		end
 		WorldKit.Wall({
-			Name = `SideWall_{x}`,
-			Size = Vector3.new(1, roofHeight * 0.55, roofDepth),
-			Position = Vector3.new(x, roofHeight * 0.275, roofCenterZ),
+			Name = name,
+			Size = Vector3.new(1, wallHeight, depth),
+			Position = Vector3.new(x, wallHeight / 2, (fromZ + toZ) / 2),
 			Color = Theme.Color.Surface,
 			TrimColor = Theme.Color.AccentSecondary,
 			Parent = folder,
 		})
 	end
+
+	local westX = minX + 1
+	wallSegment("SideWall_West_South", westX, wallMinZ, door.Z - door.Width / 2)
+	wallSegment("SideWall_West_North", westX, door.Z + door.Width / 2, wallMaxZ)
+	wallSegment(`SideWall_{maxX - 1}`, maxX - 1, wallMinZ, wallMaxZ)
 
 	return folder
 end

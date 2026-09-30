@@ -13,6 +13,7 @@ local Theme = require(ReplicatedStorage.Shared.Theme)
 local UIKit = require(ReplicatedStorage.Shared.UIKit)
 local Constants = require(ReplicatedStorage.Shared.Constants)
 local EggConfig = require(ReplicatedStorage.Shared.Eggs.EggConfig)
+local Mutations = require(ReplicatedStorage.Shared.Brainrots.Mutations)
 
 local Shell = require(StarterPlayer.StarterPlayerScripts.Client.UI.Shell)
 
@@ -47,6 +48,7 @@ export type OwnedBrainrot = {
 	Id: string,
 	Rarity: string,
 	HatchedAt: number,
+	Mutation: string?,
 }
 
 -- Module state (built once in Init).
@@ -552,14 +554,26 @@ local function buildInventoryCard(owned: OwnedBrainrot, equippedUid: string?, la
 	local isEquipped = owned.Uid == equippedUid
 	local rarityIndex = EggConfig.RarityIndex(owned.Rarity) or 1
 	local epicIndex = EggConfig.RarityIndex("Epic") or 3
-	local refund = Constants.SELL_VALUE[owned.Rarity] or 0
+	-- Mirrors the server's refund formula (SELL_VALUE x mutation multiplier)
+	-- so the confirmation dialog never promises a different amount.
+	local refund = math.floor((Constants.SELL_VALUE[owned.Rarity] or 0) * Mutations.IncomeMultiplier(owned.Mutation))
+	local mutation = Mutations.Get(owned.Mutation)
+	local displayName = Mutations.DecorateName(EggConfig.DisplayName(owned.Id), owned.Mutation)
+	local subtitle: string? = nil
+	if isEquipped and mutation then
+		subtitle = `EQUIPPED - x{mutation.IncomeMultiplier} {string.upper(mutation.DisplayName)}`
+	elseif isEquipped then
+		subtitle = "EQUIPPED"
+	elseif mutation then
+		subtitle = `x{mutation.IncomeMultiplier} {string.upper(mutation.DisplayName)}`
+	end
 
 	UIKit.ItemCard.new({
 		Parent = inventoryGrid.Root,
 		LayoutOrder = layoutOrder,
-		Title = EggConfig.DisplayName(owned.Id),
+		Title = displayName,
 		Rarity = owned.Rarity,
-		Subtitle = if isEquipped then "EQUIPPED" else nil,
+		Subtitle = subtitle,
 		Selected = isEquipped,
 		OnClick = function()
 			if handlers then
@@ -572,8 +586,10 @@ local function buildInventoryCard(owned: OwnedBrainrot, equippedUid: string?, la
 				Shell.Notify("Unequip that Brainrot before selling it.", "Warning")
 				return
 			end
-			local message = `Sell {EggConfig.DisplayName(owned.Id)} ({owned.Rarity}) for {refund} Coins?`
-			if rarityIndex >= epicIndex then
+			local message = `Sell {displayName} ({owned.Rarity}) for {refund} Coins?`
+			if mutation then
+				message ..= ` This is a {mutation.DisplayName} mutation - you may never see another one!`
+			elseif rarityIndex >= epicIndex then
 				message ..= " This is a high-rarity Brainrot - this cannot be undone."
 			end
 			requestConfirm(message, function()
@@ -596,9 +612,13 @@ local function refreshMergeRow()
 		end
 	end
 
+	-- Only normal copies count as merge fuel (the server enforces the same
+	-- rule), so the button never offers a merge the server would refuse.
 	local counts: { [string]: number } = {}
 	for _, owned in lastOwned do
-		counts[owned.Id] = (counts[owned.Id] or 0) + 1
+		if owned.Mutation == nil then
+			counts[owned.Id] = (counts[owned.Id] or 0) + 1
+		end
 	end
 
 	local order = 0

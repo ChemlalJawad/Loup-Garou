@@ -181,43 +181,169 @@ If you're adding a new zone or prop: reuse `WorldKit.Part` /
 anchoring, smooth-surface, and rotation defaults every other zone already
 relies on.
 
+### New in the fun pass: Brainrot Parade and Fun Park
+
+- **Brainrot Parade** (`ParadeZone.lua`, rect centred (-210, -200), south of
+  the Hall of Fame): a red-carpet runway. Brainrots emerge from a glowing
+  portal at the west end, walk east, and leave through an exit arch. The
+  north half is an open shopping plaza with price and mutation info boards
+  facing the arrival path. A secret chest hides behind the stage. Reached via
+  Hall of Fame → Parade, and connected on to the Hatchery (through a doorway
+  in the Hatchery's west wall, shared via `WorldLayout.Doors`).
+- **Fun Park** (`FunParkZone.lua`, rect centred (210, 300), north of the
+  Market): candy-colored playground. Chain-bounce trampolines, jump pads onto
+  a floating island (chest), a spiral obby tower (chest at the summit), and
+  an ice slide from the summit back down to the entrance. Reached via
+  Market → Fun Park.
+
+### Landscaping and ambient life
+
+- **Ground** is grass now (`MapBuilder` BaseGround, RGB 96,170,88) so the
+  space between zones reads as a park, not a void.
+- **`LandscapeZone.lua`** (Order 200, after every real zone) scatters ~190
+  props with a fixed seed, so every server has the same park. It stays 7
+  studs clear of every zone rect and 4 studs clear of every path
+  (`PathRegistry`, filled by `MapBuilder` before zones build), with 9 studs
+  between props. Mix: round/pine/candy trees, bushes, flower beds, rocks,
+  balloon clusters, giant mushrooms.
+- **Hidden chests** in the wilds: NorthWest (-265, 410), SouthEast
+  (270, -300), West mushroom grove (-250, 250). 15 min cooldown each.
+- **Hub corner gardens**: a candy tree, two flower beds and balloons in each
+  of the four bare outer-ring corners.
+- **Ambient Brainrots** (`AmbientLifeController`): 10 client-side wanderers
+  on the lawns within 170 studs of the Hub, never inside a zone. Tap to pet.
+
+### Base biome
+
+`BiomeZone.lua` (Order 150, before LandscapeZone) turns the plate into a
+valley: rolling edge hills with an invisible boundary wall, a darker grass
+skirt and hazy horizon hills, a lily pond at (-220, 330), meadow patches, and
+firefly/pollen emitters tagged with a `DecorTime` attribute ("Night"/"Day")
+that LightingController honours. Keep-out rects for the pond and hill band go
+into `PathRegistry`. `SkyController` adds client-side clouds and the Lucky
+Rainbow arc north of the Arena.
+
+**Map design pass:** paths switched from the UI's dark panel colour to warm
+cream cobblestone (the neon trim still colour-codes each route), and every
+lamp post has a flower bed at its foot. A dirt trail branches west off the
+Arena main street to the Lily Pond (signed "<- LILY POND"), which also has a
+picnic blanket on its west shore. Two giant statues (Gold Tralalero Astrale
+in the west wilds, Diamond Crocobrivido Vulcanico between the Market and Fun
+Park) are skyline landmarks, positioned via `WorldLayout.Landmarks`.
+
+### Spawn
+
+- **The pad**: a round marble pad with a neon rim on the Hub dais, clear of
+  the fountain basin (they used to overlap).
+- **Facing**: `-Z`, so the first frame looks across the fountain toward the
+  Hatchery, the first stop of the new-player guide.
+- **Welcome**: a floating "WELCOME" sign and rising sparkles over the pad.
+  `SpawnController` plays a sparkle burst and a shockwave at your feet on
+  every spawn, plus a welcome toast once per session.
+- **Fountain shard**: now a tilted neon crystal the client spins (`Spinner`
+  tag).
+- **Respawn**: 3 s instead of Roblox's default 5 (`Players.RespawnTime` in
+  `default.project.json`).
+- **Welcome corner** (`HubWelcome.lua`), built around the pad:
+  - a pastel rainbow arch just behind the pad, with cloud feet. The default
+    camera sits behind the character, so it frames the first view;
+  - bunting from the arch to the colonnade;
+  - flower beds;
+  - a **"WHERE TO GO" map board** drawn from `WorldLayout`, with a "YOU ARE
+    HERE" marker.
+- **Greeters** (`GreeterController`, client-only): Pinguino, Tung Tung and
+  Cannolini stand around the pad, sway, turn to face nearby players, and
+  chat in speech bubbles. "Say hi" makes them hop and throw hearts.
+- **Confetti**: the first spawn of each session gets a confetti pop.
+
+### Themed wilds (`WildsZone.lua`, Order 160)
+
+Rects live in `WorldLayout.Wilds`; plan in `docs/map-plan.png`.
+
+- **Candy Land** (around the Fun Park path, 210,152): pink "sugar" terrain
+  (Salt), lollipops, candy canes, glassy gumdrops you can hop on, and
+  cotton-candy trees.
+- **Crystal Grove** (north of the pond): violet Slate ground, glass crystal
+  clusters with neon cores. One cluster in three carries a night light;
+  sparkles drift over the grove.
+- **Tulip Fields** (south strip): colour-striped beds on dirt ridges and a
+  windmill. The sails are spun client-side via the `Spinner` tag.
+- **Rock outcrops**: 22 terrain boulders in open grass.
+- **Backdrops** (`WorldLayout.Backdrops`): a smoking volcano beyond the south
+  edge (lava crater, glowing streams, embers) and snow-capped mountains
+  behind the Arena. They're outside the boundary wall: scenery only.
+
 ## 7. Lighting
 
-Configured in `LightingSetup.lua`, applied once from `MapBuilder.Init()`.
+Lighting is split in two:
 
-- **`Enum.Technology.Future`** — required for the Bloom/ColorCorrection/
-  Atmosphere combo below to render accurately; it's also what most current
-  "neon on dark" trend games ship with.
-- **`ClockTime = 20` (dusk), `Brightness = 1.6`** — moody without going
-  pitch black. Neon trim needs *some* ambient darkness to read as glowing;
-  full daylight would wash it out, but true night would hide the Parts'
-  own base colors.
-- **`BloomEffect` (Intensity 0.55, Threshold 1.35)** — tuned so `Neon`
-  material actually blooms (that's the whole point of using Neon strips as
-  trim) without blowing out `SmoothPlastic` surfaces, which sit below the
-  bloom threshold.
-- **`ColorCorrectionEffect` (+Saturation 0.15, +Contrast 0.1)** — a small
-  global saturation/contrast lift so the palette's accent colors read as
-  punchy without anyone having to hand-tune every Part's color.
-- **`Atmosphere`** (Density 0.32, Haze 1.4) — soft depth falloff so the
-  Arena (100 studs from the Hub) doesn't look like it's floating in a flat
-  void when seen from a distance; it also sells the "world has scale" read
-  without any skybox art.
-- **`SunRaysEffect`** (Intensity 0.12, Spread 0.65) — a light, cheap
-  sun-shaft glow through the Atmosphere haze at dusk. Kept low so it never
-  competes with UI or CTF readability; this is polish, not a mood swing.
-- **`Sky`** (`StarCount = 3000`, `SunAngularSize = 11`, `MoonAngularSize = 5`,
-  `CelestialBodiesShown = true`) — a deliberate starfield at dusk instead of
-  the engine's un-tuned default. No custom skybox/sun/moon texture ids are
-  set: inventing an `rbxassetid://` here would either fail to load or show
-  something unrelated, so every texture field is left at Roblox's own
-  built-in default.
-- **Path lamp posts** (`MapBuilder.buildPath`) — every connector path between
-  zones now gets `WorldKit.Pillar` lamp posts every ~24 studs, alternating
-  sides, capped in the same neon color as that path's own edge trim. Bare
-  colored strips between zones were the visually weakest link in an
-  otherwise-detailed map; this was the cheapest fix (a handful of extra Parts
-  per path) for the biggest perceived gap.
+- **`LightingSetup.lua` (server, once at boot)** creates the post effects
+  (Bloom, ColorCorrection, Atmosphere, SunRays, Sky) and a bright-afternoon
+  fallback look.
+- **`LightingController.lua` (client, continuous)** runs the day/night cycle,
+  per-zone color grading and decorative-light management, all driven by the
+  shared `LightingConfig.lua`.
+
+### Day/night cycle
+
+- The time of day is a pure function of `workspace:GetServerTimeNow()`
+  (`LightingConfig.StateAt`). Every client computes it locally, so **nothing
+  replicates `Lighting` over the network**, yet everyone sees the same sky.
+  The server uses the same function to ask "is it night?" (the Parade
+  boosts mutation odds at night).
+- **15-minute cycle, 70% daytime.** A young audience expects a bright,
+  readable world by default; night is the special moment where neon trim and
+  glowing Brainrots take over. A short cycle means a normal session always
+  sees at least one sunset.
+- Day ↔ night lerps `Brightness`, `Ambient`, `OutdoorAmbient`,
+  `ColorShift_Top` and `ExposureCompensation`, with a warm golden-hour tint
+  around sunrise/sunset. Night keeps a small exposure lift so players on
+  phones in bright rooms can still see where they're going.
+- **Bloom** follows the sun: high threshold by day (only `Neon` glows, sunlit
+  white plastic doesn't bleed), lower threshold and stronger intensity at
+  night.
+- **Sun rays** peak at golden hour, when a low sun through haze actually
+  looks like something, and switch off at night.
+- Players get a toast at dusk and dawn; at night it tells them the Parade
+  has better mutation odds, so the cycle has a gameplay reason to matter.
+
+### Zone moods
+
+Each zone in `WorldLayout` has a subtle color grade (`LightingConfig.ZoneMoods`:
+tint, saturation, contrast, atmosphere color/density). Crossing into a zone
+blends to its mood over ~1.6s, so each area *feels* like a distinct place
+without a loading screen. The Arena deliberately gets **less** haze and
+**more** contrast: readability of opponents beats mood in a PvP space. The
+Fun Park gets the most saturation so it reads as "the fun place" from across
+the map. Moods are subtle on purpose — a Legendary's rarity color must read
+the same everywhere.
+
+### Performance (mobile first)
+
+Most young players are on phones and tablets, so:
+
+- The controller writes to `Lighting` 4× per second, not every frame (every
+  frame only during a ~1.6s zone blend).
+- `WorldKit.Light` / `WorldKit.Emitter` tag decorative lights and particles
+  (`DecorLight`, `DecorEmitter`). Lamps fade in at dusk and are **disabled in
+  full daylight** — fewer active lights by day is a free win. On low graphics
+  quality (manual quality 1–3, or "Automatic" on a touch-only device) all
+  decorative lights and particles are switched off. Gameplay lights (CTF flag
+  stands) opt out with `Gameplay = true` and stay on.
+- `Lighting.Technology = Future` is set in `default.project.json` (Rojo
+  writes it into the place); the script assignment is only a `pcall`
+  fallback, because `Technology` isn't reliably writable from game scripts
+  and an unguarded failure there used to risk skipping the whole setup.
+
+### Fixed pieces
+
+- **`Sky`** — deliberate star count and sun/moon size; no custom texture ids
+  (inventing an `rbxassetid://` would fail to load or show something
+  unrelated), so textures stay at Roblox's defaults.
+- **Path lamp posts** (`MapBuilder.buildPath`) — lamp posts every ~24 studs
+  along every connector path, now with a real `PointLight` so paths are lit
+  at night. Paths leading to zones not visible from the Hub also get a
+  floating signpost.
 
 ### CoreGui recommendation (not implemented here)
 

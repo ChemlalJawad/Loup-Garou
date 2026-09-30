@@ -1,5 +1,5 @@
 --!strict
--- Procedural part-built factory for the 16 canonical Brainrots
+-- Procedural part-built factory for the 17 canonical Brainrots
 -- (docs/BRAINROT_ROSTER.md). No mesh/import pipeline exists in this project,
 -- so every character is assembled from primitive Parts/WedgeParts welded
 -- into a Model, in code, here.
@@ -61,7 +61,15 @@ end
 -- Shared finishing touches + auto-weld-to-primary for every part we add.
 local function registerPart(ctx: Ctx, part: BasePart)
 	part.CanCollide = false -- a following companion must never body-block a player
-	part.CastShadow = true
+	-- Optimization: Brainrot models are purely visual. Moving companions with
+	-- CanTouch on generate Touched events against every flag, pad and chest
+	-- they drift over (and cost broadphase work every physics step); nothing
+	-- ever needs to touch or raycast them.
+	part.CanTouch = false
+	part.CanQuery = false
+	-- One shadow per body (the first part, which becomes PrimaryPart) reads
+	-- the same as ~15 small overlapping ones at a fraction of the cost.
+	part.CastShadow = ctx.Model.PrimaryPart == nil
 	part.Anchored = ctx.Anchored
 	part.Massless = not ctx.Anchored
 	part.Parent = ctx.Model
@@ -777,9 +785,36 @@ characters.TralaleroAstrale = {
 	end,
 }
 
+-- Tung Tung Tamburo - a walking wooden log with a big grin and a bat.
+characters.TungTungTamburo = {
+	Id = "TungTungTamburo",
+	Build = function(ctx)
+		local wood = Color3.fromRGB(150, 105, 65)
+		local legLength = 0.9
+		local logHeight = 1.8
+		local logCenterY = legLength + logHeight / 2
+		addCylinderY(ctx, "Torso", 1.1, logHeight, CFrame.new(0, logCenterY, 0), wood, Enum.Material.Wood)
+		-- Cut rings on top of the log.
+		addCylinderY(ctx, "LogTop", 1.0, 0.06, CFrame.new(0, legLength + logHeight + 0.01, 0), Color3.fromRGB(200, 155, 100), Enum.Material.Wood)
+		-- Big cartoon eyes and a grin, on the -Z (front) side.
+		for i, x in { 0.22, -0.22 } do
+			addBall(ctx, `Eye{i}`, 0.32, CFrame.new(x, logCenterY + 0.45, -0.46), Color3.fromRGB(250, 250, 245))
+			addBall(ctx, `Pupil{i}`, 0.15, CFrame.new(x, logCenterY + 0.45, -0.61), Color3.fromRGB(25, 20, 18))
+		end
+		addBlock(ctx, "Grin", Vector3.new(0.45, 0.08, 0.06), CFrame.new(0, logCenterY + 0.1, -0.55), Color3.fromRGB(60, 35, 25))
+		-- Skinny arms and legs.
+		addBlock(ctx, "ArmLeft", Vector3.new(0.14, 0.9, 0.14), CFrame.new(-0.66, logCenterY - 0.1, 0) * CFrame.Angles(0, 0, math.rad(-12)), wood)
+		addBlock(ctx, "ArmRight", Vector3.new(0.14, 0.9, 0.14), CFrame.new(0.66, logCenterY - 0.1, -0.1) * CFrame.Angles(math.rad(-20), 0, math.rad(12)), wood)
+		addCylinderY(ctx, "LegLeft", 0.18, legLength, CFrame.new(-0.25, legLength / 2, 0), Color3.fromRGB(120, 85, 55))
+		addCylinderY(ctx, "LegRight", 0.18, legLength, CFrame.new(0.25, legLength / 2, 0), Color3.fromRGB(120, 85, 55))
+		-- The bat: its signature detail, so it's the accent that lights up.
+		accent(ctx, addCylinderY(ctx, "Bat", 0.22, 1.4, CFrame.new(0.78, logCenterY - 0.45, -0.45) * CFrame.Angles(math.rad(-35), 0, 0), Color3.fromRGB(220, 180, 120), ACCENT_NEON))
+	end,
+}
+
 -- === Public API ==============================================================
 
-local function build(brainrotId: string, rarity: Rarity, anchored: boolean): Model
+local function buildProcedural(brainrotId: string, rarity: Rarity, anchored: boolean): Model
 	local def = characters[brainrotId]
 	assert(def ~= nil, `BrainrotModels: unknown brainrot id "{brainrotId}"`)
 
@@ -789,6 +824,94 @@ local function build(brainrotId: string, rarity: Rarity, anchored: boolean): Mod
 
 	assert(ctx.Model.PrimaryPart ~= nil, `BrainrotModels: "{brainrotId}" built with no parts`)
 	return ctx.Model
+end
+
+-- Drop-in art: a Model at ReplicatedStorage.AssetOverrides.Brainrots.<id>
+-- (e.g. a mesh inserted from the Toolbox or your own Blender import, renamed
+-- to the brainrot id) replaces the procedural one everywhere - companions,
+-- the Parade, wanderers, statues, hatch reveals. It's normalized to behave
+-- exactly like a procedural model: scripts stripped, same size and ground
+-- line as the procedural version, same collision/shadow rules, welded for
+-- companions, and it still gets the rarity glow.
+local function findOverride(brainrotId: string): Model?
+	local root = ReplicatedStorage:FindFirstChild("AssetOverrides")
+	local folder = root and root:FindFirstChild("Brainrots")
+	local source = folder and folder:FindFirstChild(brainrotId)
+	if source and source:IsA("Model") then
+		return source
+	end
+	return nil
+end
+
+local function buildFromOverride(source: Model, brainrotId: string, rarity: Rarity, anchored: boolean): Model?
+	local copy = source:Clone()
+	-- Never run code that came with a Toolbox model.
+	for _, descendant in copy:GetDescendants() do
+		if descendant:IsA("LuaSourceContainer") or descendant:IsA("Humanoid") then
+			descendant:Destroy()
+		end
+	end
+
+	local parts: { BasePart } = {}
+	for _, descendant in copy:GetDescendants() do
+		if descendant:IsA("BasePart") then
+			table.insert(parts, descendant)
+		end
+	end
+	if #parts == 0 then
+		copy:Destroy()
+		return nil
+	end
+	-- The model's own PrimaryPart (or its biggest part) becomes the root.
+	local rootPart = copy.PrimaryPart
+	if not rootPart then
+		table.sort(parts, function(a, b)
+			return a.Size.X * a.Size.Y * a.Size.Z > b.Size.X * b.Size.Y * b.Size.Z
+		end)
+		rootPart = parts[1]
+	end
+	local ctx = newCtx(brainrotId, anchored)
+	registerPart(ctx, rootPart :: BasePart)
+	for _, part in parts do
+		if part ~= rootPart then
+			registerPart(ctx, part)
+		end
+	end
+	copy:Destroy()
+
+	-- Match the procedural model's height and ground line, so every
+	-- caller's positioning (built around the origin) keeps working.
+	local reference = buildProcedural(brainrotId, rarity, true)
+	local referenceFrame, referenceSize = reference:GetBoundingBox()
+	reference:Destroy()
+	local model = ctx.Model
+	local _, size = model:GetBoundingBox()
+	-- Match on the largest dimension, not height: a flat, plane-shaped model
+	-- (Crocobrivido's bomber) matched on height alone would come out huge.
+	local largest = math.max(size.X, size.Y, size.Z)
+	local referenceLargest = math.max(referenceSize.X, referenceSize.Y, referenceSize.Z)
+	if largest > 0 then
+		model:ScaleTo(model:GetScale() * math.clamp(referenceLargest / largest, 0.01, 100))
+	end
+	local frame, scaledSize = model:GetBoundingBox()
+	local targetBottom = referenceFrame.Position - Vector3.new(0, referenceSize.Y / 2, 0)
+	local currentBottom = frame.Position - Vector3.new(0, scaledSize.Y / 2, 0)
+	model:PivotTo(model:GetPivot() + (targetBottom - currentBottom))
+
+	applyRarity(ctx, rarity)
+	return model
+end
+
+local function build(brainrotId: string, rarity: Rarity, anchored: boolean): Model
+	local override = findOverride(brainrotId)
+	if override then
+		local ok, result = pcall(buildFromOverride, override, brainrotId, rarity, anchored)
+		if ok and result then
+			return result
+		end
+		warn(`[BrainrotModels] override for "{brainrotId}" couldn't be used, using the built-in model: {result}`)
+	end
+	return buildProcedural(brainrotId, rarity, anchored)
 end
 
 -- A dynamic companion: unanchored, welded, collision-free, ready for
@@ -802,6 +925,22 @@ end
 -- podiums or a UI ViewportFrame. Not parented.
 function BrainrotModels.BuildStatic(brainrotId: string, rarity: Rarity): Model
 	return build(brainrotId, rarity, true)
+end
+
+-- Calls `callback` whenever override art for `brainrotId` appears in
+-- ReplicatedStorage.AssetOverrides.Brainrots (e.g. loaded at runtime by
+-- ModelAssetService), so things built earlier can rebuild with it.
+function BrainrotModels.WatchOverride(brainrotId: string, callback: () -> ()): RBXScriptConnection?
+	local root = ReplicatedStorage:FindFirstChild("AssetOverrides")
+	local folder = root and root:FindFirstChild("Brainrots")
+	if not folder then
+		return nil
+	end
+	return folder.ChildAdded:Connect(function(child)
+		if child.Name == brainrotId then
+			task.defer(callback)
+		end
+	end)
 end
 
 -- Every buildable id, for callers that want to sanity-check or iterate (e.g.

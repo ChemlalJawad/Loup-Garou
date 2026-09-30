@@ -54,6 +54,14 @@ consumables — Coins/Gems, works today) and the Robux **Shop** (Game Passes,
 Gem/Coin packs — wired for real money, Studio-testable via an automatic test
 mode until real ids are set).
 
+Between those, the **Brainrot Parade** is a red carpet where Brainrots walk
+past and can be bought before they reach the exit — the only source of
+**mutations** (Gold x1.25, Diamond x1.5, Rainbow x10, and a night-only Galaxy
+x4), which boost idle income. A **day/night cycle** makes nights the time to
+hunt rare mutations; a **Coin Rain** event floods the Central Plaza every few
+minutes; and the **Fun Park** has trampolines, jump pads, an obby tower and an
+ice slide, with treasure chests at the top and hidden around the map.
+
 ## Systems
 
 | System | Files |
@@ -72,10 +80,74 @@ mode until real ids are set).
 | Capture the Flag (teams, flags, abilities, powerups, match flow) | `Shared/CTF`, `Services/CTFService.lua`, `Services/TeamService.lua` |
 | Audio cues + juice effects | `Shared/Audio`, `Shared/Effects`, `Services/AudioService.lua` |
 | World (auto-discovered zones) | `World/*Zone.lua`, `World/MapBuilder.lua`, `World/WorldKit.lua` |
+| Brainrot Parade (red carpet shop, mutations) | `Shared/Parade`, `Shared/Brainrots/Mutations.lua`, `Services/ParadeService.lua`, `Controllers/ParadeController.lua` |
+| Day/night cycle, zone moods, mobile quality scaling | `Shared/LightingConfig.lua`, `World/LightingSetup.lua`, `Controllers/LightingController.lua` |
+| Fun Park: jump pads, trampolines, reward chests | `World/FunParkZone.lua`, `Controllers/MovementController.lua`, `Services/RewardChestService.lua` |
+| Coin Rain world event | `Shared/Events`, `Services/EventService.lua`, `Controllers/EventController.lua` |
+| Landscaping + hidden wild chests | `World/LandscapeZone.lua`, `World/PathRegistry.lua`, `WorldKit` props (Tree, Bush, FlowerBed, Rock, BalloonCluster, Mushroom) |
+| Ambient wandering Brainrots (tap to pet) | `Controllers/AmbientLifeController.lua` |
+| Base biome: edge hills + boundary, horizon, lily pond + trail, giant statues, meadows, fireflies | `World/BiomeZone.lua`, `WorldLayout.Landmarks` |
+| Sky: drifting clouds, Lucky Rainbow arc | `Controllers/SkyController.lua` |
+| Smooth Terrain ground (wind-swept grass, water pond, hills, clouds) | `World/TerrainZone.lua` |
+| Original SFX + music, upload script | `assets/sfx/`, `tools/sfx/`, `Shared/Audio/AudioIds.lua` (see `docs/ASSETS.md`) |
+| Themed wilds: Candy Land, Crystal Grove, Tulip Fields + windmill, rock outcrops, volcano & snowy-mountain backdrops (plan: `docs/map-plan.png`) | `World/WildsZone.lua`, `Controllers/SpinnerController.lua` |
+| Uploaded Brainrot models, auto-loaded at server start | `tools/models/upload_models.py`, `Shared/Assets/ModelIds.lua`, `Services/ModelAssetService.lua` |
+| Drop-in Brainrot/egg models | `ReplicatedStorage.AssetOverrides` (see `docs/ASSETS.md`) |
+| New-player guide (3 steps, glowing trail, reward) | `Shared/Tutorial`, `Services/TutorialService.lua`, `Controllers/TutorialController.lua` |
+| Lucky Rainbow weather (Parade mutation chance x2) | `Shared/Events/EventConfig.lua`, `Services/EventService.lua` |
 
 Both `Main.server.lua` and `Main.client.lua` **auto-discover** every service/
 controller/zone that follows the file's expected shape (an `Init()`/`Build()`
 function) — adding a new system never requires editing a shared boot file.
+
+## Designed for young players
+
+The fun pass borrowed what works in the genre's most-played games (a red
+carpet of Brainrots to buy, mutations, scheduled world events, a playground
+to mess around in) and deliberately left out what doesn't work for kids:
+
+- **No stealing.** In the biggest brainrot game, having a Brainrot stolen by
+  another player is the most-documented source of upset children. Here the
+  only competition is being first to buy from the Parade; nothing you own
+  can be taken.
+- **Rare things are protected.** "Sell duplicates" never sells a mutated
+  Brainrot, and merges never consume one; selling one is always a single,
+  confirmed action with a warning.
+- **Everyone gets something.** Coin Rain is skill-free and shared, chests
+  refill on a timer, and rewards scale with level so nobody is priced out.
+- **Readable by default.** Daytime is the default and lasts 70% of the cycle;
+  prompts are instant taps, not holds; info boards at the Parade explain
+  prices and mutations before anyone has to ask.
+- **Built for phones.** Everything that moves every frame (Parade walkers,
+  coins, the day/night cycle) is animated on the client from shared server
+  time, so it costs no network traffic; decorative lights and particles
+  switch off on low graphics quality.
+- **Nobody is lost in their first minute.** A three-step guide (walk to the
+  Hatchery, hatch your first egg, visit the Parade) draws a glowing trail from
+  your feet to the goal, with a bouncing marker and a distance counter, and
+  pays 250 Coins at the end. The egg podiums themselves have a "Hatch"
+  prompt. Skippable, and returning players who've already hatched never see it.
+- **Something to discover everywhere.** The grass between zones is a park
+  (~190 trees, bushes, flower beds, rocks, balloons, giant mushrooms) with
+  three hidden chests out in the wilds, and Brainrots wander the lawns
+  around the plaza - walk up and tap "Pet" for a hop and a burst of hearts.
+  Petting gives no reward on purpose: nothing to farm, just friendly.
+
+### Optimization notes
+
+- `WorldKit.TiledFloor` draws one collision slab plus only the contrasting
+  tiles as thin non-colliding overlays: half the parts, and one collider
+  instead of hundreds (~400 parts saved map-wide, which pays for the whole
+  landscape).
+- Decorative parts that don't collide also skip raycasts (`CanQuery=false`)
+  and touch events; Brainrot model parts never fire `Touched`, and only
+  their root casts a shadow.
+- Sign billboards stop rendering beyond 220 studs.
+- Ambient wanderers are client-only, update at 30 Hz, and freeze when more
+  than 220 studs from the player.
+- Instance streaming is on (`StreamOutBehavior = Opportunistic`), and every
+  landscape prop is an Atomic Model. See `docs/RESEARCH_ROADMAP.md` for the
+  full checklist against Roblox's performance guidance, plus the roadmap.
 
 ## How this was built
 
