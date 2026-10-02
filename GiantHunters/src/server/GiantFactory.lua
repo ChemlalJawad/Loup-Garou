@@ -66,10 +66,18 @@ export type Rig = {
 	Model: Model,
 	Root: BasePart,
 	Torso: BasePart,
+	Head: BasePart,
 	Nape: BasePart,
+	Feet: { BasePart },
+	ArmorPlate: BasePart?, -- rock over the nape (armored giants)
 	TorsoHeight: number,
 	TorsoDepth: number,
+	TorsoWidth: number,
+	ShinLength: number,
+	HeadSize: number,
 }
+
+local ROCK = Color3.fromRGB(128, 124, 116)
 
 local function part(model: Model, name: string, size: Vector3, cframe: CFrame, color: Color3, shape: Enum.PartType?, material: Enum.Material?): Part
 	local p = Instance.new("Part")
@@ -155,7 +163,8 @@ end
 function GiantFactory.Build(kindName: string, position: Vector3, rng: Random): Rig
 	local kind = Config.GiantKinds[kindName]
 	assert(kind, `GiantFactory: unknown kind {kindName}`)
-	local bodyName = BODY_TYPE_NAMES[rng:NextInteger(1, #BODY_TYPE_NAMES)]
+	local look: Config.GiantLook = kind.Look or {}
+	local bodyName = look.Body or BODY_TYPE_NAMES[rng:NextInteger(1, #BODY_TYPE_NAMES)]
 	local body = BODY_TYPES[bodyName]
 	local h = kind.Height
 
@@ -171,7 +180,7 @@ function GiantFactory.Build(kindName: string, position: Vector3, rng: Random): R
 
 	local skin = SKIN[rng:NextInteger(1, #SKIN)]
 	local darker = skin:Lerp(Color3.new(0, 0, 0), 0.12)
-	local shortsColor = SHORTS[rng:NextInteger(1, #SHORTS)]
+	local shortsColor = look.Shorts or SHORTS[rng:NextInteger(1, #SHORTS)]
 	local hairColor = HAIR[rng:NextInteger(1, #HAIR)]
 
 	local model = Instance.new("Model")
@@ -250,8 +259,10 @@ function GiantFactory.Build(kindName: string, position: Vector3, rng: Random): R
 	-- round ears.
 	for i, side in { -1, 1 } do
 		local eye = onBall(skull, side * 0.38, headSize * 0.1, -headSize * 0.08)
-		face(`Eye{i}`, Vector3.one * headSize * 0.26, CFrame.new(eye), Color3.fromRGB(250, 250, 250), Enum.PartType.Ball)
-		face(`Pupil{i}`, Vector3.one * headSize * 0.1, CFrame.new(eye + Vector3.new(0, 0, -headSize * 0.115)), Color3.fromRGB(30, 25, 25), Enum.PartType.Ball)
+		local eyeSize = if look.Crazy then (if side < 0 then 0.32 else 0.22) else 0.26
+		local gaze = if look.Crazy then Vector3.new(side * 0.04, side * 0.035, 0) * headSize else Vector3.zero
+		face(`Eye{i}`, Vector3.one * headSize * eyeSize, CFrame.new(eye), Color3.fromRGB(250, 250, 250), Enum.PartType.Ball)
+		face(`Pupil{i}`, Vector3.one * headSize * (if look.Crazy then 0.08 else 0.1), CFrame.new(eye + gaze + Vector3.new(0, 0, -headSize * (eyeSize / 2 - 0.015))), Color3.fromRGB(30, 25, 25), Enum.PartType.Ball)
 		local brow = onBall(skull, side * 0.38, headSize * 0.27, 0)
 		face(`Brow{i}`, Vector3.new(headSize * 0.26, headSize * 0.055, headSize * 0.07), CFrame.new(brow) * CFrame.Angles(0, -side * 0.38, side * -0.25), hairColor)
 		face(`Ear{i}`, Vector3.new(headSize * 0.1, headSize * 0.24, headSize * 0.24), CFrame.new(side * skull, -headSize * 0.02, headSize * 0.02), darker, Enum.PartType.Cylinder)
@@ -259,7 +270,7 @@ function GiantFactory.Build(kindName: string, position: Vector3, rng: Random): R
 	face("Nose", Vector3.one * headSize * 0.2, CFrame.new(onBall(skull, 0, -headSize * 0.04, 0)), darker, Enum.PartType.Ball)
 
 	-- Hair.
-	local style = HAIR_STYLES[rng:NextInteger(1, #HAIR_STYLES)]
+	local style = look.Hair or HAIR_STYLES[rng:NextInteger(1, #HAIR_STYLES)]
 	if style == "Cap" then
 		-- Balls are always uniform: a slightly bigger sphere pushed up and back
 		-- covers the crown and the back of the head, leaving the face clear.
@@ -292,6 +303,9 @@ function GiantFactory.Build(kindName: string, position: Vector3, rng: Random): R
 
 	-- Legs: thigh on a hip motor, shin on a knee motor, then a foot. The
 	-- shorts' legs ride on the thighs.
+	local feet: { BasePart } = {}
+	local shins: { BasePart } = {}
+	local forearms: { BasePart } = {}
 	for _, side in { -1, 1 } do
 		local prefix = if side < 0 then "Left" else "Right"
 		local x = side * torsoWidth * 0.26
@@ -300,7 +314,10 @@ function GiantFactory.Build(kindName: string, position: Vector3, rng: Random): R
 		weld(thighPart, part(model, `{prefix}ShortsLeg`, Vector3.new(thigh * 0.42, legWidth * 1.22, legWidth * 1.22), base * CFrame.new(x, hipY - thigh * 0.19, 0) * UPRIGHT, shortsColor, Enum.PartType.Cylinder, Enum.Material.Fabric))
 		local shinPart = segment(model, `{prefix}Shin`, legWidth * 0.85, shin, base * CFrame.new(x, shin / 2, 0), skin)
 		motor(`{prefix}Knee`, thighPart, shinPart, base * CFrame.new(x, shin, 0))
-		weld(shinPart, part(model, `{prefix}Foot`, Vector3.new(legWidth * 0.95, h * 0.045, legWidth * 1.4), base * CFrame.new(x, h * 0.0225, -legWidth * 0.25), darker))
+		local foot = part(model, `{prefix}Foot`, Vector3.new(legWidth * 0.95, h * 0.045, legWidth * 1.4), base * CFrame.new(x, h * 0.0225, -legWidth * 0.25), darker)
+		weld(shinPart, foot)
+		table.insert(feet, foot)
+		table.insert(shins, shinPart)
 		weld(shinPart, part(model, `{prefix}Toes`, Vector3.one * legWidth * 0.95, base * CFrame.new(x, legWidth * 0.3, -legWidth * 0.8), darker, Enum.PartType.Ball))
 	end
 
@@ -315,6 +332,30 @@ function GiantFactory.Build(kindName: string, position: Vector3, rng: Random): R
 		motor(`{prefix}Elbow`, upper, fore, shoulder * CFrame.new(0, -upperArm, 0))
 		local hand = part(model, `{prefix}Hand`, Vector3.one * armWidth * 1.35, shoulder * CFrame.new(0, -upperArm - foreArm - armWidth * 0.55, 0), skin, Enum.PartType.Ball)
 		weld(fore, hand)
+		table.insert(forearms, fore)
+	end
+
+	-- Armour: rock plates on the chest, shoulders, shins and forearms, a
+	-- rocky helmet, and a plate over the nape that has to be cracked first.
+	local armorPlate: BasePart? = nil
+	if look.Armor then
+		local function plate(name: string, size: Vector3, cframe: CFrame, to: BasePart, shape: Enum.PartType?)
+			local p = part(model, name, size, cframe, ROCK:Lerp(Color3.new(1, 1, 1), rng:NextNumber(0, 0.08)), shape, Enum.Material.Slate)
+			weld(to, p)
+			return p
+		end
+		plate("ChestPlate", Vector3.new(torsoWidth * 0.82, torsoHeight * 0.42, torsoDepth * 0.34), base * CFrame.new(0, torsoCentreY + torsoHeight * 0.2, -torsoDepth * 0.4), torso)
+		for i, side in { -1, 1 } do
+			plate(`ShoulderPlate{i}`, Vector3.one * armWidth * 1.75, base * CFrame.new(side * (torsoWidth / 2 + armWidth * 0.2), torsoCentreY + torsoHeight / 2 - armWidth * 0.4, 0), torso, Enum.PartType.Ball)
+		end
+		for i, shinPart in shins do
+			plate(`ShinPlate{i}`, Vector3.new(shin * 0.7, legWidth * 1.02, legWidth * 1.02), shinPart.CFrame * CFrame.new(-shin * 0.05, 0, 0), shinPart, Enum.PartType.Cylinder)
+		end
+		for i, fore in forearms do
+			plate(`ArmPlate{i}`, Vector3.new(foreArm * 0.7, armWidth * 1, armWidth * 1), fore.CFrame, fore, Enum.PartType.Cylinder)
+		end
+		plate("Helmet", Vector3.one * headSize * 1.06, headCentre * CFrame.new(0, headSize * 0.1, headSize * 0.08), head, Enum.PartType.Ball)
+		armorPlate = plate("NapeArmor", Vector3.one * headSize * 0.58, nape.CFrame * CFrame.new(0, 0, headSize * 0.04), torso, Enum.PartType.Ball)
 	end
 
 	-- Kinematic movement: the server steers these; physics does the gliding.
@@ -350,9 +391,15 @@ function GiantFactory.Build(kindName: string, position: Vector3, rng: Random): R
 		Model = model,
 		Root = root,
 		Torso = torso,
+		Head = head,
 		Nape = nape,
+		Feet = feet,
+		ArmorPlate = armorPlate,
 		TorsoHeight = pelvisHeight + torsoHeight,
 		TorsoDepth = torsoDepth,
+		TorsoWidth = torsoWidth,
+		ShinLength = shin,
+		HeadSize = headSize,
 	}
 end
 

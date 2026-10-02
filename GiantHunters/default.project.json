@@ -17,7 +17,7 @@
     "StarterPlayer": {
       "$className": "StarterPlayer",
       "$properties": {
-        "CameraMaxZoomDistance": 45,
+        "CameraMaxZoomDistance": 55,
         "CharacterWalkSpeed": 22,
         "CharacterJumpPower": 55
       },
@@ -31,21 +31,68 @@
     "Players": {
       "$className": "Players",
       "$properties": {
-        "RespawnTime": 3
+        "RespawnTime": 3,
+        "CharacterAutoLoads": false
       }
     },
     "Lighting": {
       "$className": "Lighting",
       "$properties": {
         "Technology": "Future",
-        "ClockTime": 14.5,
-        "Brightness": 2.5
+        "ClockTime": 16.4,
+        "GeographicLatitude": 35,
+        "Brightness": 3,
+        "OutdoorAmbient": [0.55, 0.5, 0.46],
+        "EnvironmentDiffuseScale": 0.7,
+        "EnvironmentSpecularScale": 0.6,
+        "ShadowSoftness": 0.25
+      },
+      "Atmosphere": {
+        "$className": "Atmosphere",
+        "$properties": {
+          "Density": 0.3,
+          "Offset": 0.2,
+          "Color": [0.8, 0.75, 0.66],
+          "Decay": [0.48, 0.42, 0.36],
+          "Glare": 0.4,
+          "Haze": 1.4
+        }
+      },
+      "Sky": {
+        "$className": "Sky",
+        "$properties": {
+          "SunAngularSize": 16
+        }
+      },
+      "Bloom": {
+        "$className": "BloomEffect",
+        "$properties": {
+          "Intensity": 0.5,
+          "Size": 28,
+          "Threshold": 1.6
+        }
+      },
+      "SunRays": {
+        "$className": "SunRaysEffect",
+        "$properties": {
+          "Intensity": 0.06,
+          "Spread": 0.8
+        }
+      },
+      "Grade": {
+        "$className": "ColorCorrectionEffect",
+        "$properties": {
+          "Saturation": 0.08,
+          "Contrast": 0.06,
+          "TintColor": [1, 0.97, 0.92]
+        }
       }
     },
     "Workspace": {
       "$className": "Workspace",
       "$properties": {
         "FilteringEnabled": true,
+        "StreamingEnabled": false,
         "Gravity": 150
       }
     }

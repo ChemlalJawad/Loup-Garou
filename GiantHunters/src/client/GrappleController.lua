@@ -11,6 +11,10 @@
 --   WASD in the air: steer.
 --   Click / F (X, or "Slash"): swing both blades - a full spin in the air.
 --     Aim for the glowing lump on a giant's neck; faster = cleaner cut.
+--   G (Y, or "Flare"): fire a green signal flare.
+--
+-- Grabbed by a giant: every key wriggles (mash to get free). Swatted: you
+-- go flying and your hooks let go.
 --
 -- Gas shows as white jets behind you, and the view widens with speed.
 --
@@ -27,6 +31,7 @@ local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 
 local Config = require(ReplicatedStorage.Shared.Config)
+local Effects = require(script.Parent.Effects)
 
 local GrappleController = {}
 
@@ -66,6 +71,9 @@ local fxFolder: Folder
 local hookRemote: RemoteEvent? = nil
 local gasPuff: ParticleEmitter? = nil -- white jets behind you while gas flows
 local BASE_FOV = 70
+local held = false -- in a giant's hand: inputs wriggle instead
+local wind: Sound? = nil
+local struggleRemote: RemoteEvent? = nil
 
 local rayParams = RaycastParams.new()
 rayParams.FilterType = Enum.RaycastFilterType.Exclude
@@ -177,6 +185,7 @@ local function fire(hook: Hook)
 	hook.Tip = tip
 	hook.Beam = makeBeam(hook.Hip, tip)
 	hook.State = "Flying"
+	Effects.Play("Hook", nil, 1, if hook.Side < 0 then 1 else 1.12)
 end
 
 local function bite(hook: Hook)
@@ -253,6 +262,7 @@ local function slash()
 	end
 	lastSlash = now
 	slashFx()
+	Effects.Play("Slash")
 	-- In the air, the swing is a full spin: the signature move.
 	if humanoid.FloorMaterial == Enum.Material.Air then
 		spinUntil = now + 0.32
@@ -296,8 +306,14 @@ local function step(dt: number)
 	if not root or not humanoid then
 		return
 	end
-	if humanoid.Health <= 0 then
+	if humanoid.Health <= 0 or held then
 		releaseAll()
+		if gasPuff then
+			gasPuff.Enabled = false
+		end
+		if wind then
+			wind.Volume = 0
+		end
 		return
 	end
 	local airborne = humanoid.FloorMaterial == Enum.Material.Air
@@ -378,9 +394,13 @@ local function step(dt: number)
 	if velocity.Magnitude > settings.MaxSpeed then
 		velocity = velocity.Unit * settings.MaxSpeed
 	end
-	-- Speed widens the view a little: swinging should feel fast.
+	-- Speed widens the view a little and the wind picks up: swinging
+	-- should feel fast.
 	local rush = math.clamp((velocity.Magnitude - 40) / (settings.MaxSpeed - 40), 0, 1)
 	camera.FieldOfView += (BASE_FOV + rush * 18 - camera.FieldOfView) * math.min(dt * 4, 1)
+	if wind then
+		wind.Volume = Config.Sounds.Wind.Volume * rush
+	end
 	if velocity ~= root.AssemblyLinearVelocity then
 		root.AssemblyLinearVelocity = velocity
 		if hooked and not airborne and velocity.Y > 0 then
@@ -483,6 +503,25 @@ function GrappleController.IsHooked(): boolean
 	return attachedCount() > 0
 end
 
+-- "Idle" | "Flying" | "Attached" for the left and right hooks.
+function GrappleController.HookStates(): (string, string)
+	return hooks.Left.State, hooks.Right.State
+end
+
+function GrappleController.Speed(): number
+	return if root then root.AssemblyLinearVelocity.Magnitude else 0
+end
+
+function GrappleController.IsHeld(): boolean
+	return held
+end
+
+local function struggle()
+	if struggleRemote then
+		struggleRemote:FireServer()
+	end
+end
+
 function GrappleController.Init()
 	fxFolder = Instance.new("Folder")
 	fxFolder.Name = "GrappleFx"
@@ -511,6 +550,12 @@ function GrappleController.Init()
 	local function hookAction(name: string): (string, Enum.UserInputState, InputObject) -> Enum.ContextActionResult
 		return function(_action, state, _input)
 			local hook = hooks[name]
+			if held then
+				if state == Enum.UserInputState.Begin then
+					struggle()
+				end
+				return Enum.ContextActionResult.Sink
+			end
 			if state == Enum.UserInputState.Begin then
 				hook.Held = true
 				fire(hook)
@@ -527,6 +572,12 @@ function GrappleController.Init()
 	ContextActionService:SetTitle("HookRight", "R Hook")
 
 	ContextActionService:BindActionAtPriority("Gas", function(_action, state, input)
+		if held then
+			if state == Enum.UserInputState.Begin then
+				struggle()
+			end
+			return Enum.ContextActionResult.Sink
+		end
 		if state == Enum.UserInputState.Begin then
 			-- On the ground and unhooked, Space is still a jump.
 			if input.KeyCode == Enum.KeyCode.Space and humanoid and humanoid.FloorMaterial ~= Enum.Material.Air and attachedCount() == 0 then
@@ -542,7 +593,11 @@ function GrappleController.Init()
 
 	ContextActionService:BindAction("Dash", function(_action, state, _input)
 		if state == Enum.UserInputState.Begin then
-			dash()
+			if held then
+				struggle()
+			else
+				dash()
+			end
 		end
 		return Enum.ContextActionResult.Sink
 	end, true, Enum.KeyCode.LeftShift, Enum.KeyCode.ButtonB)
@@ -550,11 +605,23 @@ function GrappleController.Init()
 
 	ContextActionService:BindAction("Slash", function(_action, state, _input)
 		if state == Enum.UserInputState.Begin then
-			slash()
+			if held then
+				struggle()
+			else
+				slash()
+			end
 		end
 		return Enum.ContextActionResult.Pass
 	end, true, Enum.KeyCode.F, Enum.UserInputType.MouseButton1, Enum.KeyCode.ButtonX)
 	ContextActionService:SetTitle("Slash", "Slash")
+
+	ContextActionService:BindAction("Flare", function(_action, state, _input)
+		if state == Enum.UserInputState.Begin and not held then
+			remote(Config.Remotes.Flare):FireServer()
+		end
+		return Enum.ContextActionResult.Sink
+	end, true, Enum.KeyCode.G, Enum.KeyCode.ButtonY)
+	ContextActionService:SetTitle("Flare", "Flare")
 
 	task.spawn(function()
 		local hookEvent = remote(Config.Remotes.Hook)
@@ -562,8 +629,42 @@ function GrappleController.Init()
 		hookEvent.OnClientEvent:Connect(onRemoteHook)
 		remote(Config.Remotes.Resupplied).OnClientEvent:Connect(function()
 			gas = settings.GasMax
+			Effects.Play("Resupply")
+		end)
+		struggleRemote = remote(Config.Remotes.Struggle)
+		remote(Config.Remotes.Held).OnClientEvent:Connect(function(state: string, reason: any)
+			if state == "Grabbed" then
+				held = true
+				releaseAll()
+			else
+				held = false
+				-- Wriggled out or cut loose: a hop up and back, out of its reach.
+				if (reason == "Escaped" or reason == "Rescued") and root and humanoid then
+					root.AssemblyLinearVelocity = -root.CFrame.LookVector * 35 + Vector3.new(0, settings.EscapeHop, 0)
+					humanoid:ChangeState(Enum.HumanoidStateType.Freefall)
+				end
+			end
+		end)
+		remote(Config.Remotes.Knocked).OnClientEvent:Connect(function(push: Vector3)
+			if typeof(push) ~= "Vector3" or not root or not humanoid or held then
+				return
+			end
+			releaseAll()
+			root.AssemblyLinearVelocity = push
+			humanoid:ChangeState(Enum.HumanoidStateType.Freefall)
+			Effects.Shake(1)
 		end)
 	end)
+
+	local windSound = Instance.new("Sound")
+	windSound.Name = "SpeedWind"
+	windSound.SoundId = Config.Sounds.Wind.Id
+	windSound.PlaybackSpeed = Config.Sounds.Wind.Pitch
+	windSound.Looped = true
+	windSound.Volume = 0
+	windSound.Parent = game:GetService("SoundService")
+	windSound:Play()
+	wind = windSound
 
 	RunService.Heartbeat:Connect(step)
 end

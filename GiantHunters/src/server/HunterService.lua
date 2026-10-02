@@ -1,24 +1,36 @@
 --!strict
--- Hunters: leaderstats, blades, resupply, and validating every slash.
+-- Hunters: characters (spawned on the wall, respawned after a fall), the
+-- leaderboard (giants, points, rank), the twin swords, blades and resupply,
+-- every slash validated, combos and style points, signal flares, the cable
+-- relay, and each round's top hunter.
 --
 -- Movement is simulated on each player's own client (it has to be, for a
 -- grapple to feel responsive), but damage never is: a slash is just a
 -- request, and the server checks the cooldown, the blades left, and the
--- hunter's real position against the giant's weak spot before anything
--- happens (GiantService.TryHitNape).
+-- hunter's real position against the giant before anything happens
+-- (GiantService.TryHit).
 
 local CollectionService = game:GetService("CollectionService")
+local Debris = game:GetService("Debris")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
+local Workspace = game:GetService("Workspace")
 
 local Config = require(ReplicatedStorage.Shared.Config)
 local GiantService = require(script.Parent.GiantService)
+local WaveService = require(script.Parent.WaveService)
+local Broadcast = require(script.Parent.Broadcast)
 
 local HunterService = {}
 
 type Hunter = {
 	Blades: number,
 	LastSlash: number,
+	Combo: number,
+	ComboUntil: number,
+	RoundPoints: number,
+	LastFlare: number,
 }
 
 local hunters: { [Player]: Hunter } = {}
@@ -28,17 +40,56 @@ local function remote(name: string): RemoteEvent
 	return remotes:WaitForChild(name) :: RemoteEvent
 end
 
+local function stat(player: Player, name: string): ValueBase?
+	local leaderstats = player:FindFirstChild("leaderstats")
+	local value = leaderstats and leaderstats:FindFirstChild(name)
+	return if value and value:IsA("ValueBase") then value else nil
+end
+
+local function points(player: Player): number
+	local value = stat(player, "Points")
+	return if value and value:IsA("IntValue") then value.Value else 0
+end
+
 local function pushState(player: Player)
 	local hunter = hunters[player]
 	if hunter then
-		remote(Config.Remotes.State):FireClient(player, { Blades = hunter.Blades, MaxBlades = Config.Blades.Max })
+		remote(Config.Remotes.State):FireClient(player, {
+			Blades = hunter.Blades,
+			MaxBlades = Config.Blades.Max,
+			Combo = hunter.Combo,
+			ComboLeft = math.max(hunter.ComboUntil - os.clock(), 0),
+			Points = points(player),
+			Rank = Config.RankFor(points(player)),
+		})
 	end
+end
+
+local function award(player: Player, amount: number)
+	local hunter = hunters[player]
+	local value = stat(player, "Points")
+	if not hunter or not value or not value:IsA("IntValue") or amount <= 0 then
+		return
+	end
+	local before = Config.RankFor(value.Value)
+	value.Value += amount
+	hunter.RoundPoints += amount
+	local after = Config.RankFor(value.Value)
+	local rank = stat(player, "Rank")
+	if rank and rank:IsA("StringValue") then
+		rank.Value = after
+	end
+	if after ~= before then
+		Broadcast.Announce(`RANK UP: {string.upper(after)}`, `{value.Value} points`, "Gold", player)
+		Broadcast.Feed(`{player.DisplayName} is now a {after}!`, "Gold")
+	end
+	pushState(player)
 end
 
 -- === Twin blades =============================================================
 -- A long, thin blade in each hand, built from parts on the server so every
 -- player sees them. Each carries a (disabled) Trail the owner's client
--- flashes on during a slash. Dull blades (none left) turn grey and cracked.
+-- flashes on during a slash. Dull blades (none left) turn grey.
 
 local BLADE_LENGTH = 4.6
 
@@ -134,14 +185,18 @@ local function equipSwords(character: Model)
 	end
 end
 
-local function stat(player: Player, name: string): IntValue?
-	local leaderstats = player:FindFirstChild("leaderstats")
-	local value = leaderstats and leaderstats:FindFirstChild(name)
-	return if value and value:IsA("IntValue") then value else nil
+-- === Characters ==============================================================
+-- CharacterAutoLoads is off (the map builds first); hunters spawn here, and
+-- again a few seconds after a fall.
+
+local function spawnCharacter(player: Player)
+	if player.Parent then
+		player:LoadCharacterAsync()
+	end
 end
 
 local function onPlayerAdded(player: Player)
-	hunters[player] = { Blades = Config.Blades.Max, LastSlash = 0 }
+	hunters[player] = { Blades = Config.Blades.Max, LastSlash = 0, Combo = 0, ComboUntil = 0, RoundPoints = 0, LastFlare = 0 }
 	local leaderstats = Instance.new("Folder")
 	leaderstats.Name = "leaderstats"
 	for _, name in { "Giants", "Points" } do
@@ -149,6 +204,10 @@ local function onPlayerAdded(player: Player)
 		value.Name = name
 		value.Parent = leaderstats
 	end
+	local rank = Instance.new("StringValue")
+	rank.Name = "Rank"
+	rank.Value = Config.RankFor(0)
+	rank.Parent = leaderstats
 	leaderstats.Parent = player
 	player.CharacterAdded:Connect(function(character)
 		-- A fresh set of blades every life.
@@ -158,8 +217,21 @@ local function onPlayerAdded(player: Player)
 			pushState(player)
 		end
 		task.spawn(equipSwords, character)
+		local humanoid = character:WaitForChild("Humanoid", 10)
+		if humanoid and humanoid:IsA("Humanoid") then
+			humanoid.Died:Connect(function()
+				task.delay(Players.RespawnTime, function()
+					if player.Character == character then
+						spawnCharacter(player)
+					end
+				end)
+			end)
+		end
 	end)
+	task.spawn(spawnCharacter, player)
 end
+
+-- === Slashing ================================================================
 
 local function onSlash(player: Player)
 	local hunter = hunters[player]
@@ -169,17 +241,19 @@ local function onSlash(player: Player)
 	if not hunter or not root or not root:IsA("BasePart") or not humanoid or humanoid.Health <= 0 then
 		return
 	end
+	if GiantService.IsHeld(player) then
+		return -- in a giant's hand, a slash is a wriggle (sent separately)
+	end
 	local now = os.clock()
 	if now - hunter.LastSlash < Config.Blades.SlashCooldown then
 		return
 	end
 	hunter.LastSlash = now
 	if hunter.Blades <= 0 then
-		remote(Config.Remotes.SlashResult):FireClient(player, "Dull", nil)
+		remote(Config.Remotes.SlashResult):FireClient(player, "Dull", {})
 		return
 	end
-
-	local result, info = GiantService.TryHitNape(player, root)
+	local result, info = GiantService.TryHit(player, root)
 	if result ~= "NoTarget" then
 		hunter.Blades -= 1 -- blades only wear down on a real hit
 		pushState(player)
@@ -189,6 +263,97 @@ local function onSlash(player: Player)
 	end
 	remote(Config.Remotes.SlashResult):FireClient(player, result, info)
 end
+
+local function onDefeated(player: Player, kindName: string, _clean: boolean, speed: number)
+	local hunter = hunters[player]
+	local kind = Config.GiantKinds[kindName]
+	if not hunter or not kind then
+		return
+	end
+	local now = os.clock()
+	hunter.Combo = if now < hunter.ComboUntil then math.min(hunter.Combo + 1, Config.Hunters.MaxCombo) else 1
+	hunter.ComboUntil = now + Config.Hunters.ComboWindow
+	local giantsStat = stat(player, "Giants")
+	if giantsStat and giantsStat:IsA("IntValue") then
+		giantsStat.Value += 1
+	end
+	local bonus = if speed >= Config.Hunters.SpeedKill then 1 else 0
+	award(player, kind.Points * hunter.Combo + bonus)
+	if hunter.Combo >= 3 then
+		Broadcast.Feed(`{player.DisplayName} is on a x{hunter.Combo} combo!`, "Gold")
+	end
+end
+
+local ASSIST_POINTS = {
+	Trip = Config.Hunters.TripPoints,
+	Daze = Config.Hunters.DazePoints,
+	Rescue = Config.Hunters.RescuePoints,
+	Cannon = Config.Hunters.CannonPoints,
+	Armor = 2,
+}
+
+-- === Flares ==================================================================
+-- A green signal flare: a glowing shell climbs high above you trailing
+-- smoke, then bursts into a cloud everyone can see. "Over here!"
+
+local function fireFlare(player: Player)
+	local hunter = hunters[player]
+	local character = player.Character
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	if not hunter or not root or not root:IsA("BasePart") then
+		return
+	end
+	local now = os.clock()
+	if now - hunter.LastFlare < Config.Hunters.FlareCooldown then
+		return
+	end
+	hunter.LastFlare = now
+	local green = Color3.fromRGB(110, 240, 130)
+	local start = root.Position + Vector3.new(0, 3, 0)
+	local shell = Instance.new("Part")
+	shell.Name = "Flare"
+	shell.Shape = Enum.PartType.Ball
+	shell.Size = Vector3.one * 1.4
+	shell.Color = green
+	shell.Material = Enum.Material.Neon
+	shell.Anchored = true
+	shell.CanCollide = false
+	shell.CanQuery = false
+	shell.Position = start
+	shell.Parent = Workspace
+	local light = Instance.new("PointLight")
+	light.Color = green
+	light.Range = 30
+	light.Brightness = 3
+	light.Parent = shell
+	local trail = Instance.new("ParticleEmitter")
+	trail.Color = ColorSequence.new(green)
+	trail.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 2), NumberSequenceKeypoint.new(1, 7) })
+	trail.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.2), NumberSequenceKeypoint.new(1, 1) })
+	trail.Lifetime = NumberRange.new(3, 5)
+	trail.Speed = NumberRange.new(0, 1)
+	trail.Rate = 60
+	trail.Parent = shell
+	TweenService:Create(shell, TweenInfo.new(2.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Position = start + Vector3.new(0, 140, 0) }):Play()
+	task.delay(2.2, function()
+		trail.Rate = 0
+		local cloud = Instance.new("ParticleEmitter")
+		cloud.Color = ColorSequence.new(green)
+		cloud.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 12), NumberSequenceKeypoint.new(1, 30) })
+		cloud.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.25), NumberSequenceKeypoint.new(1, 1) })
+		cloud.Lifetime = NumberRange.new(6, 9)
+		cloud.Speed = NumberRange.new(2, 6)
+		cloud.SpreadAngle = Vector2.new(180, 180)
+		cloud.Rate = 0
+		cloud.Parent = shell
+		cloud:Emit(36)
+		shell.Transparency = 1
+	end)
+	Debris:AddItem(shell, 12)
+	Broadcast.Feed(`{player.DisplayName} fired a flare!`, "Info")
+end
+
+-- === Resupply ================================================================
 
 local function wireSupply(crate: Instance)
 	if not crate:IsA("BasePart") or crate:FindFirstChildOfClass("ProximityPrompt") then
@@ -214,9 +379,10 @@ end
 
 function HunterService.Init()
 	remotes = ReplicatedStorage:WaitForChild("Remotes") :: Folder
+	Players.CharacterAutoLoads = false
 
 	for _, player in Players:GetPlayers() do
-		onPlayerAdded(player)
+		task.spawn(onPlayerAdded, player)
 	end
 	Players.PlayerAdded:Connect(onPlayerAdded)
 	Players.PlayerRemoving:Connect(function(player)
@@ -224,6 +390,7 @@ function HunterService.Init()
 	end)
 
 	remote(Config.Remotes.Slash).OnServerEvent:Connect(onSlash)
+	remote(Config.Remotes.Flare).OnServerEvent:Connect(fireFlare)
 
 	-- Cable relay: tell everyone else where a hunter's hooks are, so they
 	-- see the swing. Light sanity checks; cables are cosmetic for others.
@@ -258,14 +425,26 @@ function HunterService.Init()
 	end
 	CollectionService:GetInstanceAddedSignal(Config.Tags.Supply):Connect(wireSupply)
 
-	GiantService.Defeated.Event:Connect(function(player: Player, _kindName: string, points: number)
-		local giantsStat = stat(player, "Giants")
-		local pointsStat = stat(player, "Points")
-		if giantsStat then
-			giantsStat.Value += 1
+	GiantService.Defeated.Event:Connect(onDefeated)
+	GiantService.Assist.Event:Connect(function(player: Player, reason: string)
+		award(player, ASSIST_POINTS[reason] or 0)
+	end)
+
+	WaveService.RoundStarted.Event:Connect(function()
+		for _, hunter in hunters do
+			hunter.RoundPoints = 0
 		end
-		if pointsStat then
-			pointsStat.Value += points
+	end)
+	WaveService.RoundEnded.Event:Connect(function(round: number)
+		local best: Player? = nil
+		local bestPoints = 0
+		for player, hunter in hunters do
+			if hunter.RoundPoints > bestPoints then
+				best, bestPoints = player, hunter.RoundPoints
+			end
+		end
+		if best then
+			Broadcast.Feed(`Top hunter of round {round}: {best.DisplayName} ({bestPoints} points)`, "Gold")
 		end
 	end)
 end

@@ -1,6 +1,6 @@
 --!strict
--- Server boot: remotes first (everything else waits on them), then the map,
--- then giants and hunters.
+-- Server boot: remotes first (everything else waits on them), then the
+-- district, then giants, hunters, cannons, and the round loop.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -18,9 +18,13 @@ remotes.Parent = ReplicatedStorage
 local MapBuilder = require(script.Parent.MapBuilder)
 local GiantService = require(script.Parent.GiantService)
 local HunterService = require(script.Parent.HunterService)
+local CannonService = require(script.Parent.CannonService)
+local WaveService = require(script.Parent.WaveService)
 
-local giantSpawns = MapBuilder.Build()
+local world = MapBuilder.Build()
+GiantService.Init(world.GiantSpawns)
 HunterService.Init()
-GiantService.Init(giantSpawns)
+CannonService.Init()
+WaveService.Init()
 
 print(`[{Config.GAME_NAME}] server ready`)
