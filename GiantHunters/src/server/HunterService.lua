@@ -177,8 +177,12 @@ local function attachSword(character: Model, hand: BasePart, side: number)
 	local edge = bladePart("Edge", Vector3.new(0.09, 0.05, BLADE_LENGTH - 0.15), Color3.fromRGB(240, 250, 255), Enum.Material.Neon, sword)
 
 	-- Held forward: grip in the fist, blade pointing ahead of the hand and
-	-- a little down, the ready stance.
-	local gripOffset = CFrame.new(0, -0.25, -0.25) * CFrame.Angles(math.rad(-15), 0, 0)
+	-- tipped up a touch (so it clears the ground on the run's backswing).
+	-- The fist is the hand's grip attachment when it has one (R15, R6 and
+	-- Rthro all do), else the bottom of the hand.
+	local attachment = hand:FindFirstChild(if side < 0 then "LeftGripAttachment" else "RightGripAttachment")
+	local fist = if attachment and attachment:IsA("Attachment") then attachment.Position else Vector3.new(0, -hand.Size.Y / 2, 0)
+	local gripOffset = CFrame.new(fist + Vector3.new(0, -0.1, -0.25)) * CFrame.Angles(math.rad(6), 0, 0)
 	local function weldTo(p: BasePart, offset: CFrame)
 		local w = Instance.new("Weld")
 		w.Part0 = hand
@@ -249,16 +253,27 @@ local function setBladesSharp(player: Player, sharp: boolean)
 end
 
 local function equipSwords(character: Model)
+	-- The uniform first: re-dressing the avatar can swap its body parts, so
+	-- the swords go on the hands that are there afterwards.
+	HunterGear.Dress(character)
+	if not character.Parent then
+		return
+	end
+	for _, name in { "LeftSword", "RightSword" } do
+		local old = character:FindFirstChild(name)
+		if old then
+			old:Destroy()
+		end
+	end
 	-- R15 hands, or R6 arms.
-	local left = character:WaitForChild("LeftHand", 5) or character:FindFirstChild("Left Arm")
-	local right = character:WaitForChild("RightHand", 1) or character:FindFirstChild("Right Arm")
+	local left = character:FindFirstChild("LeftHand") or character:WaitForChild("LeftHand", 5) or character:FindFirstChild("Left Arm")
+	local right = character:FindFirstChild("RightHand") or character:WaitForChild("RightHand", 1) or character:FindFirstChild("Right Arm")
 	if left and left:IsA("BasePart") then
 		attachSword(character, left, -1)
 	end
 	if right and right:IsA("BasePart") then
 		attachSword(character, right, 1)
 	end
-	HunterGear.Dress(character)
 end
 
 -- === Characters ==============================================================

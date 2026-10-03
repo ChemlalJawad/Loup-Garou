@@ -1,6 +1,6 @@
 --!strict
--- The hunters' uniform and grapple rig, built from parts over the player's
--- own avatar so everyone looks like a member of the corps:
+-- The hunters' uniform and grapple rig, so everyone looks like a member of
+-- the corps:
 --
 --   * a short brown jacket over a white shirt, white trousers, tall dark
 --     boots;
@@ -8,12 +8,26 @@
 --   * a dark green cape with the corps' crossed-blades emblem and a rolled
 --     hood;
 --   * the grapple rig: the reel box at the small of the back with a hook
---     launcher either side, and on each hip a blade box with a gas tank on
---     top.
+--     launcher either side (HookLauncher1 = left, HookLauncher2 = right,
+--     each with a "CableOrigin" attachment at its tip), and on each hip a
+--     blade box with a gas tank on top.
+--
+-- The avatar itself is re-dressed first through its HumanoidDescription
+-- (no asset ids needed): classic shirt and pants off, layered clothing and
+-- back / waist / shoulder / front / neck accessories off (hair, hats and
+-- the face stay), default body parts at normal scale (no Rthro shapes for
+-- the gear to float off), and body colours painted as the uniform (shirt
+-- torso, jacket arms, trouser legs). The gear on top is then only the thin
+-- pieces: straps, cuffs, collar, belt, boots, the jacket's panels over the
+-- torso, the cape and the rig. If the description can't be applied (no
+-- Humanoid, an engine error), it falls back to full fabric shells over
+-- every body part instead.
 --
 -- Every piece is massless, non-colliding and invisible to raycasts, so it
--- never gets in the way of the grapple or the slashes. R15 avatars get the
--- full outfit; R6 ones get the same on their bigger body parts.
+-- never gets in the way of the grapple or the slashes. R15 and R6 both
+-- work; on R6 the rig is built on the bottom of the torso.
+
+local Workspace = game:GetService("Workspace")
 
 local HunterGear = {}
 
@@ -30,6 +44,15 @@ local EMBLEM_BLUE = Color3.fromRGB(70, 110, 190)
 
 local PAD = 0.08 -- how far a shell stands proud of the body part
 
+-- Accessories that stay on: they sit on the head, clear of the gear.
+local KEEP_ACCESSORIES: { [EnumItem]: boolean } = {
+	[Enum.AccessoryType.Hat] = true,
+	[Enum.AccessoryType.Hair] = true,
+	[Enum.AccessoryType.Face] = true,
+	[Enum.AccessoryType.Eyebrow] = true,
+	[Enum.AccessoryType.Eyelash] = true,
+}
+
 local function gearPart(gear: Model, name: string, size: Vector3, color: Color3, material: Enum.Material, shape: Enum.PartType?): Part
 	local p = Instance.new("Part")
 	p.Name = name
@@ -45,6 +68,10 @@ local function gearPart(gear: Model, name: string, size: Vector3, color: Color3,
 	p.CanQuery = false
 	p.CanTouch = false
 	p.Massless = true
+	-- Thin leather, buckles and trim cast no shadow (there are a lot of them).
+	if math.min(size.X, size.Y, size.Z) < 0.2 then
+		p.CastShadow = false
+	end
 	p.Parent = gear
 	return p
 end
@@ -80,13 +107,83 @@ local function shell(gear: Model, body: BasePart, name: string, color: Color3, s
 end
 
 -- A band all the way round a body part, at `y` studs from its centre.
-local function band(gear: Model, body: BasePart, name: string, y: number, thickness: number, pad: number)
+local function band(gear: Model, body: BasePart, name: string, y: number, thickness: number, pad: number, color: Color3?)
 	local s = body.Size
-	local p = gearPart(gear, name, Vector3.new(s.X + pad * 2, thickness, s.Z + pad * 2), STRAP, Enum.Material.Leather)
+	local p = gearPart(gear, name, Vector3.new(s.X + pad * 2, thickness, s.Z + pad * 2), color or STRAP, Enum.Material.Leather)
 	attach(body, p, CFrame.new(0, y, 0))
 end
 
-local function jacket(gear: Model, torso: BasePart)
+-- Re-dresses the avatar as the uniform (see the top). Yields. Returns
+-- false if it couldn't, so the caller falls back to full shells.
+local function applyUniform(character: Model): boolean
+	local humanoid = character:FindFirstChildOfClass("Humanoid") or character:WaitForChild("Humanoid", 5)
+	if not humanoid or not humanoid:IsA("Humanoid") then
+		return false
+	end
+	-- ApplyDescription only works once the character is in the world.
+	local waited = 0
+	while not character:IsDescendantOf(Workspace) and waited < 5 do
+		waited += task.wait(0.1)
+	end
+	if not character:IsDescendantOf(Workspace) then
+		return false
+	end
+	local ok, err = pcall(function()
+		local description = humanoid:GetAppliedDescription()
+		description.Shirt = 0
+		description.Pants = 0
+		description.GraphicTShirt = 0
+		local kept = {}
+		for _, accessory in description:GetAccessories(true) do
+			if not accessory.IsLayered and KEEP_ACCESSORIES[accessory.AccessoryType] then
+				table.insert(kept, accessory)
+			end
+		end
+		description:SetAccessories(kept, true)
+		description.BackAccessory = ""
+		description.WaistAccessory = ""
+		description.ShouldersAccessory = ""
+		description.FrontAccessory = ""
+		description.NeckAccessory = ""
+		description.Torso = 0
+		description.LeftArm = 0
+		description.RightArm = 0
+		description.LeftLeg = 0
+		description.RightLeg = 0
+		description.BodyTypeScale = 0
+		description.ProportionScale = 0
+		description.HeightScale = 1
+		description.WidthScale = 1
+		description.DepthScale = 1
+		description.HeadScale = 1
+		description.TorsoColor = SHIRT
+		description.LeftArmColor = JACKET
+		description.RightArmColor = JACKET
+		description.LeftLegColor = TROUSERS
+		description.RightLegColor = TROUSERS
+		humanoid:ApplyDescriptionAsync(description)
+	end)
+	if not ok then
+		warn("[HunterGear] uniform not applied, using shells:", err)
+		return false
+	end
+	if not character.Parent then
+		return false -- respawned while it was loading
+	end
+	-- The arms are jacket brown; hands stay bare (the head's skin tone).
+	local head = bodyPart(character, "Head")
+	if head then
+		for _, name in { "LeftHand", "RightHand" } do
+			local hand = bodyPart(character, name)
+			if hand then
+				hand.Color = head.Color
+			end
+		end
+	end
+	return true
+end
+
+local function jacket(gear: Model, torso: BasePart, full: boolean)
 	local s = torso.Size
 	local pad = PAD * 2.2
 	local height = s.Y * 0.72 -- cropped short, above the belt
@@ -105,8 +202,10 @@ local function jacket(gear: Model, torso: BasePart)
 		local collar = gearPart(gear, `Collar{i}`, Vector3.new(s.X * 0.22, 0.14, s.Z * 0.5), JACKET:Lerp(Color3.new(0, 0, 0), 0.15), Enum.Material.Fabric)
 		attach(torso, collar, CFrame.new(side * s.X * 0.22, top + 0.02, -s.Z * 0.12) * CFrame.Angles(0, 0, side * math.rad(12)))
 	end
-	local yoke = gearPart(gear, "JacketShoulders", Vector3.new(s.X + pad * 2, pad, s.Z + pad * 2), JACKET, Enum.Material.Fabric)
-	attach(torso, yoke, CFrame.new(0, top, 0))
+	if full then
+		local yoke = gearPart(gear, "JacketShoulders", Vector3.new(s.X + pad * 2, pad, s.Z + pad * 2), JACKET, Enum.Material.Fabric)
+		attach(torso, yoke, CFrame.new(0, top, 0))
+	end
 end
 
 local function chestStraps(gear: Model, torso: BasePart)
@@ -128,71 +227,90 @@ local function chestStraps(gear: Model, torso: BasePart)
 	end
 end
 
-local function cape(gear: Model, torso: BasePart)
+-- `rigTop`: the height (in the torso's frame) of the top of the reel box on
+-- R6, where the torso is also the hips; the cape stops above it there.
+local function cape(gear: Model, torso: BasePart, rigTop: number?)
 	local s = torso.Size
+	local top = s.Y / 2 + 0.05
 	-- Down to the waist: short enough to leave the reel box in sight.
-	local length = s.Y * 0.95
+	local length = if rigTop then math.max(top - rigTop - 0.1, s.Y * 0.4) else s.Y * 0.95
 	local width = s.X * 1.12
 	local back = s.Z / 2 + PAD * 3.2
-	local top = s.Y / 2 + 0.05
 	-- Hung from the shoulders, swinging out a touch at the bottom.
-	local hang = CFrame.new(0, top, back) * CFrame.Angles(math.rad(-8), 0, 0)
+	local hang = CFrame.new(0, top, back) * CFrame.Angles(math.rad(if rigTop then -14 else -8), 0, 0)
 	local cloth = gearPart(gear, "Cape", Vector3.new(width, length, 0.08), CAPE, Enum.Material.Fabric)
 	attach(torso, cloth, hang * CFrame.new(0, -length / 2, 0))
 	-- The hood, rolled up round the back of the neck.
 	local hood = gearPart(gear, "CapeHood", Vector3.new(s.X * 0.95, 0.38, 0.38), CAPE:Lerp(Color3.new(0, 0, 0), 0.12), Enum.Material.Fabric, Enum.PartType.Cylinder)
 	attach(torso, hood, CFrame.new(0, top, back - 0.12))
 	-- The corps' emblem: a blue shield with two crossed blades.
-	local emblemAt = hang * CFrame.new(0, -length * 0.42, 0.05)
-	local shield = gearPart(gear, "EmblemShield", Vector3.new(0.04, width * 0.4, width * 0.4), EMBLEM_BLUE, Enum.Material.Fabric, Enum.PartType.Cylinder)
+	local emblemSize = math.min(width * 0.4, length * 0.7)
+	local emblemAt = hang * CFrame.new(0, -length * 0.45, 0.05)
+	local shield = gearPart(gear, "EmblemShield", Vector3.new(0.04, emblemSize, emblemSize), EMBLEM_BLUE, Enum.Material.Fabric, Enum.PartType.Cylinder)
 	attach(torso, shield, emblemAt * CFrame.Angles(0, math.rad(90), 0))
 	for i, side in { -1, 1 } do
-		local blade = gearPart(gear, `EmblemBlade{i}`, Vector3.new(0.09, width * 0.5, 0.03), STEEL, Enum.Material.Metal)
+		local blade = gearPart(gear, `EmblemBlade{i}`, Vector3.new(0.09, emblemSize * 1.25, 0.03), STEEL, Enum.Material.Metal)
 		attach(torso, blade, emblemAt * CFrame.new(0, 0, 0.03) * CFrame.Angles(0, 0, side * math.rad(35)))
 	end
 end
 
-local function rig(gear: Model, hips: BasePart)
-	local s = hips.Size
+-- The rig, round `frame` (the hips' centre in `hips`' frame) for a hip
+-- block of `s`: R15's LowerTorso, or the bottom of an R6 torso.
+local function rig(gear: Model, hips: BasePart, frame: CFrame, s: Vector3)
 	local back = s.Z / 2
+	local function at(offset: CFrame): CFrame
+		return frame * offset
+	end
 	-- The reel box at the small of the back, with its silver drum and a
 	-- hook launcher pointing out each side.
 	local box = gearPart(gear, "ReelBox", Vector3.new(s.X * 0.62, s.Y * 0.8, 0.45), DARK_STEEL, Enum.Material.Metal)
-	attach(hips, box, CFrame.new(0, 0.05, back + 0.24))
+	attach(hips, box, at(CFrame.new(0, 0.05, back + 0.24)))
 	local drum = gearPart(gear, "ReelDrum", Vector3.new(0.12, s.Y * 0.6, s.Y * 0.6), STEEL, Enum.Material.Metal, Enum.PartType.Cylinder)
-	attach(hips, drum, CFrame.new(0, 0.05, back + 0.48) * CFrame.Angles(0, math.rad(90), 0))
+	attach(hips, drum, at(CFrame.new(0, 0.05, back + 0.48) * CFrame.Angles(0, math.rad(90), 0)))
 	for i, side in { -1, 1 } do
+		-- HookLauncher1 is the left one, HookLauncher2 the right one; cables
+		-- can start at their CableOrigin attachments.
 		local launcher = gearPart(gear, `HookLauncher{i}`, Vector3.new(0.4, 0.24, 0.24), STEEL, Enum.Material.Metal, Enum.PartType.Cylinder)
-		attach(hips, launcher, CFrame.new(side * (s.X / 2 + 0.05), -0.05, back + 0.12))
+		attach(hips, launcher, at(CFrame.new(side * (s.X / 2 + 0.05), -0.05, back + 0.12)))
+		local origin = Instance.new("Attachment")
+		origin.Name = "CableOrigin"
+		origin.Position = Vector3.new(side * 0.2, 0, 0)
+		origin.Parent = launcher
 		-- A gas tank either side of the reel box, pointing back, with its
 		-- valve at the back end.
-		local tankAt = CFrame.new(side * (s.X * 0.31 + 0.14), -0.02, back + 0.55)
+		local tankAt = at(CFrame.new(side * (s.X * 0.31 + 0.14), -0.02, back + 0.55))
 		local tank = gearPart(gear, `GasTank{i}`, Vector3.new(1.3, 0.4, 0.4), STEEL, Enum.Material.Metal, Enum.PartType.Cylinder)
 		attach(hips, tank, tankAt * CFrame.Angles(0, math.rad(90), 0))
 		local valve = gearPart(gear, `GasValve{i}`, Vector3.new(0.16, 0.24, 0.24), DARK_STEEL, Enum.Material.Metal, Enum.PartType.Cylinder)
 		attach(hips, valve, tankAt * CFrame.new(0, 0, 0.7) * CFrame.Angles(0, math.rad(90), 0))
 	end
 
-	-- Low on each hip, below the hands: a blade box (the spare blades)
-	-- pointing back, hung from the belt by a strap.
+	-- Low on each hip, out to the side and behind the hands: a blade box
+	-- (the spare blades) pointing back, hung from the belt by a strap. Its
+	-- front edge (the grips) stays behind the body, so swinging hands
+	-- never go through it.
+	local boxLength = 1.6
 	for i, side in { -1, 1 } do
-		local x = side * (s.X / 2 + 0.3)
-		local at = CFrame.new(x, -s.Y / 2 - 0.85, 0.7) * CFrame.Angles(math.rad(-10), 0, 0)
-		local bladeBox = gearPart(gear, `BladeBox{i}`, Vector3.new(0.3, 0.6, 1.9), DARK_STEEL, Enum.Material.Metal)
-		attach(hips, bladeBox, at)
-		local trim = gearPart(gear, `BladeBoxTrim{i}`, Vector3.new(0.32, 0.08, 1.92), STEEL, Enum.Material.Metal)
-		attach(hips, trim, at * CFrame.new(0, 0.26, 0))
+		local x = side * (s.X / 2 + 0.5)
+		local boxAt = at(CFrame.new(x, -s.Y / 2 - 0.75, 0.5 + 0.18 + boxLength / 2) * CFrame.Angles(math.rad(-8), 0, 0))
+		local bladeBox = gearPart(gear, `BladeBox{i}`, Vector3.new(0.3, 0.6, boxLength), DARK_STEEL, Enum.Material.Metal)
+		attach(hips, bladeBox, boxAt)
+		local trim = gearPart(gear, `BladeBoxTrim{i}`, Vector3.new(0.32, 0.08, boxLength + 0.02), STEEL, Enum.Material.Metal)
+		attach(hips, trim, boxAt * CFrame.new(0, 0.26, 0))
 		-- The blade grips poke out of the front of the box.
 		for g, y in { -0.12, 0.12 } do
-			local stub = gearPart(gear, `BladeStub{i}{g}`, Vector3.new(0.12, 0.12, 0.2), STEEL, Enum.Material.Metal)
-			attach(hips, stub, at * CFrame.new(0, y, -1.02))
+			local stub = gearPart(gear, `BladeStub{i}{g}`, Vector3.new(0.12, 0.12, 0.16), STEEL, Enum.Material.Metal)
+			attach(hips, stub, boxAt * CFrame.new(0, y, -boxLength / 2 - 0.08))
 		end
-		local hanger = gearPart(gear, `BoxStrap{i}`, Vector3.new(0.08, 0.9, 0.14), STRAP, Enum.Material.Leather)
-		attach(hips, hanger, CFrame.new(side * (s.X / 2 + 0.2), -s.Y / 2 - 0.3, 0.45))
+		local hanger = gearPart(gear, `BoxStrap{i}`, Vector3.new(0.08, 0.95, 0.14), STRAP, Enum.Material.Leather)
+		attach(hips, hanger, at(CFrame.new(side * (s.X / 2 + 0.4), -s.Y / 2 - 0.3, 0.75) * CFrame.Angles(0, 0, side * math.rad(-12))))
 	end
 end
 
-local function limbs(gear: Model, character: Model)
+-- Arms and legs. `full`: fabric shells over every limb (the fallback);
+-- otherwise the body colours already are the uniform and only the cuffs,
+-- the thigh straps and the boots go on.
+local function limbs(gear: Model, character: Model, full: boolean)
 	for _, prefix in { "Left", "Right" } do
 		local upperArm = bodyPart(character, `{prefix}UpperArm`, `{prefix} Arm`)
 		local lowerArm = bodyPart(character, `{prefix}LowerArm`)
@@ -200,14 +318,22 @@ local function limbs(gear: Model, character: Model)
 		local lowerLeg = bodyPart(character, `{prefix}LowerLeg`)
 		local foot = bodyPart(character, `{prefix}Foot`)
 		local r6Leg = bodyPart(character, `{prefix} Leg`)
-		if upperArm then
+		if full and upperArm then
 			shell(gear, upperArm, `{prefix}Sleeve`, JACKET, if lowerArm then 1 else 0.85)
 		end
-		if lowerArm then
-			shell(gear, lowerArm, `{prefix}Cuff`, JACKET)
+		if full and lowerArm then
+			shell(gear, lowerArm, `{prefix}Sleeve2`, JACKET)
+		end
+		-- A darker turned-back cuff at the wrist.
+		local wrist = lowerArm or (if r6Leg then upperArm else nil)
+		if wrist then
+			local cuffY = -wrist.Size.Y / 2 + (if lowerArm then 0.12 else 0.45) -- (R6: above the hand)
+			band(gear, wrist, `{prefix}Cuff`, cuffY, 0.2, PAD * 1.3, JACKET:Lerp(Color3.new(0, 0, 0), 0.2))
 		end
 		if upperLeg then
-			shell(gear, upperLeg, `{prefix}Trouser`, TROUSERS)
+			if full then
+				shell(gear, upperLeg, `{prefix}Trouser`, TROUSERS)
+			end
 			-- The harness straps round each thigh.
 			band(gear, upperLeg, `{prefix}ThighStrap1`, upperLeg.Size.Y * 0.18, 0.12, PAD * 1.6)
 			band(gear, upperLeg, `{prefix}ThighStrap2`, -upperLeg.Size.Y * 0.22, 0.12, PAD * 1.6)
@@ -219,22 +345,26 @@ local function limbs(gear: Model, character: Model)
 			shell(gear, foot, `{prefix}BootFoot`, BOOTS)
 		end
 		if r6Leg then
-			shell(gear, r6Leg, `{prefix}Trouser`, TROUSERS)
-			shell(gear, r6Leg, `{prefix}Boot`, BOOTS, 0.5, PAD * 1.5)
+			if full then
+				shell(gear, r6Leg, `{prefix}Trouser`, TROUSERS)
+			end
 			local s = r6Leg.Size
 			band(gear, r6Leg, `{prefix}ThighStrap`, s.Y * 0.32, 0.12, PAD * 1.6)
-			-- The R6 boot shell is the top half; slide it down to the bottom.
-			local boot = gear:FindFirstChild(`{prefix}Boot`)
-			local weld = boot and boot:FindFirstChildOfClass("Weld")
-			if weld then
-				weld.C0 = CFrame.new(0, -s.Y / 4, 0)
-			end
+			-- The boot: the bottom half of the leg.
+			local height = s.Y * 0.5 + PAD * 1.5
+			local boot = gearPart(gear, `{prefix}Boot`, Vector3.new(s.X + PAD * 3, height, s.Z + PAD * 3), BOOTS, Enum.Material.Fabric)
+			attach(r6Leg, boot, CFrame.new(0, -s.Y / 2 + height / 2 - PAD * 0.75, 0))
 		end
 	end
 end
 
--- Dresses a hunter. Safe to call again: the old outfit is replaced.
+-- Dresses a hunter. Yields (the uniform loads). Safe to call again: the
+-- old outfit is replaced.
 function HunterGear.Dress(character: Model)
+	local uniform = applyUniform(character)
+	if not character.Parent then
+		return
+	end
 	local old = character:FindFirstChild("HunterGear")
 	if old then
 		old:Destroy()
@@ -244,21 +374,27 @@ function HunterGear.Dress(character: Model)
 
 	local torso = bodyPart(character, "UpperTorso", "Torso")
 	local hips = bodyPart(character, "LowerTorso", "Torso")
+	local r6 = hips ~= nil and hips == torso
+	-- R6: the rig hangs on the bottom 0.7 studs of the torso.
+	local hipSize = if hips and r6 then Vector3.new(hips.Size.X, 0.7, hips.Size.Z) elseif hips then hips.Size else Vector3.one
+	local hipFrame = if hips and r6 then CFrame.new(0, -hips.Size.Y / 2 + 0.35, 0) else CFrame.new()
 	if torso then
-		shell(gear, torso, "Shirt", SHIRT)
-		jacket(gear, torso)
+		if not uniform then
+			shell(gear, torso, "Shirt", SHIRT)
+		end
+		jacket(gear, torso, not uniform)
 		chestStraps(gear, torso)
-		cape(gear, torso)
+		cape(gear, torso, if r6 then -torso.Size.Y / 2 + 0.35 + 0.05 + hipSize.Y * 0.4 else nil)
 	end
 	if hips then
-		if hips ~= torso then
+		if not r6 and not uniform then
 			shell(gear, hips, "TrouserTop", TROUSERS)
 		end
-		local belt = if hips ~= torso then hips.Size.Y / 2 - 0.08 else -hips.Size.Y / 2 + 0.1
+		local belt = if not r6 then hips.Size.Y / 2 - 0.08 else -hips.Size.Y / 2 + 0.1
 		band(gear, hips, "Belt", belt, 0.16, PAD * 1.6)
-		rig(gear, hips)
+		rig(gear, hips, hipFrame, hipSize)
 	end
-	limbs(gear, character)
+	limbs(gear, character, not uniform)
 	gear.Parent = character
 end
 
