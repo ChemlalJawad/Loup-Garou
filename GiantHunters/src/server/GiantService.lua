@@ -35,8 +35,11 @@ local Config = require(ReplicatedStorage.Shared.Config)
 local Geo = require(ReplicatedStorage.Shared.Geo)
 local GiantFactory = require(script.Parent.GiantFactory)
 local Wall = require(script.Parent.World.Wall)
+local Layout = require(script.Parent.World.Layout)
 local Broadcast = require(script.Parent.Broadcast)
 local DayNightService = require(script.Parent.DayNightService)
+local Motion = require(script.Parent.Motion)
+local Respawn = require(script.Parent.Respawn)
 
 local GiantService = {}
 
@@ -50,6 +53,7 @@ type Giant = {
 	NextSwatAt: number,
 	Busy: boolean, -- winding up a grab or a swat
 	Holding: Player?,
+	HeldRoot: BasePart?, -- the exact body in its hand (a respawn is a new one)
 	HoldStarted: number,
 	Struggles: number,
 	KneelUntil: number,
@@ -64,6 +68,11 @@ type Giant = {
 	NextThrowAt: number, -- Beast powers
 	NextRoarAt: number,
 	Defeated: boolean,
+	StunStreak: number, -- trips and dazes in a row (diminishing returns)
+	StunStreakUntil: number,
+	Roamer: boolean, -- wanders the wilds (forests, training grounds, castle) first
+	Hurry: boolean, -- the wave's time is up: straight into town, faster
+	Joints: { [string]: Motor6D }, -- Waist, RightShoulder, RightElbow (for the posed hand and nape)
 }
 
 export type HitResult = "NoTarget" | "Hit" | "Defeated" | "Armor" | "ArmorBroken" | "Trip" | "Daze"
@@ -78,6 +87,7 @@ export type HitInfo = {
 
 GiantService.Defeated = Instance.new("BindableEvent") -- (player, kindName, clean, speed)
 GiantService.Assist = Instance.new("BindableEvent") -- (player, reason: "Trip" | "Daze" | "Rescue" | "Cannon" | "Armor")
+GiantService.Grabbed = Instance.new("BindableEvent") -- (player, "Grab" | "Caught"): the district takes a hit
 
 local giants: { [Model]: Giant } = {}
 local held: { [Player]: Giant } = {}
@@ -125,6 +135,58 @@ local function inFront(giant: Giant, point: Vector3, from: Vector3): boolean
 	return forward:Dot(flat.Unit) > Config.Giants.BehindDot
 end
 
+-- How high a hunter is above the land under them (the terrain, not roofs:
+-- a rooftop above a giant's head is still safe, and the castle hill isn't a
+-- free safe zone just for being 50 studs up). Cached for a moment.
+local groundParams = RaycastParams.new()
+groundParams.FilterType = Enum.RaycastFilterType.Include
+groundParams.FilterDescendantsInstances = { Workspace.Terrain }
+groundParams.IgnoreWater = false
+local heightCache: { [Player]: { Time: number, Height: number } } = {}
+
+local function heightAboveGround(player: Player, root: BasePart): number
+	local now = os.clock()
+	local cached = heightCache[player]
+	if cached and now - cached.Time < 0.25 then
+		return cached.Height
+	end
+	local position = root.Position
+	local hit = Workspace:Raycast(position + Vector3.new(0, 2, 0), Vector3.new(0, -600, 0), groundParams)
+	local height = if hit then position.Y - hit.Position.Y else position.Y
+	heightCache[player] = { Time = now, Height = height }
+	return height
+end
+
+-- The castle hill (west) is no place for a giant: they walk round it.
+local CASTLE_CENTRE = Geo.Polar(Layout.Castle.Angle, Layout.Castle.Radius)
+local CASTLE_KEEP = Layout.Castle.HillRadius + 15
+
+local function avoidCastle(here: Vector3, goal: Vector3): Vector3
+	local from = Geo.Flat(here) - CASTLE_CENTRE
+	if from.Magnitude < CASTLE_KEEP then
+		-- On the slope somehow: straight back out.
+		local out = if from.Magnitude > 1 then from.Unit else Vector3.new(1, 0, 0)
+		return CASTLE_CENTRE + out * (CASTLE_KEEP + 25)
+	end
+	local a, b = Geo.Flat(here), Geo.Flat(goal)
+	local ab = b - a
+	local lengthSq = ab:Dot(ab)
+	if lengthSq < 1 then
+		return goal
+	end
+	local t = math.clamp((CASTLE_CENTRE - a):Dot(ab) / lengthSq, 0, 1)
+	local closest = a + ab * t
+	local side = closest - CASTLE_CENTRE
+	if side.Magnitude >= CASTLE_KEEP then
+		return goal
+	end
+	-- The line would cross the hill: aim for a point beside it instead.
+	if side.Magnitude < 1 then
+		side = Vector3.new(ab.Z, 0, -ab.X)
+	end
+	return CASTLE_CENTRE + side.Unit * (CASTLE_KEEP + 30)
+end
+
 local function steamBurst(parent: BasePart, size: number, amount: number)
 	local steam = Instance.new("ParticleEmitter")
 	steam.Color = ColorSequence.new(Color3.fromRGB(245, 245, 250))
@@ -145,19 +207,34 @@ local function steer(giant: Giant, toward: Vector3?, speedScale: number?)
 	local root = giant.Rig.Root
 	local now = os.clock()
 	local here = root.Position
-	local goal = toward or here
+	local goal = if toward then avoidCastle(here, toward) else here
 	local y = giant.RestY
 	if now < giant.KneelUntil then
 		y -= giant.Rig.ShinLength * 0.95
 	elseif now < giant.LeapUntil then
 		y += giant.Kind.Height * 0.3
 	end
-	giant.Move.MaxVelocity = giant.Kind.WalkSpeed * (speedScale or 1) * DayNightService.GiantSpeed()
+	local hurry = if giant.Hurry then Config.Waves.HurrySpeed else 1
+	giant.Move.MaxVelocity = giant.Kind.WalkSpeed * (speedScale or 1) * hurry * DayNightService.GiantSpeed()
 	giant.Move.Position = Vector3.new(goal.X, y, goal.Z)
 	local flat = Vector3.new(goal.X - here.X, 0, goal.Z - here.Z)
 	if flat.Magnitude > 2 then
 		giant.Face.CFrame = CFrame.lookAt(Vector3.zero, flat.Unit)
 	end
+end
+
+-- Places out in the wilds a roaming giant wanders between (the castle's
+-- sector stops short of its hill; avoidCastle keeps them off it anyway).
+local ROAM_ZONES = {
+	Layout.GreatForest,
+	Layout.Training,
+	{ Angle = Layout.Castle.Angle, Spread = math.rad(14), Inner = 640, Outer = Layout.Castle.Radius + 160 },
+}
+
+local function roamPoint(): Vector3
+	local zone = ROAM_ZONES[rng:NextInteger(1, #ROAM_ZONES)]
+	local radius = math.min(rng:NextNumber(zone.Inner, zone.Outer), Geo.LAND_LIMIT - 80)
+	return avoidCastle(Vector3.zero, Geo.Polar(zone.Angle + rng:NextNumber(-zone.Spread, zone.Spread), radius))
 end
 
 local function wander(giant: Giant)
@@ -166,11 +243,15 @@ local function wander(giant: Giant)
 	local inside = Geo.IsInside(here)
 	local target = giant.WanderTarget
 	local arrived = target and Geo.Flat((target :: Vector3) - here).Magnitude < 12
-	-- Outside with the gate open, every giant wants in.
-	local wantInside = inside or breached
+	-- Outside with the gate open, every giant wants in (roamers take the
+	-- long way round first, until the wave's time runs out).
+	local roaming = giant.Roamer and not giant.Hurry and not inside
+	local wantInside = inside or giant.Hurry or (breached and not roaming)
 	if not target or arrived or Geo.IsInside(target :: Vector3) ~= wantInside then
 		if wantInside then
 			target = Geo.Polar(rng:NextNumber(0, math.pi * 2), rng:NextNumber(30, Geo.INSIDE_LIMIT))
+		elseif roaming then
+			target = roamPoint()
 		else
 			-- (They keep to the plains near the town, not the far wilds.)
 			target = Geo.Polar(Config.World.GateAngle + rng:NextNumber(-1.2, 1.2), rng:NextNumber(Geo.OUTSIDE_LIMIT + 30, math.min(Geo.LAND_LIMIT - 80, 650)))
@@ -191,7 +272,7 @@ local function candidates(giant: Giant): { Candidate }
 	for _, player in Players:GetPlayers() do
 		local root = aliveRoot(player)
 		-- Hunters perched above the giant's head are safe (and should be!).
-		if root and not held[player] and root.Position.Y < giant.Kind.Height * 1.05 then
+		if root and not held[player] and heightAboveGround(player, root) < giant.Kind.Height * 1.05 then
 			local distance = Geo.Flat(root.Position - here).Magnitude
 			if distance < Config.Giants.SightRange then
 				local waypoint = Geo.NextWaypoint(here, root.Position, breached)
@@ -232,12 +313,45 @@ end
 
 -- === Grabs: held, wriggle free, rescued or caught ============================
 
+-- The trunk as the clients pose it: the rig's rest pose (what the server
+-- has; Motor6D transforms don't replicate) leaned by `lean` at the waist,
+-- the same angle GiantAnimator gives it. nil if the rig has no waist motor.
+local function posedTorso(giant: Giant, lean: number): CFrame?
+	local waist = giant.Joints.Waist
+	if not waist then
+		return nil
+	end
+	return giant.Rig.Root.CFrame * waist.C0 * CFrame.Angles(lean, 0, 0) * waist.C1:Inverse()
+end
+
+-- Where the right hand is while holding someone, following GiantAnimator's
+-- hold pose (trunk leaned back a little; right arm raised in front, elbow
+-- bent), by walking down the rig's own joints. nil if a joint is missing.
+local function heldHand(giant: Giant, t: number): Vector3?
+	local shoulder, elbow = giant.Joints.RightShoulder, giant.Joints.RightElbow
+	local hand = giant.Rig.Model:FindFirstChild("RightHand")
+	local fore = elbow and elbow.Part1
+	if not shoulder or not elbow or not fore or not hand or not hand:IsA("BasePart") then
+		return nil
+	end
+	-- The trunk eases back as the client's does.
+	local weight = 1 - math.exp(-5 * math.max(t - giant.HoldStarted, 0))
+	local torso = posedTorso(giant, 0.08 * weight)
+	if not torso then
+		return nil
+	end
+	local upper = torso * shoulder.C0 * CFrame.Angles(1.2, 0, -0.25) * shoulder.C1:Inverse()
+	local foreFrame = upper * elbow.C0 * CFrame.Angles(0.9, 0, 0) * elbow.C1:Inverse()
+	return (foreFrame * fore.CFrame:ToObjectSpace(hand.CFrame)).Position
+end
+
 local function holdFrame(giant: Giant, t: number): CFrame
 	local rootFrame = giant.Rig.Root.CFrame
 	local h = giant.Kind.Height
 	local lift = giant.Rig.TorsoHeight * 0.75
-	local point = rootFrame * CFrame.new(h * 0.06 + math.sin(t * 22) * h * 0.012, lift, -(giant.Rig.TorsoDepth * 0.5 + h * 0.13))
-	return CFrame.lookAt(point.Position, rootFrame.Position + Vector3.new(0, lift, 0))
+	local point = heldHand(giant, t)
+		or (rootFrame * CFrame.new(h * 0.06 + math.sin(t * 22) * h * 0.012, lift, -(giant.Rig.TorsoDepth * 0.5 + h * 0.13))).Position
+	return CFrame.lookAt(point, giant.Rig.Head.Position)
 end
 
 local function release(giant: Giant, reason: string)
@@ -245,15 +359,21 @@ local function release(giant: Giant, reason: string)
 	if not player then
 		return
 	end
+	local root = giant.HeldRoot
 	giant.Holding = nil
+	giant.HeldRoot = nil
 	held[player] = nil
 	giant.NextGrabAt = os.clock() + Config.Giants.GrabCooldown + 1
 	giant.Rig.Model:SetAttribute("Holding", false)
-	local character = player.Character
-	local root = character and character:FindFirstChild("HumanoidRootPart")
-	if root and root:IsA("BasePart") then
+	if root and root.Parent then
 		root.Anchored = false
+		-- Anchoring took the body off its owner's client: hand it back, or
+		-- the hunter's own movement would stutter from now on.
+		if root:IsDescendantOf(Workspace) then
+			pcall(root.SetNetworkOwner, root, player)
+		end
 	end
+	Motion.Reset(player)
 	if player.Parent then
 		remote(Config.Remotes.Held):FireClient(player, "Free", reason)
 	end
@@ -261,6 +381,7 @@ end
 
 local function startHold(giant: Giant, player: Player, root: BasePart)
 	giant.Holding = player
+	giant.HeldRoot = root
 	giant.HoldStarted = os.clock()
 	giant.Struggles = 0
 	held[player] = giant
@@ -269,6 +390,7 @@ local function startHold(giant: Giant, player: Player, root: BasePart)
 	root.CFrame = holdFrame(giant, os.clock())
 	remote(Config.Remotes.Held):FireClient(player, "Grabbed", { Time = Config.Giants.HoldTime, Needed = Config.Giants.StruggleToEscape })
 	Broadcast.Feed(`{player.DisplayName} was grabbed! Cut them loose!`, "Danger")
+	GiantService.Grabbed:Fire(player, "Grab")
 end
 
 local function caught(giant: Giant)
@@ -279,11 +401,8 @@ local function caught(giant: Giant)
 	release(giant, "Caught")
 	remote(Config.Remotes.Caught):FireClient(player, giant.Kind.Display)
 	Broadcast.Feed(`{player.DisplayName} was caught by a {giant.Kind.Display}`, "Info")
-	task.spawn(function()
-		if player.Parent then
-			player:LoadCharacterAsync() -- back on the wall; no gore, just a "Caught!" screen
-		end
-	end)
+	GiantService.Grabbed:Fire(player, "Caught")
+	Respawn.Load(player) -- back on the wall; no gore, just a "Caught!" screen
 end
 
 local function tryGrab(giant: Giant, player: Player, root: BasePart)
@@ -443,7 +562,7 @@ local function powers(giant: Giant, now: number)
 			local root = aliveRoot(player)
 			if root and not held[player] then
 				local distance = (root.Position - here).Magnitude
-				local outOfReach = root.Position.Y >= giant.Kind.Height * 1.05 or distance > 90
+				local outOfReach = heightAboveGround(player, root) >= giant.Kind.Height * 1.05 or distance > 90
 				if outOfReach and distance < bestDistance then
 					best, bestRoot, bestDistance = player, root, distance
 				end
@@ -553,6 +672,12 @@ function GiantService.SpawnGiant(kindName: string)
 	face.CFrame = rig.Root.CFrame - rig.Root.Position
 	local kind = Config.GiantKinds[kindName]
 	local now = os.clock()
+	local joints: { [string]: Motor6D } = {}
+	for _, d in rig.Model:GetDescendants() do
+		if d:IsA("Motor6D") then
+			joints[d.Name] = d
+		end
+	end
 	giants[rig.Model] = {
 		Rig = rig,
 		Kind = kind,
@@ -563,6 +688,7 @@ function GiantService.SpawnGiant(kindName: string)
 		NextSwatAt = now + 3,
 		Busy = false,
 		Holding = nil,
+		HeldRoot = nil,
 		HoldStarted = 0,
 		Struggles = 0,
 		KneelUntil = 0,
@@ -577,6 +703,12 @@ function GiantService.SpawnGiant(kindName: string)
 		NextThrowAt = now + 4,
 		NextRoarAt = now + 6,
 		Defeated = false,
+		StunStreak = 0,
+		StunStreakUntil = 0,
+		-- (The wave's big ones always head straight for town.)
+		Roamer = not kind.Armor and not kind.Powers and rng:NextNumber() < Config.Waves.RoamChance,
+		Hurry = false,
+		Joints = joints,
 	}
 	if kind.Armor then
 		rig.Model:SetAttribute("Armor", kind.Armor)
@@ -591,18 +723,16 @@ function GiantService.SpawnGiant(kindName: string)
 end
 
 
-local function defeat(giant: Giant, player: Player, clean: boolean, speed: number)
+-- Stop and dissolve into steam: no ragdoll, nothing scary. Only the root is
+-- anchored (that holds the whole assembly still), so the motors keep the
+-- pose the clients last gave it instead of snapping back to the rest pose.
+local function dissolve(giant: Giant)
 	giant.Defeated = true
-	release(giant, "Rescued")
 	local model = giant.Rig.Model
 	model:SetAttribute("Defeated", true)
-	GiantService.Defeated:Fire(player, giant.Kind.Name, clean, speed)
-	Broadcast.Feed(`{player.DisplayName} took down a {giant.Kind.Display}!`, if giant.Kind.Name == "Armored" then "Gold" else "Good")
-
-	-- Stop, anchor, and dissolve into steam: no ragdoll, nothing scary.
+	giant.Rig.Root.Anchored = true
 	for _, descendant in model:GetDescendants() do
 		if descendant:IsA("BasePart") then
-			descendant.Anchored = true
 			descendant.CanQuery = false
 			TweenService:Create(descendant, TweenInfo.new(Config.Giants.DefeatFadeTime), { Transparency = 1 }):Play()
 		elseif descendant:IsA("PointLight") then
@@ -625,6 +755,27 @@ local function defeat(giant: Giant, player: Player, clean: boolean, speed: numbe
 		model:Destroy()
 		giants[model] = nil
 	end)
+end
+
+local function defeat(giant: Giant, player: Player, clean: boolean, speed: number)
+	release(giant, "Rescued")
+	dissolve(giant)
+	GiantService.Defeated:Fire(player, giant.Kind.Name, clean, speed)
+	Broadcast.Feed(`{player.DisplayName} took down a {giant.Kind.Display}!`, if giant.Kind.Name == "Armored" then "Gold" else "Good")
+end
+
+-- Diminishing returns on stuns: how long this trip or daze lasts, and
+-- whether it still scores (only the first in a row does).
+local function stunFor(giant: Giant, base: number): (number, boolean)
+	local now = os.clock()
+	if now >= giant.StunStreakUntil then
+		giant.StunStreak = 0
+	end
+	local duration = math.max(base * Config.Cuts.RepeatFactor ^ giant.StunStreak, Config.Cuts.MinStun)
+	local scores = giant.StunStreak == 0
+	giant.StunStreak += 1
+	giant.StunStreakUntil = now + Config.Cuts.RepeatWindow
+	return duration, scores
 end
 
 local function breakArmor(giant: Giant, player: Player)
@@ -651,8 +802,7 @@ local function breakArmor(giant: Giant, player: Player)
 	Broadcast.Feed(`{player.DisplayName} cracked an Armored Giant's plate!`, "Gold")
 end
 
-local function trip(giant: Giant)
-	local duration = Config.Cuts.TripTime
+local function trip(giant: Giant, duration: number)
 	giant.KneelUntil = os.clock() + duration
 	giant.LeapUntil = 0
 	local model = giant.Rig.Model
@@ -710,8 +860,7 @@ local function applyDamage(giant: Giant, player: Player, damage: number, clean: 
 	return "Hit", info
 end
 
-local function cutNape(giant: Giant, player: Player, root: BasePart): (HitResult, HitInfo)
-	local speed = root.AssemblyLinearVelocity.Magnitude
+local function cutNape(giant: Giant, player: Player, speed: number): (HitResult, HitInfo)
 	local clean = speed >= Config.Blades.CleanCutSpeed
 	return applyDamage(giant, player, if clean then 1 else 0.5, clean, speed)
 end
@@ -759,10 +908,31 @@ local function facing(giant: Giant, here: Vector3): boolean
 	return toHunter.Magnitude > 0.01 and toHunter.Unit:Dot(giant.Rig.Root.CFrame.LookVector) > Config.Cuts.EyesFrontDot
 end
 
+-- Where the nape is drawn while a giant lunges, holds or kneels (the
+-- clients lean its trunk; the server only has the rest pose), or nil when
+-- it's standing normally.
+local function posedNape(giant: Giant): Vector3?
+	local model = giant.Rig.Model
+	local reach = if model:GetAttribute("Grabbing") then 1 else 0
+	local hold = if model:GetAttribute("Holding") then 1 else 0
+	local kneel = if model:GetAttribute("Kneeling") then 1 else 0
+	if reach + hold + kneel == 0 then
+		return nil
+	end
+	-- (The same lean as GiantAnimator.Pose.)
+	local rest = posedTorso(giant, 0)
+	local posed = posedTorso(giant, -reach * 0.22 - kneel * 0.35 + hold * 0.08)
+	if not rest or not posed then
+		return nil
+	end
+	return posed:PointToWorldSpace(rest:PointToObjectSpace(giant.Rig.Nape.Position))
+end
+
 -- Called by HunterService after it has validated the slash (cooldown,
--- blades). The nape comes first (from behind or the side); then the eyes
--- (from in front); then an ankle.
-function GiantService.TryHit(player: Player, root: BasePart): (HitResult, HitInfo)
+-- blades, a believable position). `speed` is the server's own measure of the
+-- hunter's speed (Motion.CutSpeed). The nape comes first (from behind or the
+-- side); then the eyes (from in front); then an ankle.
+function GiantService.TryHit(player: Player, root: BasePart, speed: number): (HitResult, HitInfo)
 	local here = root.Position
 	local reachBase = Config.Blades.SlashRange
 
@@ -771,14 +941,21 @@ function GiantService.TryHit(player: Player, root: BasePart): (HitResult, HitInf
 	for _, giant in giants do
 		if not giant.Defeated and not facing(giant, here) then
 			local nape = giant.Rig.Nape
+			local reach = reachBase + nape.Size.X / 2
 			local d = (nape.Position - here).Magnitude
-			if d <= reachBase + nape.Size.X / 2 and d < bestDistance then
+			local posed = posedNape(giant)
+			if posed then
+				-- Lunging, holding or kneeling: wherever the nape is drawn.
+				d = math.min(d, (posed - here).Magnitude)
+				reach += Config.Cuts.PosedNapeSlack
+			end
+			if d <= reach and d < bestDistance then
 				best, bestDistance = giant, d
 			end
 		end
 	end
 	if best then
-		return cutNape(best, player, root)
+		return cutNape(best, player, speed)
 	end
 
 	for _, giant in giants do
@@ -787,8 +964,11 @@ function GiantService.TryHit(player: Player, root: BasePart): (HitResult, HitInf
 			if (here - head.Position).Magnitude <= reachBase + giant.Rig.HeadSize / 2 then
 				local info: HitInfo = { Kind = giant.Kind.Display, Position = head.Position }
 				info.Rescued = rescue(giant, player)
-				daze(giant, Config.Cuts.DazeTime)
-				GiantService.Assist:Fire(player, "Daze")
+				local duration, scores = stunFor(giant, Config.Cuts.DazeTime)
+				daze(giant, duration)
+				if scores then
+					GiantService.Assist:Fire(player, "Daze")
+				end
 				return "Daze", info
 			end
 		end
@@ -800,8 +980,11 @@ function GiantService.TryHit(player: Player, root: BasePart): (HitResult, HitInf
 				if (foot.Position - here).Magnitude <= reachBase + foot.Size.Z / 2 then
 					local info: HitInfo = { Kind = giant.Kind.Display, Position = foot.Position }
 					info.Rescued = rescue(giant, player)
-					trip(giant)
-					GiantService.Assist:Fire(player, "Trip")
+					local duration, scores = stunFor(giant, Config.Cuts.TripTime)
+					trip(giant, duration)
+					if scores then
+						GiantService.Assist:Fire(player, "Trip")
+					end
 					return "Trip", info
 				end
 			end
@@ -824,6 +1007,9 @@ function GiantService.Struggle(player: Player)
 	giant.Struggles += 1
 	if giant.Struggles >= Config.Giants.StruggleToEscape then
 		release(giant, "Escaped")
+	else
+		-- The wriggle bar follows this count, not the client's own.
+		remote(Config.Remotes.Held):FireClient(player, "Wriggle", { Count = giant.Struggles, Needed = Config.Giants.StruggleToEscape })
 	end
 end
 
@@ -848,10 +1034,13 @@ end
 function GiantService.CannonHit(model: Model, player: Player)
 	local giant = giants[model]
 	if giant and not giant.Defeated then
-		daze(giant, Config.Cuts.DazeTime)
+		local duration, scores = stunFor(giant, Config.Cuts.DazeTime)
+		daze(giant, duration)
 		steamBurst(giant.Rig.Head, giant.Kind.Height * 0.2, 20)
 		rescue(giant, player)
-		GiantService.Assist:Fire(player, "Cannon")
+		if scores then
+			GiantService.Assist:Fire(player, "Cannon")
+		end
 	end
 end
 
@@ -865,7 +1054,37 @@ function GiantService.AliveCount(): number
 	return count
 end
 
--- Everyone left: clear the field.
+-- How hard the giants inside the wall are pressing on the district: one per
+-- 30 studs of giant.
+function GiantService.InsideWeight(): number
+	local weight = 0
+	for _, giant in giants do
+		if active(giant) and Geo.IsInside(giant.Rig.Root.Position) then
+			weight += giant.Kind.Height / 30
+		end
+	end
+	return weight
+end
+
+-- The wave's time is up: every giant storms into town, faster, and any
+-- straggler further out than `radius` steams away (no points).
+function GiantService.Hurry(radius: number): number
+	local gone = 0
+	for _, giant in giants do
+		if active(giant) then
+			giant.Hurry = true
+			giant.Roamer = false
+			giant.WanderTarget = nil
+			if Geo.RadiusOf(giant.Rig.Root.Position) > radius and not giant.Holding then
+				gone += 1
+				dissolve(giant)
+			end
+		end
+	end
+	return gone
+end
+
+-- Everyone left (or the district fell): clear the field.
 function GiantService.ClearAll()
 	for model, giant in giants do
 		release(giant, "Gone")
@@ -950,13 +1169,14 @@ function GiantService.Init(points: { Vector3 })
 		end
 	end)
 
-	-- Carry held hunters in the giant's hand; let go if anything vanishes.
+	-- Carry held hunters in the giant's hand; let go if anything vanishes,
+	-- or if the body in its hand is no longer the hunter's live character
+	-- (they died, reset or respawned).
 	RunService.Heartbeat:Connect(function()
 		local t = os.clock()
 		for player, giant in held do
-			local character = player.Character
-			local root = character and character:FindFirstChild("HumanoidRootPart")
-			if not root or not root:IsA("BasePart") or not active(giant) or not player.Parent then
+			local root = giant.HeldRoot
+			if not root or aliveRoot(player) ~= root or not active(giant) or not player.Parent then
 				release(giant, "Gone")
 			else
 				root.CFrame = holdFrame(giant, t)
@@ -967,12 +1187,35 @@ function GiantService.Init(points: { Vector3 })
 	remote(Config.Remotes.Struggle).OnServerEvent:Connect(function(player)
 		GiantService.Struggle(player)
 	end)
-	Players.PlayerRemoving:Connect(function(player)
+	local function letGo(player: Player)
 		local giant = held[player]
 		if giant then
 			release(giant, "Gone")
 		end
+	end
+	-- A held hunter who dies or respawns is let go at once.
+	local function watch(player: Player)
+		player.CharacterRemoving:Connect(function()
+			letGo(player)
+		end)
+		player.CharacterAdded:Connect(function(character)
+			letGo(player)
+			local humanoid = character:WaitForChild("Humanoid", 10)
+			if humanoid and humanoid:IsA("Humanoid") then
+				humanoid.Died:Connect(function()
+					letGo(player)
+				end)
+			end
+		end)
+	end
+	for _, player in Players:GetPlayers() do
+		watch(player)
+	end
+	Players.PlayerAdded:Connect(watch)
+	Players.PlayerRemoving:Connect(function(player)
+		letGo(player)
 		lastStruggle[player] = nil
+		heightCache[player] = nil
 	end)
 end
 

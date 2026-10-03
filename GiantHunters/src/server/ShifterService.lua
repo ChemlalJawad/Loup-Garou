@@ -13,8 +13,11 @@
 --     part-built giant welded to your character, which is hidden and raised
 --     to the titan's hip height, so you walk it with the normal controls.
 --   * Lose all your nape health and you're thrown out of the titan, and the
---     power is gone.
--- Knockouts, not injuries: a knocked-out hunter just respawns on the wall.
+--     power is gone. It also fades when you're knocked out or caught, when
+--     the round ends, or after Config.Shifters.PowerLasts - and you can
+--     decline it when choosing a side.
+-- Knockouts, not injuries: a knocked-out hunter just respawns on the wall
+-- (no points for it, and a few seconds when it can't happen again).
 
 local CollectionService = game:GetService("CollectionService")
 local Debris = game:GetService("Debris")
@@ -27,6 +30,8 @@ local Geo = require(ReplicatedStorage.Shared.Geo)
 local GiantFactory = require(script.Parent.GiantFactory)
 local GiantService = require(script.Parent.GiantService)
 local Broadcast = require(script.Parent.Broadcast)
+local Motion = require(script.Parent.Motion)
+local Respawn = require(script.Parent.Respawn)
 
 local ShifterService = {}
 
@@ -45,10 +50,13 @@ type Shifter = {
 	HipHeight: number,
 	WalkSpeed: number,
 	JumpPower: number,
+	JumpHeight: number,
+	PowerUntil: number, -- the power fades then, used or not
 }
 
 local S = Config.Shifters
 local shifters: { [Player]: Shifter } = {}
+local immuneUntil: { [Player]: number } = {} -- knocked out a moment ago
 local orb: Model? = nil
 local nextOrbAt = 0
 local folder: Folder
@@ -138,6 +146,7 @@ local function revert(shifter: Shifter)
 			humanoid.HipHeight = shifter.HipHeight
 			humanoid.WalkSpeed = shifter.WalkSpeed
 			humanoid.JumpPower = shifter.JumpPower
+			humanoid.JumpHeight = shifter.JumpHeight
 		end
 	end
 	player.CameraMinZoomDistance = 0.5
@@ -182,9 +191,13 @@ local function transform(shifter: Shifter)
 	shifter.HipHeight = humanoid.HipHeight
 	shifter.WalkSpeed = humanoid.WalkSpeed
 	shifter.JumpPower = humanoid.JumpPower
+	shifter.JumpHeight = humanoid.JumpHeight
 	humanoid.HipHeight = math.max(legLength - root.Size.Y / 2, 2)
 	humanoid.WalkSpeed = S.WalkSpeed
+	-- Titans don't jump (whichever of the two the avatar uses; the client
+	-- also switches the Jumping state off).
 	humanoid.JumpPower = 0
+	humanoid.JumpHeight = 0
 
 	local side = shifter.Side :: string
 	local model = rig.Model
@@ -219,6 +232,7 @@ local function removePower(shifter: Shifter)
 	player:SetAttribute("ShifterPower", nil)
 	player:SetAttribute("ShifterSide", nil)
 	player:SetAttribute("ShiftReadyAt", nil)
+	player:SetAttribute("PowerUntil", nil)
 	nextOrbAt = math.max(nextOrbAt, os.clock() + S.OrbEvery)
 end
 
@@ -245,21 +259,24 @@ local function hurt(shifter: Shifter, by: Player, amount: number): boolean
 end
 
 local function knockout(victim: Player, by: Player)
+	local now = os.clock()
+	if now < (immuneUntil[victim] or 0) then
+		return -- just knocked out: give them a chance
+	end
+	immuneUntil[victim] = now + S.KnockoutImmunity
 	remote(Config.Remotes.Caught):FireClient(victim, "Titan")
 	Broadcast.Feed(`{by.DisplayName}'s titan knocked out {victim.DisplayName}!`, "Danger")
-	ShifterService.Scored:Fire(by, S.KnockoutPoints)
-	task.spawn(function()
-		if victim.Parent then
-			victim:LoadCharacterAsync()
-		end
-	end)
+	if S.KnockoutPoints > 0 then
+		ShifterService.Scored:Fire(by, S.KnockoutPoints)
+	end
+	Respawn.Load(victim)
 end
 
 local function punch(shifter: Shifter)
 	local rig = shifter.Rig
 	local _, _, root = bodyOf(shifter.Player)
 	local now = os.clock()
-	if not rig or not root or now - shifter.LastPunch < S.PunchCooldown then
+	if not rig or not root or now - shifter.LastPunch < S.PunchCooldown or not Motion.Trusted(shifter.Player) then
 		return
 	end
 	shifter.LastPunch = now
@@ -322,8 +339,9 @@ local function roar(shifter: Shifter)
 end
 
 -- Hunters' blades against a titan on the giants' side: its nape, from
--- behind or the side. Called by HunterService when no giant was in reach.
-function ShifterService.TryHit(player: Player, root: BasePart): (string?, { [string]: any }?)
+-- behind or the side. Called by HunterService when no giant was in reach,
+-- with the server's own measure of the hunter's speed.
+function ShifterService.TryHit(player: Player, root: BasePart, speed: number): (string?, { [string]: any }?)
 	local here = root.Position
 	for other, shifter in shifters do
 		local rig = shifter.Rig
@@ -332,7 +350,6 @@ function ShifterService.TryHit(player: Player, root: BasePart): (string?, { [str
 			local inFront = toHunter.Magnitude > 0.01 and toHunter.Unit:Dot(rig.Root.CFrame.LookVector) > Config.Cuts.EyesFrontDot
 			local nape = rig.Nape
 			if not inFront and (nape.Position - here).Magnitude <= Config.Blades.SlashRange + nape.Size.X / 2 then
-				local speed = root.AssemblyLinearVelocity.Magnitude
 				local clean = speed >= Config.Blades.CleanCutSpeed
 				local info = { Kind = "Titan Shifter", Clean = clean, Speed = speed, Position = nape.Position }
 				local down = hurt(shifter, player, if clean then 1 else 0.5)
@@ -390,10 +407,16 @@ local function spawnOrb()
 	prompt.HoldDuration = 1
 	prompt.MaxActivationDistance = 12
 	prompt.RequiresLineOfSight = false
+	prompt.KeyboardKeyCode = Config.Prompts.Key
+	prompt.GamepadKeyCode = Config.Prompts.Gamepad
 	prompt.Parent = crystal
 	prompt.Triggered:Connect(function(player)
 		if shifters[player] or holders() >= S.Max or orb ~= model then
 			return
+		end
+		local character = bodyOf(player)
+		if not character or GiantService.IsHeld(player) then
+			return -- not from inside a giant's hand
 		end
 		orb = nil
 		model:Destroy()
@@ -410,8 +433,11 @@ local function spawnOrb()
 			HipHeight = 0,
 			WalkSpeed = 0,
 			JumpPower = 0,
+			JumpHeight = 0,
+			PowerUntil = os.clock() + S.PowerLasts,
 		}
 		player:SetAttribute("ShifterPower", true)
+		player:SetAttribute("PowerUntil", Workspace:GetServerTimeNow() + S.PowerLasts)
 		nextOrbAt = os.clock() + S.OrbEvery
 		Broadcast.Feed(`{player.DisplayName} took the titan power!`, "Gold")
 		Broadcast.Announce("TITAN POWER", "Choose your side, then press T to transform", "Gold", player)
@@ -420,6 +446,13 @@ local function spawnOrb()
 	model.Parent = folder
 	orb = model
 	Broadcast.Feed("A titan crystal has appeared in town - whoever takes it can become a titan!", "Gold")
+end
+
+-- The round is over: every titan power fades (a fresh crystal will come).
+function ShifterService.ClearPowers()
+	for _, shifter in shifters do
+		removePower(shifter)
+	end
 end
 
 function ShifterService.Init()
@@ -439,6 +472,11 @@ function ShifterService.Init()
 				shifter.Side = arg :: string
 				player:SetAttribute("ShifterSide", arg :: string)
 			end
+		elseif action == "Decline" then
+			if not shifter.Rig then
+				removePower(shifter)
+				Broadcast.Feed(`{player.DisplayName} let the titan power go`, "Info")
+			end
 		elseif action == "Transform" then
 			if shifter.Rig then
 				revert(shifter)
@@ -457,12 +495,25 @@ function ShifterService.Init()
 		if shifter then
 			removePower(shifter)
 		end
+		immuneUntil[player] = nil
 	end)
+	-- Knocked out, caught, fallen or reset: the power goes with the body.
 	local function watch(player: Player)
 		player.CharacterRemoving:Connect(function()
 			local shifter = shifters[player]
 			if shifter then
-				revert(shifter)
+				removePower(shifter)
+			end
+		end)
+		player.CharacterAdded:Connect(function(character)
+			local humanoid = character:WaitForChild("Humanoid", 10)
+			if humanoid and humanoid:IsA("Humanoid") then
+				humanoid.Died:Connect(function()
+					local shifter = shifters[player]
+					if shifter and player.Character == character then
+						removePower(shifter)
+					end
+				end)
 			end
 		end)
 	end
@@ -476,7 +527,11 @@ function ShifterService.Init()
 			task.wait(1)
 			local now = os.clock()
 			for _, shifter in shifters do
-				if shifter.Rig and now >= shifter.Until then
+				if now >= shifter.PowerUntil then
+					Broadcast.Feed(`{shifter.Player.DisplayName}'s titan power has faded`, "Info")
+					Broadcast.Announce("THE TITAN POWER FADES", "", "Info", shifter.Player)
+					removePower(shifter)
+				elseif shifter.Rig and now >= shifter.Until then
 					revert(shifter)
 				end
 			end

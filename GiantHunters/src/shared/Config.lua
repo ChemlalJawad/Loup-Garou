@@ -17,7 +17,7 @@ Config.Grapple = {
 	SlackPull = 18, -- gentle pull while just hanging on, keeps swings lively
 	BoostAcceleration = 90, -- unhooked gas burst along the camera
 	AirControl = 35, -- studs/s^2 of WASD steering in the air
-	DashImpulse = 60, -- side/forward dash (tap Shift)
+	DashImpulse = 60, -- side/forward dash (tap Ctrl or C; Shift stays shift-lock)
 	DashCooldown = 0.6,
 	MaxSpeed = 170,
 	LaunchImpulse = 40, -- upward kick when you hook from the ground
@@ -29,6 +29,8 @@ Config.Grapple = {
 	GasPerDash = 8,
 	GasRegenPerSecondGrounded = 6, -- kind to young players: slow refill on foot
 	EscapeHop = 70, -- upward kick when you wriggle out of a giant's hand
+	GasRegenPerSecondSwinging = 1.5, -- a trickle while hooked, so nobody is ever stranded
+	GiantStandOff = 2, -- reeling onto a giant stops this far off its skin
 }
 
 -- === Blades & slashing (server-validated) ===================================
@@ -37,6 +39,8 @@ Config.Blades = {
 	SlashCooldown = 0.4,
 	SlashRange = 12, -- studs from your root to what you cut
 	CleanCutSpeed = 35, -- studs/s: at or above this speed a hit does full damage
+	FallSpeedWeight = 0.3, -- just dropping counts this much toward a clean cut's speed
+	SlashCooldownSlack = 0.3, -- the server lets a slash arrive this early (network jitter)
 }
 
 -- The three classic cuts. Only the nape takes a giant down; the other two
@@ -45,6 +49,15 @@ Config.Cuts = {
 	TripTime = 4.5, -- an ankle cut drops the giant to its knees this long
 	DazeTime = 4, -- a cut across the eyes (or a cannonball) dazes it this long
 	EyesFrontDot = 0.25, -- you have to be in front of a face to reach the eyes
+	-- Diminishing returns: each trip or daze on the same giant within
+	-- RepeatWindow seconds lasts RepeatFactor as long (never under MinStun),
+	-- and only the first one scores.
+	RepeatWindow = 12,
+	RepeatFactor = 0.6,
+	MinStun = 1.2,
+	-- The animated nape can sit a little off the server's rest pose while a
+	-- giant lunges, holds or kneels: this much extra reach then.
+	PosedNapeSlack = 3,
 }
 
 -- === Hunters: score, combo, ranks ============================================
@@ -204,13 +217,26 @@ Config.Waves = {
 	Intermission = 12,
 	BetweenRounds = 18,
 	WavesPerRound = 5,
-	MaxAlive = 16,
+	MaxAlive = 16, -- never more giants than this on the field (the rest queue up)
 	BeastFromWave = 3,
+	-- A wave can't drag on forever: after TimeLimit seconds every giant
+	-- storms into town, and stragglers further than StragglerRadius from the
+	-- centre steam away.
+	TimeLimit = 150,
+	StragglerRadius = 620,
+	HurrySpeed = 1.4,
+	RoamChance = 0.2, -- giants that first roam the wilds (the forests, the training grounds, the castle)
 }
 
-function Config.WaveRoster(round: number, wave: number): { string }
+-- More hunters, more giants: the roster scales with the player count.
+function Config.WaveScale(players: number): number
+	return math.clamp(0.5 + 0.25 * players, 0.6, 2)
+end
+
+function Config.WaveRoster(round: number, wave: number, scale: number?): { string }
 	local roster = {}
-	local count = math.min(2 + wave * 2 + (round - 1) * 2, Config.Waves.MaxAlive)
+	local base = 2 + wave * 2 + (round - 1) * 2
+	local count = math.min(math.max(math.round(base * (scale or 1)), 1), Config.Waves.MaxAlive)
 	for i = 1, count do
 		local kind = "Small"
 		if wave >= 2 and i % 3 == 0 then
@@ -269,8 +295,12 @@ Config.Remotes = {
 	Feed = "GH_Feed", -- server -> all (text, tone)
 	Announce = "GH_Announce", -- server -> all (title, subtitle, tone)
 	Shake = "GH_Shake", -- server -> all (origin: Vector3, strength: number)
-	Shift = "GH_Shift", -- client -> server ("Choose", side) | ("Transform") | ("Punch") | ("Roar")
+	Shift = "GH_Shift", -- client -> server ("Choose", side) | ("Decline") | ("Transform") | ("Punch") | ("Roar")
+	Tutorial = "GH_Tutorial", -- client -> server ("Done")
 }
+-- (Held also sends ("Wriggle", { Count, Needed }): the server's own count of
+-- a held hunter's wriggles, which drives the wriggle bar. Wave also carries
+-- District, DistrictMax and TimeLeft.)
 
 Config.Tags = {
 	Giant = "Giant",
@@ -289,8 +319,8 @@ Config.Tags = {
 Config.DayNight = {
 	DayMinutes = 16,
 	StartTime = 9,
-	NightStart = 19, -- lamps and torches on, giants' eyes glow, giants faster
-	NightEnd = 5.8,
+	NightStart = 20, -- lamps and torches on, giants' eyes glow, giants faster
+	NightEnd = 5,
 	NightSpeed = 1.2, -- giants walk this much faster in the dark
 }
 
@@ -309,7 +339,56 @@ Config.Shifters = {
 	PunchReach = 0.5, -- x height, in front of the titan
 	RoarCooldown = 12,
 	RoarRadius = 70,
-	KnockoutPoints = 2, -- a rogue titan knocking out a hunter
+	KnockoutPoints = 0, -- a rogue titan knocking out a hunter (no farming players)
+	KnockoutImmunity = 10, -- seconds a knocked-out hunter can't be knocked out again
+	PowerLasts = 240, -- seconds before an unused (or used) titan power fades
+}
+
+-- === Gameplay systems ===========================================================
+-- (Grouped here: the district's health, anti-cheat tolerances, saving, the
+-- map edge, and the action prompts.)
+
+-- The district's health: drains while giants are inside the wall, and when
+-- hunters are grabbed or caught. At zero the district falls and it's back to
+-- round 1. Full again at the start of every round.
+Config.District = {
+	Health = 100,
+	DrainPerGiant = 0.25, -- per second, per giant inside the wall (x its height / 30)
+	MaxDrain = 3, -- per second, however many are inside
+	GrabDamage = 1,
+	CaughtDamage = 4,
+	FallenPause = 8, -- seconds of "DISTRICT FALLEN" before the reset
+}
+
+-- The server watches every hunter's position itself (it never trusts the
+-- client's velocity): speeds for clean cuts come from this, and a hunter who
+-- moves faster than the rig allows can't cut anything for a moment.
+Config.AntiCheat = {
+	SpeedTolerance = 1.4, -- x Config.Grapple.MaxSpeed
+	TeleportSlack = 25, -- studs of extra movement allowed per check (lag, a titan's hip)
+	SuspectTime = 2, -- seconds of no cuts after a too-fast move
+	HookRelayRate = 10, -- cable updates a second relayed to other players
+}
+
+-- Saved between sessions (DataStoreService; works without it in Studio).
+Config.Data = {
+	Store = "GiantHunters_v1",
+	AutosaveEvery = 60,
+	Retries = 4,
+}
+
+-- The edge of the world: past this (or below FloorY) you're put back on the
+-- wall.
+Config.Bounds = {
+	Margin = 10, -- studs inside Config.World.LandRadius
+	FloorY = -60,
+}
+
+-- Action prompts (resupply, cannons, the titan crystal): keys nothing else
+-- uses (E is the right hook, X a gamepad slash).
+Config.Prompts = {
+	Key = Enum.KeyCode.R,
+	Gamepad = Enum.KeyCode.DPadDown,
 }
 
 -- Sounds: built-in Roblox client sound files (rbxasset://...), shipped with

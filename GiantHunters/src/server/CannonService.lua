@@ -113,8 +113,15 @@ local function wire(cannon: Instance)
 	prompt.HoldDuration = 0.2
 	prompt.MaxActivationDistance = 14
 	prompt.RequiresLineOfSight = false
+	prompt.KeyboardKeyCode = Config.Prompts.Key
+	prompt.GamepadKeyCode = Config.Prompts.Gamepad
 	prompt.Parent = barrel
 	prompt.Triggered:Connect(function(player)
+		local character = player.Character
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		if not humanoid or humanoid.Health <= 0 or GiantService.IsHeld(player) then
+			return
+		end
 		fire(cannon, prompt, player)
 	end)
 end

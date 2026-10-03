@@ -1,10 +1,20 @@
 --!strict
--- Rounds and waves.
+-- Rounds and waves, and the district's health.
 --
 -- A round: a breather, then the Wallbreaker kicks the south gate in, then
 -- waves pour through the breach (the last one brings an Armored Giant).
 -- Clear them all and the district is saved: the gate is rebuilt and the
 -- next round is a little harder. If everyone leaves, it all resets.
+--
+-- More hunters, more giants (Config.WaveScale), and never more than
+-- Config.Waves.MaxAlive on the field at once: the rest wait their turn.
+-- A wave can't drag on: after Config.Waves.TimeLimit the giants storm into
+-- town and far-off stragglers steam away.
+--
+-- The district has health (Config.District). It drains while giants are
+-- inside the wall, and each time a hunter is grabbed or caught. At zero the
+-- DISTRICT FALLS: the field is cleared, the gate rebuilt, and it's back to
+-- round 1. It's full again at the start of every round.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -17,24 +27,46 @@ local Broadcast = require(script.Parent.Broadcast)
 local WaveService = {}
 
 WaveService.RoundStarted = Instance.new("BindableEvent") -- (round)
-WaveService.RoundEnded = Instance.new("BindableEvent") -- (round)
+WaveService.RoundEnded = Instance.new("BindableEvent") -- (round): the district was saved
+WaveService.DistrictFallen = Instance.new("BindableEvent") -- (round)
 
+type Outcome = "Victory" | "Empty" | "Fallen"
+
+local D = Config.District
 local waveEvent: RemoteEvent
-local state = { Round = 1, Wave = 0, Phase = "Intermission", Countdown = 0 }
+local state = { Round = 1, Wave = 0, Phase = "Intermission", Countdown = 0, District = D.Health, WaveEndsAt = 0 }
 
-local function broadcast()
-	waveEvent:FireAllClients({
+local function payload(): { [string]: any }
+	return {
 		Round = state.Round,
 		Wave = state.Wave,
 		Waves = Config.Waves.WavesPerRound,
 		Alive = GiantService.AliveCount(),
 		Phase = state.Phase,
 		Countdown = state.Countdown,
-	})
+		District = math.ceil(state.District),
+		DistrictMax = D.Health,
+		TimeLeft = if state.Phase == "Fight" then math.max(math.ceil(state.WaveEndsAt - os.clock()), 0) else nil,
+	}
+end
+
+local function broadcast()
+	waveEvent:FireAllClients(payload())
 end
 
 local function empty(): boolean
 	return #Players:GetPlayers() == 0
+end
+
+local function fallen(): boolean
+	return state.District <= 0
+end
+
+local function hurt(amount: number)
+	if state.Phase ~= "Fight" or fallen() then
+		return
+	end
+	state.District = math.max(state.District - amount, 0)
 end
 
 local function countdown(seconds: number, phase: string)
@@ -47,17 +79,25 @@ local function countdown(seconds: number, phase: string)
 	state.Countdown = 0
 end
 
--- Until the wave is cleared; false if everyone left meanwhile.
-local function fight(): boolean
-	state.Phase = "Fight"
+-- Until the wave is cleared (or the district falls, or everyone leaves).
+local function fight(): Outcome?
+	local hurried = false
 	while GiantService.AliveCount() > 0 do
+		if not hurried and os.clock() >= state.WaveEndsAt then
+			hurried = true
+			local gone = GiantService.Hurry(Config.Waves.StragglerRadius)
+			Broadcast.Announce("THE GIANTS ARE STORMING IN!", if gone > 0 then "Stragglers have steamed away - stop the rest!" else "Time's up - stop them!", "Danger")
+		end
 		broadcast()
 		task.wait(1)
 		if empty() then
-			return false
+			return "Empty"
+		end
+		if fallen() then
+			return "Fallen"
 		end
 	end
-	return true
+	return nil
 end
 
 local function reset()
@@ -65,11 +105,13 @@ local function reset()
 	Wall.Repair()
 	state.Round = 1
 	state.Wave = 0
+	state.District = D.Health
 end
 
--- One round; false if the field emptied part way.
-local function round(): boolean
+-- One round, start to finish.
+local function round(): Outcome
 	state.Wave = 0
+	state.District = D.Health
 	state.Phase = "Breach"
 	broadcast()
 	WaveService.RoundStarted:Fire(state.Round)
@@ -81,19 +123,37 @@ local function round(): boolean
 			countdown(Config.Waves.Intermission, "Intermission")
 		end
 		state.Wave = wave
-		local roster = Config.WaveRoster(state.Round, wave)
+		state.Phase = "Fight"
+		state.WaveEndsAt = os.clock() + Config.Waves.TimeLimit
+		local roster = Config.WaveRoster(state.Round, wave, Config.WaveScale(#Players:GetPlayers()))
 		local boss = wave == Config.Waves.WavesPerRound
 		Broadcast.Announce(`WAVE {wave}`, if boss then "An Armored Giant is coming - crack its nape plate!" else `{#roster} giants incoming`, if boss then "Gold" else "Danger")
 		for _, kindName in roster do
+			-- Room on the field first.
+			while GiantService.AliveCount() >= Config.Waves.MaxAlive do
+				broadcast()
+				task.wait(1)
+				if empty() then
+					return "Empty"
+				elseif fallen() then
+					return "Fallen"
+				end
+			end
 			GiantService.SpawnGiant(kindName)
 			task.wait(0.5)
+			if empty() then
+				return "Empty"
+			elseif fallen() then
+				return "Fallen"
+			end
 		end
 		-- Sometimes the Beast Giant shows up too.
 		if wave >= Config.Waves.BeastFromWave and not GiantService.HasKind("Beast") and math.random() < Config.Beast.Chance then
 			GiantService.SpawnGiant("Beast")
 		end
-		if not fight() then
-			return false
+		local outcome: Outcome? = fight()
+		if outcome then
+			return outcome :: Outcome
 		end
 	end
 	state.Phase = "Victory"
@@ -104,11 +164,43 @@ local function round(): boolean
 	Wall.Repair()
 	state.Round += 1
 	state.Wave = 0
-	return true
+	return "Victory"
+end
+
+-- The district fell: a pause to take it in, then everything back to round 1.
+local function districtFallen()
+	state.Phase = "Fallen"
+	broadcast()
+	Broadcast.Announce("DISTRICT FALLEN", `The giants overran the district in round {state.Round}. Regroup, hunters - back to round 1!`, "Danger")
+	Broadcast.Feed("The district has fallen...", "Danger")
+	WaveService.DistrictFallen:Fire(state.Round)
+	GiantService.ClearAll()
+	task.wait(D.FallenPause)
+	reset()
 end
 
 function WaveService.Init()
 	waveEvent = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild(Config.Remotes.Wave) :: RemoteEvent
+
+	-- Late joiners see where things stand straight away.
+	Players.PlayerAdded:Connect(function(player)
+		waveEvent:FireClient(player, payload())
+	end)
+
+	-- Giants inside the wall wear the district down.
+	task.spawn(function()
+		local step = 0.5
+		while true do
+			task.wait(step)
+			if state.Phase == "Fight" then
+				hurt(math.min(GiantService.InsideWeight() * D.DrainPerGiant, D.MaxDrain) * step)
+			end
+		end
+	end)
+	GiantService.Grabbed.Event:Connect(function(_player: Player, what: string)
+		hurt(if what == "Caught" then D.CaughtDamage else D.GrabDamage)
+	end)
+
 	task.spawn(function()
 		local first = true
 		while true do
@@ -118,7 +210,15 @@ function WaveService.Init()
 			end
 			countdown(if first then Config.Waves.FirstDelay else Config.Waves.BetweenRounds, "Intermission")
 			first = false
-			if empty() or not round() then
+			if empty() then
+				reset()
+				first = true
+				continue
+			end
+			local outcome = round()
+			if outcome == "Fallen" then
+				districtFallen()
+			elseif outcome == "Empty" then
 				reset()
 				first = true
 			end

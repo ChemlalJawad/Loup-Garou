@@ -2,13 +2,15 @@
 -- Hunters: characters (spawned on the wall, respawned after a fall), the
 -- leaderboard (giants, points, rank), the twin swords, blades and resupply,
 -- every slash validated, combos and style points, signal flares, the cable
--- relay, and each round's top hunter.
+-- relay, each round's top hunter, saved progress (DataService), and the
+-- edge of the world.
 --
 -- Movement is simulated on each player's own client (it has to be, for a
 -- grapple to feel responsive), but damage never is: a slash is just a
 -- request, and the server checks the cooldown, the blades left, and the
 -- hunter's real position against the giant before anything happens
--- (GiantService.TryHit).
+-- (GiantService.TryHit). Speeds come from the server's own tracking
+-- (Motion), never from the client.
 
 local CollectionService = game:GetService("CollectionService")
 local Debris = game:GetService("Debris")
@@ -18,6 +20,10 @@ local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
 
 local Config = require(ReplicatedStorage.Shared.Config)
+local Geo = require(ReplicatedStorage.Shared.Geo)
+local Motion = require(script.Parent.Motion)
+local Respawn = require(script.Parent.Respawn)
+local DataService = require(script.Parent.DataService)
 local GiantService = require(script.Parent.GiantService)
 local WaveService = require(script.Parent.WaveService)
 local Broadcast = require(script.Parent.Broadcast)
@@ -28,15 +34,38 @@ local HunterService = {}
 
 type Hunter = {
 	Blades: number,
-	LastSlash: number,
+	NextSlash: number, -- when the next slash is due (see onSlash)
 	Combo: number,
 	ComboUntil: number,
 	RoundPoints: number,
 	LastFlare: number,
+	HookBudget: number, -- cable updates the relay will still pass on
+	HookBudgetAt: number,
 }
 
 local hunters: { [Player]: Hunter } = {}
 local remotes: Folder
+local spawnPart: BasePart? = nil
+
+-- Alive, not in a giant's hand, not a titan: free to use the gear.
+local function ready(player: Player): BasePart?
+	local character = player.Character
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	if not root or not root:IsA("BasePart") or not humanoid or humanoid.Health <= 0 then
+		return nil
+	end
+	if GiantService.IsHeld(player) or (character :: Model):GetAttribute("Shifted") then
+		return nil
+	end
+	return root
+end
+
+-- Action prompts use keys nothing else does (Config.Prompts).
+local function promptKeys(prompt: ProximityPrompt)
+	prompt.KeyboardKeyCode = Config.Prompts.Key
+	prompt.GamepadKeyCode = Config.Prompts.Gamepad
+end
 
 local function remote(name: string): RemoteEvent
 	return remotes:WaitForChild(name) :: RemoteEvent
@@ -63,6 +92,7 @@ local function pushState(player: Player)
 			ComboLeft = math.max(hunter.ComboUntil - os.clock(), 0),
 			Points = points(player),
 			Rank = Config.RankFor(points(player)),
+			BestRound = (DataService.Get(player) or { BestRound = 0 }).BestRound,
 		})
 	end
 end
@@ -76,6 +106,7 @@ local function award(player: Player, amount: number)
 	local before = Config.RankFor(value.Value)
 	value.Value += amount
 	hunter.RoundPoints += amount
+	DataService.Set(player, "Points", value.Value)
 	local after = Config.RankFor(value.Value)
 	local rank = stat(player, "Rank")
 	if rank and rank:IsA("StringValue") then
@@ -235,13 +266,45 @@ end
 -- again a few seconds after a fall.
 
 local function spawnCharacter(player: Player)
-	if player.Parent then
-		player:LoadCharacterAsync()
+	Respawn.Load(player)
+end
+
+-- Saved progress onto the leaderboard (loads in the background: nobody
+-- waits on the DataStore to start playing).
+local function loadProgress(player: Player)
+	local profile = DataService.Load(player)
+	if not player.Parent then
+		return
 	end
+	local pointsStat, giantsStat, rank = stat(player, "Points"), stat(player, "Giants"), stat(player, "Rank")
+	if pointsStat and pointsStat:IsA("IntValue") then
+		-- (Anything scored while loading is kept on top.)
+		pointsStat.Value += profile.Points
+		DataService.Set(player, "Points", pointsStat.Value)
+		if rank and rank:IsA("StringValue") then
+			rank.Value = Config.RankFor(pointsStat.Value)
+		end
+	end
+	if giantsStat and giantsStat:IsA("IntValue") then
+		giantsStat.Value += profile.Giants
+		DataService.Set(player, "Giants", giantsStat.Value)
+	end
+	player:SetAttribute("TutorialDone", profile.TutorialDone)
+	player:SetAttribute("DataLoaded", true)
+	pushState(player)
 end
 
 local function onPlayerAdded(player: Player)
-	hunters[player] = { Blades = Config.Blades.Max, LastSlash = 0, Combo = 0, ComboUntil = 0, RoundPoints = 0, LastFlare = 0 }
+	hunters[player] = {
+		Blades = Config.Blades.Max,
+		NextSlash = 0,
+		Combo = 0,
+		ComboUntil = 0,
+		RoundPoints = 0,
+		LastFlare = 0,
+		HookBudget = Config.AntiCheat.HookRelayRate,
+		HookBudgetAt = os.clock(),
+	}
 	local leaderstats = Instance.new("Folder")
 	leaderstats.Name = "leaderstats"
 	for _, name in { "Giants", "Points" } do
@@ -274,34 +337,38 @@ local function onPlayerAdded(player: Player)
 		end
 	end)
 	task.spawn(spawnCharacter, player)
+	task.spawn(loadProgress, player)
 end
 
 -- === Slashing ================================================================
 
 local function onSlash(player: Player)
 	local hunter = hunters[player]
-	local character = player.Character
-	local root = character and character:FindFirstChild("HumanoidRootPart")
-	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-	if not hunter or not root or not root:IsA("BasePart") or not humanoid or humanoid.Health <= 0 then
+	-- (Held: a slash is a wriggle; a titan punches instead, ShifterService.)
+	local root = ready(player)
+	if not hunter or not root then
 		return
 	end
-	if GiantService.IsHeld(player) or (character :: Model):GetAttribute("Shifted") then
-		return -- held: a slash is a wriggle; a titan punches instead (ShifterService)
-	end
+	-- The cooldown, with a little slack for slashes bunched up by the
+	-- network. The schedule moves on by a full cooldown each time, so the
+	-- slack never adds up to more slashes over time.
 	local now = os.clock()
-	if now - hunter.LastSlash < Config.Blades.SlashCooldown then
+	if now < hunter.NextSlash - Config.Blades.SlashCooldownSlack then
 		return
 	end
-	hunter.LastSlash = now
+	hunter.NextSlash = math.max(now, hunter.NextSlash) + Config.Blades.SlashCooldown
+	if not Motion.Trusted(player) then
+		return -- moved faster than the rig allows a moment ago
+	end
 	if hunter.Blades <= 0 then
 		remote(Config.Remotes.SlashResult):FireClient(player, "Dull", {})
 		return
 	end
-	local result: string, info: any = GiantService.TryHit(player, root)
+	local speed = Motion.CutSpeed(player)
+	local result: string, info: any = GiantService.TryHit(player, root, speed)
 	if result == "NoTarget" then
 		-- A titan on the giants' side?
-		local shifterResult, shifterInfo = ShifterService.TryHit(player, root)
+		local shifterResult, shifterInfo = ShifterService.TryHit(player, root, speed)
 		if shifterResult then
 			result, info = shifterResult, shifterInfo
 		end
@@ -312,7 +379,6 @@ local function onSlash(player: Player)
 			if target:IsA("BasePart") and (target.Position - root.Position).Magnitude <= Config.Blades.SlashRange + target.Size.X / 2 then
 				local toHunter = root.Position - target.Position
 				if toHunter.Magnitude < 0.01 or toHunter.Unit:Dot(target.CFrame.LookVector) < Config.Cuts.EyesFrontDot then
-					local speed = root.AssemblyLinearVelocity.Magnitude
 					remote(Config.Remotes.SlashResult):FireClient(player, "Training", { Speed = speed, Clean = speed >= Config.Blades.CleanCutSpeed, Position = target.Position })
 					return
 				end
@@ -341,6 +407,7 @@ local function onDefeated(player: Player, kindName: string, _clean: boolean, spe
 	local giantsStat = stat(player, "Giants")
 	if giantsStat and giantsStat:IsA("IntValue") then
 		giantsStat.Value += 1
+		DataService.Set(player, "Giants", giantsStat.Value)
 	end
 	local bonus = if speed >= Config.Hunters.SpeedKill then 1 else 0
 	award(player, kind.Points * hunter.Combo + bonus)
@@ -363,9 +430,8 @@ local ASSIST_POINTS = {
 
 local function fireFlare(player: Player)
 	local hunter = hunters[player]
-	local character = player.Character
-	local root = character and character:FindFirstChild("HumanoidRootPart")
-	if not hunter or not root or not root:IsA("BasePart") then
+	local root = ready(player)
+	if not hunter or not root then
 		return
 	end
 	local now = os.clock()
@@ -430,10 +496,11 @@ local function wireSupply(crate: Instance)
 	prompt.HoldDuration = 0.3
 	prompt.MaxActivationDistance = 12
 	prompt.RequiresLineOfSight = false
+	promptKeys(prompt)
 	prompt.Parent = crate
 	prompt.Triggered:Connect(function(player)
 		local hunter = hunters[player]
-		if hunter then
+		if hunter and ready(player) then
 			hunter.Blades = Config.Blades.Max
 			pushState(player)
 			setBladesSharp(player, true)
@@ -442,8 +509,41 @@ local function wireSupply(crate: Instance)
 	end)
 end
 
-function HunterService.Init()
+-- === The edge of the world ===================================================
+-- Past the hills or down a hole: back on the wall, with a word of advice.
+
+local function backToWall(player: Player, root: BasePart)
+	local spawn = spawnPart
+	if not spawn then
+		Respawn.Load(player)
+		return
+	end
+	root.AssemblyLinearVelocity = Vector3.zero
+	root.CFrame = spawn.CFrame * CFrame.new(0, 4, 0)
+	Motion.Reset(player)
+	Broadcast.Announce("TOO FAR!", "That's the edge of the land - back to the wall with you", "Info", player)
+end
+
+local function watchBounds()
+	local limit = Config.World.LandRadius - Config.Bounds.Margin
+	while true do
+		task.wait(1)
+		for _, player in Players:GetPlayers() do
+			local root = ready(player)
+			if root then
+				local p = root.Position
+				if Geo.RadiusOf(p) > limit or p.Y < Config.Bounds.FloorY then
+					backToWall(player, root)
+				end
+			end
+		end
+	end
+end
+
+-- `spawn`: the hunters' post on the wall (MapBuilder's World.Spawn).
+function HunterService.Init(spawn: BasePart?)
 	remotes = ReplicatedStorage:WaitForChild("Remotes") :: Folder
+	spawnPart = spawn
 	Players.CharacterAutoLoads = false
 
 	for _, player in Players:GetPlayers() do
@@ -458,19 +558,29 @@ function HunterService.Init()
 	remote(Config.Remotes.Flare).OnServerEvent:Connect(fireFlare)
 
 	-- Cable relay: tell everyone else where a hunter's hooks are, so they
-	-- see the swing. Light sanity checks; cables are cosmetic for others.
+	-- see the swing. Light sanity checks (cables are cosmetic for others),
+	-- and a budget of a few updates a second so nobody can flood the server.
 	local hookRemote = remote(Config.Remotes.Hook)
 	hookRemote.OnServerEvent:Connect(function(player: Player, side: unknown, part: unknown, localPos: unknown)
-		if side ~= "Left" and side ~= "Right" then
+		local hunter = hunters[player]
+		if not hunter or (side ~= "Left" and side ~= "Right") then
 			return
 		end
-		local character = player.Character
-		local root = character and character:FindFirstChild("HumanoidRootPart")
+		local now = os.clock()
+		local rate = Config.AntiCheat.HookRelayRate
+		hunter.HookBudget = math.min(rate, hunter.HookBudget + (now - hunter.HookBudgetAt) * rate)
+		hunter.HookBudgetAt = now
+		if hunter.HookBudget < 1 then
+			return
+		end
+		hunter.HookBudget -= 1
 		if part ~= nil then
 			if typeof(part) ~= "Instance" or not (part :: Instance):IsA("BasePart") or typeof(localPos) ~= "Vector3" then
 				return
 			end
-			if not root or not root:IsA("BasePart") then
+			-- No new cables from the dead, the held, or titans.
+			local root = ready(player)
+			if not root then
 				return
 			end
 			local world = (part :: BasePart).CFrame:PointToWorldSpace(localPos :: Vector3)
@@ -510,11 +620,31 @@ function HunterService.Init()
 			if hunter.RoundPoints > bestPoints then
 				best, bestPoints = player, hunter.RoundPoints
 			end
+			-- Everyone who saw it through: a best round to remember, and
+			-- fresh blades and gas for the next one.
+			local profile = DataService.Get(player)
+			if profile and round > profile.BestRound then
+				DataService.Set(player, "BestRound", round)
+			end
+			hunter.Blades = Config.Blades.Max
+			setBladesSharp(player, true)
+			pushState(player)
+			remote(Config.Remotes.Resupplied):FireClient(player)
 		end
 		if best then
 			Broadcast.Feed(`Top hunter of round {round}: {best.DisplayName} ({bestPoints} points)`, "Gold")
 		end
 	end)
+
+	-- The tutorial, once finished or skipped, is never shown again.
+	remote(Config.Remotes.Tutorial).OnServerEvent:Connect(function(player: Player, action: unknown)
+		if action == "Done" and player:GetAttribute("TutorialDone") ~= true then
+			player:SetAttribute("TutorialDone", true)
+			DataService.Set(player, "TutorialDone", true)
+		end
+	end)
+
+	task.spawn(watchBounds)
 end
 
 return HunterService
