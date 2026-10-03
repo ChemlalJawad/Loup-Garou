@@ -5,12 +5,16 @@
 --     with stars and a big moon;
 --   * at night every lamp lantern and torch lights up (fire and light),
 --     4 windows in 10 glow warm, and the giants' tiny pupils burn orange.
--- Lights change only when night falls or ends, not every frame.
+-- Lights change only when night falls or ends, not every frame. On phones
+-- and low graphics settings, only the lights and flames within NEAR studs
+-- of the camera burn (checked every second); lanterns still glow
+-- everywhere, which costs nothing.
 
 local CollectionService = game:GetService("CollectionService")
 local Lighting = game:GetService("Lighting")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 
 local Config = require(ReplicatedStorage.Shared.Config)
@@ -20,14 +24,27 @@ local SkyController = {}
 
 local WINDOW_GLOW = Color3.fromRGB(255, 196, 120)
 local EYE_GLOW = Color3.fromRGB(255, 110, 40)
+local NEAR = 220 -- studs: on low-end devices only lights this close burn
+local NEAR_EVERY = 1 -- seconds between checks
 
 local windowDay: { [BasePart]: Color3 } = {}
+local lamps: { [BasePart]: boolean } = {} -- every night light, and whether its flame is burning
 local lit = false
+local nearOnly = false
 
-local function setLamp(part: Instance, on: boolean)
-	if not part:IsA("BasePart") then
-		return
+-- Phones, and anyone with graphics turned down to 4 or below.
+local function lowEnd(): boolean
+	if UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled then
+		return true
 	end
+	local ok, level = pcall(function()
+		return UserSettings():GetService("UserGameSettings").SavedQualityLevel
+	end)
+	return ok and level ~= Enum.SavedQualitySetting.Automatic and level.Value <= 4
+end
+
+local function setFlame(part: BasePart, on: boolean)
+	lamps[part] = on
 	for _, child in part:GetChildren() do
 		if child:IsA("PointLight") then
 			child.Enabled = on
@@ -35,8 +52,43 @@ local function setLamp(part: Instance, on: boolean)
 			child.Enabled = on
 		end
 	end
+end
+
+local function flameWanted(part: BasePart): boolean
+	if not lit then
+		return false
+	end
+	if not nearOnly then
+		return true
+	end
+	local camera = Workspace.CurrentCamera
+	return camera ~= nil and (part.Position - camera.CFrame.Position).Magnitude < NEAR
+end
+
+local function setLamp(part: Instance, on: boolean)
+	if not part:IsA("BasePart") then
+		return
+	end
+	setFlame(part, on and flameWanted(part))
 	if part.Name == "Lantern" then
 		part.Material = if on then Enum.Material.Neon else Enum.Material.Glass
+	end
+end
+
+-- Low-end devices: light the flames near the camera, put out the rest.
+local function refreshNear()
+	if not (lit and nearOnly) then
+		return
+	end
+	for part, burning in lamps do
+		if part.Parent == nil then
+			lamps[part] = nil
+		else
+			local wanted = flameWanted(part)
+			if wanted ~= burning then
+				setFlame(part, wanted)
+			end
+		end
 	end
 end
 
@@ -94,6 +146,24 @@ function SkyController.Init()
 			end
 		end)
 	end
+	-- Streamed-out lamps and windows are forgotten.
+	CollectionService:GetInstanceRemovedSignal(Config.Tags.NightLight):Connect(function(part)
+		if part:IsA("BasePart") then
+			lamps[part] = nil
+		end
+	end)
+	CollectionService:GetInstanceRemovedSignal(Config.Tags.LitWindow):Connect(function(part)
+		if part:IsA("BasePart") then
+			windowDay[part] = nil
+		end
+	end)
+	nearOnly = lowEnd()
+	task.spawn(function()
+		while true do
+			task.wait(NEAR_EVERY)
+			refreshNear()
+		end
+	end)
 	CollectionService:GetInstanceAddedSignal(Config.Tags.Giant):Connect(function(giant)
 		task.delay(0.5, function()
 			setEyes(giant, lit)

@@ -55,22 +55,51 @@ The district, the giants and the HUD all build themselves. You can also
 - **Outside** (the land reaches 1300 studs from the centre): the forest of
   giant trees (a hunters' platform with a supply crate up one trunk),
   farms with a windmill and wheat fields, the road from the gate, the
-  plains, hills all round.
+  plains, and a closed ring of hills all round with firs on their slopes.
+  The river runs out of town east and west and ends in a pool at each end.
+- **The edge of the world**: the land is round, and an invisible wall
+  stands just inside the hill ring (at 1290 studs, 420 high), so nobody
+  walks or swings off the map. Hooks pass through it.
 - **The Great Forest** (east): 76 trees taller than the wall (160-230
   studs) and nothing else, spread over half a kilometre. The place to
   swing from trunk to trunk at full speed; a few trunks carry platforms
-  with supplies and torches.
+  with supplies and a torch on the deck, and old trunks lean out over the
+  river.
 - **The Training Grounds** (north, behind the wall): practice trees and 18
   wooden giant dummies, some up on stilts, with a target on the back of
   the neck. Cut them to practise your approach: the HUD tells you your
-  speed and whether it was a clean cut. No blades used, no points.
+  speed and whether it was a clean cut. No blades used, no points. The
+  north road skirts round the grounds instead of cutting through them.
 - **The old castle** (west), on its hill: curtain walls with one side
-  fallen in, corner towers, a tall round keep, a supply crate.
+  fallen in, corner towers, a tall round keep, a supply crate. The west
+  road ends at a dirt ramp up to its gate.
 - **Signal towers** every 130 studs along the dirt roads that link the
   gate, the castle, the forest and the training grounds (and down the
-  south road), and **groves of giant trees** dotted over the open plains:
+  south road), more in a ring round the outer plains, and **groves of
+  giant trees** dotted everywhere else. A last pass plants a lone giant
+  tree wherever a spot is still more than 140 studs from something tall:
   there's always something to hook onto, so you can cross the whole land
-  on your cables.
+  on your cables. A wooden bridge takes the north road over the river.
+- **Supplies out in the wilds**: on every other signal tower, in every
+  other grove, on the tree platforms, at the castle, the training grounds
+  and a few lonely spots in the far north and the Great Forest, each with
+  a blue beam.
+- **Where giants appear**: out on the southern plains, 680 studs from the
+  centre, in the open between the forest and the farms.
+
+### Performance
+
+The map is about 10,600 parts, built into a folder outside the Workspace
+and dropped in at once (each layer is timed in the output, and a layer
+that fails is skipped with a warning instead of stopping the server).
+**Streaming is on**: clients load what's within about 1,000 studs. The
+wall, the gate and the spawn post are one persistent model (always
+there); trees, towers and houses stream in and out whole. Nothing in the
+map listens for touches, small parts and leaves cast no shadow, and
+leaves, fences and braces are hookable but not solid. Lamps and torches
+are only lit at night, half the wall torches carry a real light, and on
+phones (or graphics level 4 and below) only the lights and flames within
+220 studs of the camera burn.
 - **Wall cannons** either side of the gate: fire one at a giant to daze it.
 
 ## The hunters' uniform
@@ -264,13 +293,13 @@ sound you've uploaded (`rbxassetid://...`).
 | File | What |
 |---|---|
 | `src/shared/Config.lua` | every tuning number: grapple, blades, cuts, scoring, giants, waves, world, sounds |
-| `src/shared/Geo.lua` | the district's geometry and the giants' route-finding (round the wall, through the gate only when breached) |
-| `src/server/MapBuilder.lua` | builds the world from the four layers below |
-| `src/server/World/Ground.lua` | Smooth Terrain: paving and roads, grass patchwork, fields, river, hills |
-| `src/server/World/Wall.lua` | the Great Wall, the breachable gate, watchtowers, cannons, the spawn post |
+| `src/shared/Geo.lua` | the district's geometry (river and pools, the castle hill) and the giants' route-finding (round the wall, through the gate only when breached) |
+| `src/server/MapBuilder.lua` | builds the world from the layers below, off-Workspace, timed and protected layer by layer; streaming modes |
+| `src/server/World/Ground.lua` | Smooth Terrain: the round land, paving and roads, grass patchwork, fields, river and pools, hills, the castle ramp |
+| `src/server/World/Wall.lua` | the Great Wall, the breachable gate, watchtowers, cannons, the spawn post (one persistent model) |
 | `src/server/World/Town.lua` | row houses, plaza, church, headquarters, market, garden, bridges |
-| `src/server/World/Wilds.lua` | giant forest, the Great Forest, training grounds, castle, signal towers, groves, farms, windmill, roads, plains, giant entry points |
-| `src/server/World/Kit.lua`, `Layout.lua` | shared part helpers and set pieces; where the big pieces go |
+| `src/server/World/Wilds.lua` | giant forest, the Great Forest, training grounds, castle, signal towers, groves, farms, windmill, roads and bridges, plains, supplies, hook coverage, giant entry points, the edge of the world |
+| `src/server/World/Kit.lua`, `Layout.lua` | shared part helpers and set pieces; where the big pieces go, the roads, the hill ring and ground height |
 | `src/server/GiantFactory.lua` | part-built giant rig (rounded body, face, armour, Motor6D waist/limbs/neck, glowing nape, kinematic mover) |
 | `src/server/GiantService.lua` | giant AI, grabs and holds, swats, the three cuts, armour, takedowns, the Wallbreaker |
 | `src/server/WaveService.lua` | rounds and waves (and the odd Beast Giant) |

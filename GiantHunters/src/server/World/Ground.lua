@@ -8,7 +8,10 @@
 --     earth, a dirt road from the gate, striped farm fields, a soft forest
 --     floor, gentle rolling ground, and hills round the edge of the land.
 --   * The river winds west to east across the north of town, under the wall
---     and out over the fields: stone banks in town, mud ones outside.
+--     and out over the fields: stone banks in town, mud ones outside. It
+--     ends in a round pool at each end, short of the hills.
+--   * The land is a round disc (World.EdgeRadius), so no square corners
+--     stick out past the hills.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
@@ -71,8 +74,10 @@ local function farmField(x: number, z: number): Enum.Material
 	return Enum.Material.LeafyGrass
 end
 
+local ROWS_PER_YIELD = 48 -- the wilds pass gives the server a breath every this many rows
+
 local function wilds(terrain: Terrain)
-	local extent = W.LandRadius + 120
+	local extent = W.EdgeRadius
 	local minXZ = -math.ceil(extent / RES) * RES
 	local maxXZ = math.ceil(extent / RES) * RES
 	local region = Region3.new(Vector3.new(minXZ, -RES, minXZ), Vector3.new(maxXZ, RES, maxXZ))
@@ -82,11 +87,14 @@ local function wilds(terrain: Terrain)
 	local gate = Geo.GateOuter()
 
 	for i = 1, size.X do
+		if i % ROWS_PER_YIELD == 0 then
+			task.wait()
+		end
 		local x = minXZ + (i - 0.5) * RES
 		for k = 1, size.Z do
 			local z = minXZ + (k - 0.5) * RES
 			local r = math.sqrt(x * x + z * z)
-			if r > wallOut + 6 and materials[i][1][k] == Enum.Material.Grass then
+			if r > wallOut + 6 and r < extent and materials[i][1][k] == Enum.Material.Grass then
 				local p = Vector3.new(x, 0, z)
 				local material = Enum.Material.Grass
 				local flat = false
@@ -116,11 +124,15 @@ local function wilds(terrain: Terrain)
 				end
 				materials[i][1][k] = material
 
-				-- Rolling ground, flat by the wall, the road and the farms.
+				-- Rolling ground, flat by the wall, the roads, the farms and
+				-- the river (so no grass floats over the water once it's dug).
 				if not flat then
 					local fade = math.clamp((r - wallOut - 20) / 40, 0, 1)
 					local roll = math.noise(x / 52, z / 52, 5.9) * 0.7 + math.noise(x / 19, z / 19, 2.2) * 0.3
 					local height = math.min(math.max(roll, 0) * 2.5, 1) * 2.6 * fade
+					if height > 0.05 and (Geo.InRiver(x, z, 8) or Layout.NearPlainRoad(p, Layout.RoadHalfWidth + 3)) then
+						height = 0
+					end
 					if height > 0.05 then
 						materials[i][2][k] = material
 						occupancies[i][2][k] = math.clamp(height / RES, 0, 1)
@@ -132,14 +144,11 @@ local function wilds(terrain: Terrain)
 	terrain:WriteVoxels(region, RES, materials, occupancies)
 end
 
-local function hills(terrain: Terrain, rng: Random)
-	-- A ring of grassy hills closes the land in; a few rockier ones.
-	for i = 1, 96 do
-		local angle = (i / 96) * math.pi * 2 + rng:NextNumber(-0.03, 0.03)
-		local radius = rng:NextNumber(60, 120)
-		local distance = W.LandRadius + rng:NextNumber(10, 90)
-		local centre = Geo.Polar(angle, distance, -radius * rng:NextNumber(0.45, 0.7))
-		terrain:FillBall(centre, radius, if rng:NextNumber() < 0.2 then Enum.Material.Rock else Enum.Material.Grass)
+local function hills(terrain: Terrain)
+	-- A closed ring of grassy hills round the land (Layout.Hills); a few
+	-- rockier ones.
+	for _, hill in Layout.Hills do
+		terrain:FillBall(hill.Centre, hill.Radius, if hill.Rocky then Enum.Material.Rock else Enum.Material.Grass)
 	end
 end
 
@@ -157,38 +166,79 @@ end
 
 local function castleHill(terrain: Terrain)
 	local castle = Layout.Castle
-	local centre = Geo.Polar(castle.Angle, castle.Radius)
-	local radius = castle.HillRadius
-	terrain:FillBall(Vector3.new(centre.X, castle.Top - radius, centre.Z), radius, Enum.Material.Grass)
+	local hill = Layout.CastleHill()
+	terrain:FillBall(hill.Centre, hill.Radius, Enum.Material.Grass)
 	-- A rocky crown where the castle stands.
+	local centre = Geo.CastleCentre()
 	terrain:FillCylinder(CFrame.new(centre.X, castle.Top - 6, centre.Z), 12, 52, Enum.Material.Rock)
+	-- A dirt ramp from the end of the road up to the castle gate. A wedge
+	-- is tallest at its local +Z, so +Z points uphill.
+	local foot, top = Layout.CastleRampFoot, Layout.CastleRampTop
+	local uphill = (top - foot).Unit
+	local height = castle.Top + 4
+	local middle = Vector3.new((foot.X + top.X) / 2, height / 2 - 4, (foot.Z + top.Z) / 2)
+	terrain:FillWedge(CFrame.lookAt(middle, middle - uphill), Vector3.new(Layout.RoadHalfWidth * 2, height, (top - foot).Magnitude), Enum.Material.Ground)
 end
 
+-- The river is dug in short straight runs that follow its bends, from one
+-- pool to the other: a mud (in town, stone) bank, then the channel cleared
+-- up to 6 studs above the ground (so no grass is left hanging over it),
+-- then the water.
 local function river(terrain: Terrain)
 	local river = W.River
-	local reach = W.LandRadius + 100
 	local wallOut = W.WallRadius + W.WallThickness
-	for x = -reach, reach, RES do
-		local z = Geo.RiverZ(x)
-		local inTown = math.sqrt(x * x + z * z) < wallOut + 8
-		local bank = if inTown then Enum.Material.Slate else Enum.Material.Mud
-		terrain:FillBlock(CFrame.new(x, -6, z), Vector3.new(RES + 2, 12, river.Width + 10), bank)
-		terrain:FillBlock(CFrame.new(x, -6, z), Vector3.new(RES + 2, 12, river.Width), Enum.Material.Air)
-		terrain:FillBlock(CFrame.new(x, (river.WaterY - 12) / 2, z), Vector3.new(RES + 2, river.WaterY + 12, river.Width), Enum.Material.Water)
+	local STEP = 12
+	local function dig(frame: CFrame, length: number, bank: Enum.Material)
+		terrain:FillBlock(frame * CFrame.new(0, -6, 0), Vector3.new(river.Width + 10, 12, length), bank)
+		terrain:FillBlock(frame * CFrame.new(0, -3, 0), Vector3.new(river.Width, 18, length), Enum.Material.Air)
+		terrain:FillBlock(frame * CFrame.new(0, (river.WaterY - 12) / 2, 0), Vector3.new(river.Width, river.WaterY + 12, length), Enum.Material.Water)
+	end
+	local x = -river.Reach
+	while x < river.Reach do
+		local nextX = math.min(x + STEP, river.Reach)
+		local a = Vector3.new(x, 0, Geo.RiverZ(x))
+		local b = Vector3.new(nextX, 0, Geo.RiverZ(nextX))
+		local middle = (a + b) / 2
+		local inTown = Geo.RadiusOf(middle) < wallOut + 8
+		dig(CFrame.lookAt(middle, b), (b - a).Magnitude + 2, if inTown then Enum.Material.Slate else Enum.Material.Mud)
+		x = nextX
+	end
+	for _, endX in { -river.Reach, river.Reach } do
+		local centre = Vector3.new(endX, 0, Geo.RiverZ(endX))
+		terrain:FillCylinder(CFrame.new(centre.X, -6, centre.Z), 12, river.PoolRadius + 5, Enum.Material.Mud)
+		terrain:FillCylinder(CFrame.new(centre.X, -3, centre.Z), 18, river.PoolRadius, Enum.Material.Air)
+		terrain:FillCylinder(CFrame.new(centre.X, (river.WaterY - 12) / 2, centre.Z), river.WaterY + 12, river.PoolRadius, Enum.Material.Water)
 	end
 end
 
-function Ground.Build(rng: Random)
+function Ground.Build(_rng: Random)
 	local terrain = Workspace.Terrain
-	terrain:Clear()
-	local extent = (W.LandRadius + 140) * 2
-	terrain:FillBlock(CFrame.new(0, -DEPTH / 2, 0), Vector3.new(extent, DEPTH, extent), Enum.Material.Grass)
-	town(terrain)
-	wilds(terrain)
-	roads(terrain)
-	hills(terrain, rng)
-	castleHill(terrain)
-	river(terrain)
+	local function stage(name: string, build: () -> ())
+		local started = os.clock()
+		build()
+		print(`[MapBuilder]   ground/{name}: {math.floor((os.clock() - started) * 1000)} ms`)
+	end
+	stage("slab", function()
+		terrain:Clear()
+		-- A round slab, so the land has no square corners past the hills.
+		terrain:FillCylinder(CFrame.new(0, -DEPTH / 2, 0), DEPTH, W.EdgeRadius, Enum.Material.Grass)
+	end)
+	stage("town", function()
+		town(terrain)
+	end)
+	stage("wilds", function()
+		wilds(terrain)
+	end)
+	stage("roads", function()
+		roads(terrain)
+	end)
+	stage("hills", function()
+		hills(terrain)
+		castleHill(terrain)
+	end)
+	stage("river", function()
+		river(terrain)
+	end)
 
 	terrain.Decoration = true
 	terrain:SetMaterialColor(Enum.Material.Grass, Color3.fromRGB(98, 156, 70))

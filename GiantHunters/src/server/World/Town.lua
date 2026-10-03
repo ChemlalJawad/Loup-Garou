@@ -513,8 +513,7 @@ local function washingLines(parent: Instance, rng: Random)
 			local b = Geo.Polar(angle, middle + ALLEY / 2 + 1, y)
 			if not Geo.InRiver(a.X, a.Z, 6) then
 				local model = Kit.Model("WashingLine", parent)
-				local rope = Kit.Rod(model, "Rope", a, b, 0.15, Color3.fromRGB(220, 210, 190))
-				rope.CastShadow = false
+				Kit.Rod(model, "Rope", a, b, 0.15, Color3.fromRGB(220, 210, 190), nil, true)
 				local across = Vector3.new(math.cos(angle), 0, -math.sin(angle))
 				for i = 1, 2 do
 					local t = i / 3
