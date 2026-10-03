@@ -8,6 +8,10 @@
 --     (spun on each client), haystacks in the wheat.
 --   * The road from the gate, fenced, with a signpost and an old cart.
 --   * Lone trees and boulders on the plains, firs along the hills.
+--   * Something to hook everywhere: groves, signal towers along the roads
+--     and in a ring round the outer plains, and a last pass that puts a
+--     lone giant tree in any stretch still too far from an anchor.
+--   * The edge of the world: an invisible wall inside the hill ring.
 
 local CollectionService = game:GetService("CollectionService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -21,13 +25,88 @@ local Wilds = {}
 
 local W = Config.World
 local P = Kit.Palette
+local WALL_OUT = W.WallRadius + W.WallThickness
 
-local function onRoad(p: Vector3, margin: number): boolean
-	return p.Z > W.WallRadius and math.abs(p.X - Layout.RoadX(p.Z)) < Layout.RoadHalfWidth + margin
+-- What's been put down so far, for spacing and hook coverage. Reset by
+-- Wilds.Build.
+type Footprint = { At: Vector3, Radius: number }
+local footprints: { Footprint } = {} -- everything solid on the ground
+local anchors: { Vector3 } = {} -- things 40+ studs tall to hook
+local crates: { Vector3 } = {} -- supply crates outside the wall
+
+local function occupy(p: Vector3, radius: number)
+	table.insert(footprints, { At = Geo.Flat(p), Radius = radius })
+end
+
+local function free(p: Vector3, radius: number): boolean
+	local flat = Geo.Flat(p)
+	for _, f in footprints do
+		if (f.At - flat).Magnitude < f.Radius + radius then
+			return false
+		end
+	end
+	return true
+end
+
+local function addAnchor(p: Vector3)
+	table.insert(anchors, Geo.Flat(p))
+end
+
+-- Flat distance to the nearest hook anchor (the wall counts).
+local function anchorDistance(p: Vector3): number
+	local flat = Geo.Flat(p)
+	local best = Geo.RadiusOf(flat) - WALL_OUT
+	for _, a in anchors do
+		best = math.min(best, (a - flat).Magnitude)
+	end
+	return best
+end
+
+local function crateDistance(p: Vector3): number
+	local best = math.huge
+	for _, c in crates do
+		best = math.min(best, (c - Geo.Flat(p)).Magnitude)
+	end
+	return best
+end
+
+local function supplies(parent: Instance, p: Vector3, beam: boolean)
+	Kit.SupplyStation(parent, p, beam)
+	table.insert(crates, Geo.Flat(p))
+end
+
+-- `p` lifted onto the ground (hills, the castle hill), sunk `sink` studs.
+local function grounded(p: Vector3, sink: number?): Vector3
+	local height = Layout.GroundHeight(p.X, p.Z)
+	return Vector3.new(p.X, if height > 0 then height - (sink or 0) else 0, p.Z)
 end
 
 local function clearSpot(p: Vector3, margin: number): boolean
-	return not onRoad(p, margin) and not Geo.InRiver(p.X, p.Z, margin) and Geo.RadiusOf(p) > W.WallRadius + W.WallThickness + margin
+	return Layout.DistanceToRoads(p) >= Layout.RoadHalfWidth + margin
+		and not Geo.InRiver(p.X, p.Z, margin)
+		and not Geo.InCastleHill(p, margin)
+		and Geo.RadiusOf(p) > WALL_OUT + margin
+end
+
+-- In a polar region, or within `margin` studs of it.
+type Region = { Angle: number, Spread: number, Inner: number, Outer: number }
+local function nearRegion(p: Vector3, region: Region, margin: number): boolean
+	local r = Geo.RadiusOf(p)
+	if r < region.Inner - margin or r > region.Outer + margin then
+		return false
+	end
+	local off = math.abs(Geo.AngleDelta(region.Angle, Geo.AngleOf(p))) - region.Spread
+	return off <= 0 or off * r < margin
+end
+
+-- Taken by a named place: the forests, the farms, the training grounds,
+-- the castle hill.
+local function busy(p: Vector3, margin: number): boolean
+	return nearRegion(p, Layout.Forest, margin)
+		or nearRegion(p, Layout.Farms, margin)
+		or nearRegion(p, Layout.GreatForest, margin)
+		or nearRegion(p, Layout.Training, margin)
+		or Geo.InCastleHill(p, margin)
 end
 
 -- Random points in a polar region, at least `spacing` apart.
@@ -38,7 +117,7 @@ local function scatter(region: { Angle: number, Spread: number, Inner: number, O
 			break
 		end
 		local p = Geo.Polar(region.Angle + rng:NextNumber(-region.Spread, region.Spread), rng:NextNumber(region.Inner, region.Outer))
-		local ok = clearSpot(p, margin)
+		local ok = clearSpot(p, margin) and free(p, margin)
 		for _, other in points do
 			if ok and (other - p).Magnitude < spacing then
 				ok = false
@@ -53,37 +132,62 @@ end
 
 -- === The forest of giant trees ==============================================
 
-local function giantTree(parent: Instance, base: Vector3, height: number, rng: Random): (Model, number)
+-- A giant tree: trunk, root buttresses, three thick branches each ending in
+-- a leafy cluster, and a two-ball crown. `deckY` (height above the base)
+-- keeps the branches clear of a platform built round the trunk. Leaves and
+-- crowns are hookable, but you fly through them.
+local function giantTree(parent: Instance, base: Vector3, height: number, rng: Random, deckY: number?): (Model, number)
 	local model = Kit.Model("GiantTree", parent)
 	local trunk = height * 0.1
 	Kit.Part({ Name = "Trunk", Shape = Enum.PartType.Cylinder, Size = Vector3.new(height, trunk, trunk), CFrame = CFrame.new(base + Vector3.new(0, height / 2, 0)) * Kit.UPRIGHT, Color = P.Bark, Material = Enum.Material.Wood, Parent = model })
 	-- Root buttresses: wedges sloping down and away from the trunk (a
 	-- wedge's tall face is its local +Z, here turned toward the trunk).
-	for i = 1, 5 do
-		local angle = i / 5 * math.pi * 2 + rng:NextNumber(-0.25, 0.25)
+	for i = 1, 4 do
+		local angle = i / 4 * math.pi * 2 + rng:NextNumber(-0.3, 0.3)
 		local out = Geo.Polar(angle, 1)
 		local foot = base + out * trunk * 0.7 + Vector3.new(0, height * 0.06, 0)
 		Kit.Part({ Class = "WedgePart", Name = "Root", Size = Vector3.new(trunk * 0.3, height * 0.12, trunk * 0.9), CFrame = CFrame.lookAt(foot, foot + out), Color = P.Bark, Material = Enum.Material.Wood, Parent = model })
 	end
 	-- Thick branches, each ending in a leafy cluster.
-	for _ = 1, rng:NextInteger(4, 6) do
-		local angle = rng:NextNumber(0, math.pi * 2)
-		local y = height * rng:NextNumber(0.42, 0.8)
+	for b = 1, 3 do
+		local angle = b / 3 * math.pi * 2 + rng:NextNumber(-0.6, 0.6)
 		local length = height * rng:NextNumber(0.18, 0.3)
+		local rise = rng:NextNumber(0.12, 0.4)
+		local y = height * rng:NextNumber(0.42, 0.8)
+		if deckY then
+			-- The whole branch (it rises toward its tip) stays 8 studs clear
+			-- of the deck.
+			local thick = trunk * 0.16
+			local function clear(at: number): boolean
+				return at + length * rise + thick < deckY - 8 or at - thick > deckY + 8
+			end
+			for _ = 1, 8 do
+				if clear(y) then
+					break
+				end
+				y = height * rng:NextNumber(0.42, 0.8)
+			end
+			if not clear(y) then
+				y = deckY + 9 + thick
+			end
+		end
 		local start = base + Vector3.new(0, y, 0)
-		local tip = start + Geo.Polar(angle, length) + Vector3.new(0, length * rng:NextNumber(0.12, 0.4), 0)
+		local tip = start + Geo.Polar(angle, length) + Vector3.new(0, length * rise, 0)
 		Kit.Rod(model, "Branch", start, tip, trunk * 0.32, P.Bark, Enum.Material.Wood)
-		Kit.Part({ Name = "Leaves", Shape = Enum.PartType.Ball, Size = Vector3.one * height * rng:NextNumber(0.15, 0.22), Position = tip + Vector3.new(0, height * 0.03, 0), Color = P.Leaves[rng:NextInteger(1, #P.Leaves)], Material = Enum.Material.Grass, Parent = model })
+		Kit.Part({ Name = "Leaves", Shape = Enum.PartType.Ball, Size = Vector3.one * height * rng:NextNumber(0.15, 0.22), Position = tip + Vector3.new(0, height * 0.03, 0), Color = P.Leaves[rng:NextInteger(1, #P.Leaves)], Material = Enum.Material.Grass, CanCollide = false, CastShadow = false, Parent = model })
 	end
-	for i = 1, 3 do
-		local size = height * rng:NextNumber(0.26, 0.34)
-		Kit.Part({ Name = "Crown", Shape = Enum.PartType.Ball, Size = Vector3.one * size, Position = base + Vector3.new(rng:NextNumber(-0.08, 0.08) * height, height * (0.9 + i * 0.05), rng:NextNumber(-0.08, 0.08) * height), Color = P.Leaves[rng:NextInteger(1, #P.Leaves)], Material = Enum.Material.Grass, Parent = model })
+	for i = 1, 2 do
+		local size = height * rng:NextNumber(0.3, 0.38)
+		Kit.Part({ Name = "Crown", Shape = Enum.PartType.Ball, Size = Vector3.one * size, Position = base + Vector3.new(rng:NextNumber(-0.08, 0.08) * height, height * (0.9 + i * 0.07), rng:NextNumber(-0.08, 0.08) * height), Color = P.Leaves[rng:NextInteger(1, #P.Leaves)], Material = Enum.Material.Grass, CanCollide = false, Parent = model })
 	end
+	addAnchor(base)
+	occupy(base, trunk * 0.7)
 	return model, trunk
 end
 
--- A square wooden deck round a trunk, railings and a supply crate on it.
-local function treePlatform(parent: Instance, base: Vector3, trunk: number, y: number)
+-- A square wooden deck round a trunk, railings and a supply crate on it,
+-- and (with `torch`) a torch on the deck.
+local function treePlatform(parent: Instance, base: Vector3, trunk: number, y: number, torch: boolean?)
 	local model = Kit.Model("TreePlatform", parent)
 	local size = trunk + 18
 	local deck = CFrame.new(base + Vector3.new(0, y, 0))
@@ -94,9 +198,12 @@ local function treePlatform(parent: Instance, base: Vector3, trunk: number, y: n
 		Kit.Detail({ Name = "Post", Size = Vector3.new(0.5, 3, 0.5), CFrame = deck * side * CFrame.new(-size / 2 + 0.25, 1.5, -size / 2 + 0.25), Color = P.Timber, Material = Enum.Material.Wood, Parent = model })
 		-- Struts down to the trunk.
 		local corner = (deck * side * CFrame.new(-size / 2 + 1, -0.6, -size / 2 + 1)).Position
-		Kit.Rod(model, "Strut", corner, base + Vector3.new(0, y - size * 0.45, 0), 0.8, P.Timber, Enum.Material.Wood)
+		Kit.Rod(model, "Strut", corner, base + Vector3.new(0, y - size * 0.45, 0), 0.8, P.Timber, Enum.Material.Wood, true)
 	end
-	Kit.SupplyStation(model, (deck * CFrame.new(trunk / 2 + 5, 0.6, 0)).Position, true)
+	supplies(model, (deck * CFrame.new(trunk / 2 + 5, 0.6, 0)).Position, true)
+	if torch then
+		Kit.Torch(model, deck * CFrame.new(-size / 2 + 1.5, 0.6, size / 2 - 1.5))
+	end
 end
 
 local function forest(parent: Instance, rng: Random)
@@ -106,9 +213,10 @@ local function forest(parent: Instance, rng: Random)
 	local spots = scatter(Layout.Forest, 30, 46, 14, rng)
 	for i, p in spots do
 		local height = rng:NextNumber(115, 160)
-		local _, trunk = giantTree(folder, p, height, rng)
-		if i == 1 then
-			treePlatform(folder, p, trunk, height * 0.42)
+		local deckY = if i == 1 then height * 0.42 else nil
+		local _, trunk = giantTree(folder, p, height, rng, deckY)
+		if deckY then
+			treePlatform(folder, p, trunk, deckY)
 		end
 	end
 end
@@ -184,15 +292,20 @@ local function farms(parent: Instance, rng: Random)
 		local frame = CFrame.new(p) * CFrame.Angles(0, facing + math.pi, 0)
 		if i == 1 then
 			windmill(folder, p, facing + math.pi)
+			addAnchor(p)
+			occupy(p, 12)
 		elseif i == 2 then
 			barn(folder, frame)
+			occupy(p, 18)
 		else
 			cottage(folder, frame, rng)
+			occupy(p, 11)
 		end
 	end
 	for _ = 1, 14 do
 		local p = Geo.Polar(region.Angle + rng:NextNumber(-region.Spread, region.Spread), rng:NextNumber(region.Inner, region.Outer))
-		if clearSpot(p, 6) then
+		if clearSpot(p, 6) and free(p, 4) then
+			occupy(p, 4)
 			Kit.Part({ Name = "Haystack", Shape = Enum.PartType.Cylinder, Size = Vector3.new(4, 7, 7), CFrame = CFrame.new(p + Vector3.new(0, 2, 0)) * Kit.UPRIGHT, Color = Color3.fromRGB(222, 190, 100), Material = Enum.Material.Fabric, Parent = folder })
 			Kit.Part({ Name = "HaystackTop", Shape = Enum.PartType.Ball, Size = Vector3.one * 6.4, Position = p + Vector3.new(0, 4.2, 0), Color = Color3.fromRGB(222, 190, 100), Material = Enum.Material.Fabric, Parent = folder })
 		end
@@ -206,16 +319,20 @@ local function road(parent: Instance, rng: Random)
 	folder.Name = "Road"
 	folder.Parent = parent
 	local start = W.WallRadius + W.WallThickness + 50
-	for z = start, W.LandRadius - 20, 12 do
+	-- The fence stops short of the hills, and leaves gaps where the plains
+	-- roads branch off.
+	for z = start, W.LandRadius - 132, 12 do
 		for _, side in { -1, 1 } do
 			local x = Layout.RoadX(z) + side * (Layout.RoadHalfWidth + 2)
 			local nextX = Layout.RoadX(z + 12) + side * (Layout.RoadHalfWidth + 2)
-			if not Geo.InRiver(x, z, 4) then
+			local junction = math.min(Layout.DistanceToPlainRoads(Vector3.new(x, 0, z)), Layout.DistanceToPlainRoads(Vector3.new(nextX, 0, z + 12)))
+			if not Geo.InRiver(x, z, 4) and junction > Layout.RoadHalfWidth + 4 then
 				Kit.Detail({ Name = "FencePost", Size = Vector3.new(0.7, 4, 0.7), Position = Vector3.new(x, 2, z), Color = P.Timber, Material = Enum.Material.Wood, Parent = folder })
-				Kit.Rod(folder, "FenceRail", Vector3.new(x, 2.8, z), Vector3.new(nextX, 2.8, z + 12), 0.35, P.Timber, Enum.Material.Wood)
+				Kit.Rod(folder, "FenceRail", Vector3.new(x, 2.8, z), Vector3.new(nextX, 2.8, z + 12), 0.35, P.Timber, Enum.Material.Wood, true)
 			end
 		end
 	end
+	occupy(Vector3.new(Layout.RoadX(start + 60) - Layout.RoadHalfWidth - 7, 0, start + 60), 7)
 	-- A signpost and an old cart near the gate.
 	local sign = Vector3.new(Layout.RoadX(start) + Layout.RoadHalfWidth + 6, 0, start + 8)
 	Kit.Part({ Name = "SignPost", Size = Vector3.new(0.8, 9, 0.8), Position = sign + Vector3.new(0, 4.5, 0), Color = P.Timber, Material = Enum.Material.Wood, Parent = folder })
@@ -231,32 +348,31 @@ local function plains(parent: Instance, rng: Random)
 	local folder = Instance.new("Folder")
 	folder.Name = "Plains"
 	folder.Parent = parent
-	local everywhere = { Angle = math.pi, Spread = math.pi, Inner = W.WallRadius + W.WallThickness + 40, Outer = W.LandRadius - 30 }
-	local castleSpot = Geo.Polar(Layout.Castle.Angle, Layout.Castle.Radius)
-	local function busy(p: Vector3, margin: number): boolean
-		return Layout.InRegion(p, Layout.Forest)
-			or Layout.InRegion(p, Layout.Farms)
-			or Layout.InRegion(p, Layout.GreatForest)
-			or Layout.InRegion(p, Layout.Training)
-			or Geo.Flat(p - castleSpot).Magnitude < Layout.Castle.HillRadius + margin
-	end
+	local everywhere = { Angle = math.pi, Spread = math.pi, Inner = WALL_OUT + 40, Outer = W.LandRadius - 30 }
 
 	-- Groves of giant trees dotted over the open plains: islands to swing
 	-- between, so no stretch of grass is too wide to cross on the cables.
+	-- Every other one has a supply crate with a beam.
 	local groves = 0
-	for _, centre in scatter({ Angle = math.pi, Spread = math.pi, Inner = 560, Outer = W.LandRadius - 120 }, 30, 190, 30, rng) do
-		if groves < 16 and not busy(centre, 90) then
+	for _, centre in scatter({ Angle = math.pi, Spread = math.pi, Inner = 560, Outer = W.LandRadius - 90 }, 60, 190, 30, rng) do
+		if groves < 26 and not busy(centre, 90) then
 			groves += 1
 			local grove = Instance.new("Folder")
 			grove.Name = "Grove"
 			grove.Parent = folder
-			local trees = rng:NextInteger(3, 6)
+			local trees = rng:NextInteger(3, 5)
 			for t = 1, trees do
 				local angle = t / trees * math.pi * 2 + rng:NextNumber(-0.4, 0.4)
 				local p = centre + Vector3.new(math.sin(angle), 0, math.cos(angle)) * (if t == 1 then 0 else rng:NextNumber(40, 70))
-				if clearSpot(p, 14) then
-					giantTree(grove, p, rng:NextNumber(110, 160), rng)
+				local height = rng:NextNumber(110, 160)
+				if clearSpot(p, 14) and not busy(p, 20) and free(p, 10) and Geo.RadiusOf(p) < W.BoundaryRadius - 20 then
+					giantTree(grove, grounded(p, 3), height, rng)
 				end
+			end
+			local crate = centre + Vector3.new(16, 0, 10)
+			if groves % 2 == 1 and clearSpot(crate, 6) and free(crate, 4) then
+				supplies(grove, grounded(crate), true)
+				occupy(crate, 5)
 			end
 		end
 	end
@@ -264,18 +380,22 @@ local function plains(parent: Instance, rng: Random)
 	for _, p in scatter(everywhere, 200, 46, 10, rng) do
 		if not busy(p, 0) then
 			if rng:NextNumber() < 0.75 then
-				Kit.Tree(folder, p, rng:NextNumber(20, 34), rng)
+				Kit.Tree(folder, grounded(p, 2), rng:NextNumber(20, 34), rng)
+				occupy(p, 3)
 			else
 				local size = rng:NextNumber(4, 9)
-				Kit.Part({ Name = "Boulder", Size = Vector3.new(size * 1.3, size, size), CFrame = CFrame.new(p + Vector3.new(0, size * 0.35, 0)) * CFrame.Angles(rng:NextNumber(-0.3, 0.3), rng:NextNumber(0, 3), rng:NextNumber(-0.3, 0.3)), Color = Color3.fromRGB(136, 132, 124), Material = Enum.Material.Slate, Parent = folder })
+				Kit.Part({ Name = "Boulder", Size = Vector3.new(size * 1.3, size, size), CFrame = CFrame.new(grounded(p, 1) + Vector3.new(0, size * 0.35, 0)) * CFrame.Angles(rng:NextNumber(-0.3, 0.3), rng:NextNumber(0, 3), rng:NextNumber(-0.3, 0.3)), Color = Color3.fromRGB(136, 132, 124), Material = Enum.Material.Slate, Parent = folder })
+				occupy(p, size * 0.7)
 			end
 		end
 	end
+	-- Firs along the hills, standing on the slopes (not buried in them).
 	for i = 1, 170 do
 		local angle = i / 170 * math.pi * 2 + rng:NextNumber(-0.02, 0.02)
-		local p = Geo.Polar(angle, W.LandRadius + rng:NextNumber(-35, 25))
-		if clearSpot(p, 6) then
-			Kit.Fir(folder, p, rng:NextNumber(26, 44), rng)
+		local p = Geo.Polar(angle, W.LandRadius + rng:NextNumber(-60, 30))
+		local height = rng:NextNumber(26, 44)
+		if clearSpot(p, 6) and free(p, 3) then
+			Kit.Fir(folder, grounded(p, 1.5), height, rng)
 		end
 	end
 end
@@ -289,12 +409,33 @@ local function greatForest(parent: Instance, rng: Random)
 	folder.Name = "GreatForest"
 	folder.Parent = parent
 	local spots = scatter(Layout.GreatForest, 76, 64, 16, rng)
-	for i, p in spots do
+	for i, spot in spots do
+		local p = grounded(spot, 3) -- the far edge reaches the hills
 		local height = rng:NextNumber(160, 230)
-		local _, trunk = giantTree(folder, p, height, rng)
-		if i % 22 == 1 then
-			treePlatform(folder, p, trunk, height * rng:NextNumber(0.35, 0.5))
-			Kit.Torch(folder, CFrame.new(p + Vector3.new(trunk / 2 + 2, 0, trunk / 2 + 2)))
+		local platform = i % 22 == 1
+		local deckY = if platform then height * rng:NextNumber(0.35, 0.5) else nil
+		local _, trunk = giantTree(folder, p, height, rng, deckY)
+		if deckY then
+			treePlatform(folder, p, trunk, deckY, true)
+		end
+	end
+	-- A few old trunks leaning out over the river from its south bank: a
+	-- ramp to run up, and something low to hook over the water.
+	for _, x in { 800, 930, 1060 } do
+		for try = 0, 4 do
+			local bankX = x + try * 18
+			local riverZ = Geo.RiverZ(bankX)
+			local base = Vector3.new(bankX, -2, riverZ + W.River.Width / 2 + 8)
+			local tip = Vector3.new(bankX + 10, 44, riverZ - W.River.Width / 2 - 22)
+			if Layout.InRegion(base, Layout.GreatForest) and free(base, 10) and free(tip, 10) then
+				local diameter = rng:NextNumber(6, 8)
+				Kit.Rod(folder, "LeaningTrunk", base, tip, diameter, P.Bark, Enum.Material.Wood)
+				Kit.Part({ Name = "Leaves", Shape = Enum.PartType.Ball, Size = Vector3.one * rng:NextNumber(24, 32), Position = tip + Vector3.new(0, 6, 0), Color = P.Leaves[rng:NextInteger(1, #P.Leaves)], Material = Enum.Material.Grass, CanCollide = false, CastShadow = false, Parent = folder })
+				addAnchor(tip)
+				occupy(base, diameter)
+				occupy(tip, diameter)
+				break
+			end
 		end
 	end
 end
@@ -325,18 +466,31 @@ local function training(parent: Instance, rng: Random)
 	folder.Name = "TrainingGrounds"
 	folder.Parent = parent
 	local region = Layout.Training
+	-- The crate and the banner first, so nothing is built on them.
+	local crate = Geo.Polar(region.Angle, region.Inner + 30)
+	supplies(folder, crate, true)
+	occupy(crate, 6)
+	local pole = Geo.Polar(region.Angle, region.Inner + 6)
+	occupy(pole, 4)
 	for _, p in scatter(region, 16, 52, 10, rng) do
 		giantTree(folder, p, rng:NextNumber(85, 125), rng)
 	end
-	for i = 1, 18 do
+	-- Dummies stand in the clearings, well away from the trunks and each
+	-- other (free() keeps them 10 studs off anything).
+	local placed = 0
+	for _ = 1, 60 do
+		if placed >= 18 then
+			break
+		end
 		local p = Geo.Polar(region.Angle + rng:NextNumber(-region.Spread, region.Spread), rng:NextNumber(region.Inner + 20, region.Outer - 20))
-		if clearSpot(p, 8) then
-			local base = CFrame.new(p) * CFrame.Angles(0, rng:NextNumber(0, math.pi * 2), 0)
-			dummy(folder, base, rng:NextNumber(18, 32), if i % 3 == 0 then rng:NextNumber(14, 34) else 0)
+		local base = CFrame.new(p) * CFrame.Angles(0, rng:NextNumber(0, math.pi * 2), 0)
+		local height = rng:NextNumber(18, 32)
+		if clearSpot(p, 8) and free(p, 10 + height * 0.2) then
+			placed += 1
+			dummy(folder, base, height, if placed % 3 == 0 then rng:NextNumber(14, 34) else 0)
+			occupy(p, height * 0.2)
 		end
 	end
-	Kit.SupplyStation(folder, Geo.Polar(region.Angle, region.Inner + 30), true)
-	local pole = Geo.Polar(region.Angle, region.Inner + 6)
 	Kit.Rod(folder, "BannerPole", pole, pole + Vector3.new(0, 44, 0), 0.8, Kit.Palette.Iron, Enum.Material.Metal)
 	Kit.Banner(folder, CFrame.new(pole + Vector3.new(0, 42, -0.6)) * CFrame.Angles(0, region.Angle, 0), 10, 18)
 end
@@ -392,17 +546,20 @@ local function castle(parent: Instance)
 		Kit.Detail({ Name = "Window", Size = Vector3.new(3, 5, 0.6), CFrame = base * CFrame.new(0, y, 8 - 12.1), Color = Color3.fromRGB(40, 34, 30), Parent = model })
 	end
 	Kit.Banner(model, base * CFrame.new(0, 66, 8 - 12.4), 8, 14)
-	Kit.SupplyStation(model, (base * CFrame.new(-14, 0, -12)).Position, true)
+	supplies(model, (base * CFrame.new(-14, 0, -12)).Position, true)
+	-- Torches either side of the top of the ramp up to the gate.
 	for _, x in { -9, 9 } do
 		Kit.Torch(model, base * CFrame.new(x, 0, -half - 4))
 	end
+	addAnchor(centre)
 end
 
--- === Signal towers along the roads ==========================================
--- Tall timber towers every so often beside the roads: something to hook
--- across the open plains. Every other one has a supply crate on top.
+-- === Signal towers ==========================================================
+-- Tall timber towers beside the roads and in a ring round the outer
+-- plains: something to hook across the open grass. Every other one has a
+-- supply crate on top, with a beam.
 
-local function signalTower(parent: Instance, at: Vector3, height: number, supplies: boolean)
+local function signalTower(parent: Instance, at: Vector3, height: number, stocked: boolean)
 	local model = Kit.Model("SignalTower", parent)
 	local timber = Kit.Palette.Timber
 	local foot, top = 6, 3.5
@@ -412,7 +569,7 @@ local function signalTower(parent: Instance, at: Vector3, height: number, suppli
 		local n = corners[i % 4 + 1]
 		for _, t in { 0.33, 0.66 } do
 			local spread = foot + (top - foot) * t
-			Kit.Rod(model, "Brace", at + c * spread + Vector3.new(0, height * t, 0), at + n * spread + Vector3.new(0, height * t, 0), 0.6, timber, Enum.Material.Wood)
+			Kit.Rod(model, "Brace", at + c * spread + Vector3.new(0, height * t, 0), at + n * spread + Vector3.new(0, height * t, 0), 0.6, timber, Enum.Material.Wood, true)
 		end
 	end
 	Kit.Part({ Name = "Deck", Size = Vector3.new(top * 2 + 4, 1, top * 2 + 4), Position = at + Vector3.new(0, height + 0.5, 0), Color = Color3.fromRGB(140, 104, 66), Material = Enum.Material.WoodPlanks, Parent = model })
@@ -422,9 +579,15 @@ local function signalTower(parent: Instance, at: Vector3, height: number, suppli
 		Kit.Detail({ Name = "RoofPost", Size = Vector3.new(0.6, 7, 0.6), Position = at + c * (top + 1) + Vector3.new(0, height + 4, 0), Color = timber, Material = Enum.Material.Wood, Parent = model })
 	end
 	Kit.Torch(model, CFrame.new(at + Vector3.new(top, height + 1, top)))
-	if supplies then
-		Kit.SupplyStation(model, at + Vector3.new(0, height + 1, 0), false)
+	if stocked then
+		supplies(model, at + Vector3.new(0, height + 1, 0), true)
 	end
+	addAnchor(at)
+	occupy(at, foot + 2)
+end
+
+local function towerSpot(p: Vector3): boolean
+	return not Geo.InRiver(p.X, p.Z, 10) and not Geo.InCastleHill(p, 10) and Geo.RadiusOf(p) > WALL_OUT + 40 and free(p, 8)
 end
 
 local function signalTowers(parent: Instance, rng: Random)
@@ -443,9 +606,10 @@ local function signalTowers(parent: Instance, rng: Random)
 			while d < length do
 				local p = a + along * d + side * (Layout.RoadHalfWidth + 9)
 				local wooded = Layout.InRegion(p, Layout.GreatForest) or Layout.InRegion(p, Layout.Training) or Layout.InRegion(p, Layout.Forest)
-				if not wooded and not Geo.InRiver(p.X, p.Z, 10) and Geo.RadiusOf(p) > W.WallRadius + W.WallThickness + 40 then
+				local height = rng:NextNumber(58, 74)
+				if not wooded and towerSpot(p) then
 					count += 1
-					signalTower(folder, p, rng:NextNumber(58, 74), count % 2 == 0)
+					signalTower(folder, grounded(p), height, count % 2 == 0)
 				end
 				d += 130
 			end
@@ -454,38 +618,186 @@ local function signalTowers(parent: Instance, rng: Random)
 	end
 	-- And down the south road from the gate, on alternate sides.
 	local side = 1
-	for z = W.WallRadius + 260, W.LandRadius - 100, 140 do
+	for z = W.WallRadius + 260, W.LandRadius - 140, 140 do
 		local p = Vector3.new(Layout.RoadX(z) + side * (Layout.RoadHalfWidth + 12), 0, z)
-		if not Geo.InRiver(p.X, p.Z, 10) then
+		local height = rng:NextNumber(58, 74)
+		if towerSpot(p) then
 			count += 1
-			signalTower(folder, p, rng:NextNumber(58, 74), count % 2 == 0)
+			signalTower(folder, grounded(p), height, count % 2 == 0)
 		end
 		side = -side
 	end
 end
 
--- Where giants appear: out on the southern plains, facing the wall.
+-- A ring of towers round the outer plains (where the roads don't go),
+-- wherever nothing else is close enough to hook.
+local function outerTowers(parent: Instance, rng: Random)
+	local folder = Instance.new("Folder")
+	folder.Name = "OuterTowers"
+	folder.Parent = parent
+	local count = 0
+	for degrees = 0, 351, 9 do
+		local p = Geo.Polar(math.rad(degrees), 1050 + rng:NextNumber(-25, 25))
+		local height = rng:NextNumber(62, 78)
+		if anchorDistance(p) > 110 and not busy(p, 30) and clearSpot(p, 12) and towerSpot(p) then
+			count += 1
+			signalTower(folder, grounded(p), height, count % 2 == 1)
+		end
+	end
+end
+
+-- === Bridges where the plains roads cross the river ==========================
+
+local function roadBridge(parent: Instance, crossing: Vector3, along: Vector3)
+	local model = Kit.Model("Bridge", parent)
+	local tangent = Vector3.new(1, 0, (Geo.RiverZ(crossing.X + 1) - Geo.RiverZ(crossing.X - 1)) / 2).Unit
+	local sine = math.max(math.abs(along.X * tangent.Z - along.Z * tangent.X), 0.4)
+	local length = math.min((W.River.Width + 16) / sine, 90)
+	local width = Layout.RoadHalfWidth * 2
+	local frame = CFrame.lookAt(crossing, crossing + along)
+	local wood = Color3.fromRGB(140, 104, 66)
+	Kit.Part({ Name = "Deck", Size = Vector3.new(width, 1.2, length), CFrame = frame * CFrame.new(0, 0.4, 0), Color = wood, Material = Enum.Material.WoodPlanks, Parent = model })
+	for _, x in { -1, 1 } do
+		Kit.Part({ Name = "Rail", Size = Vector3.new(0.8, 1, length), CFrame = frame * CFrame.new(x * (width / 2 - 0.4), 3, 0), Color = P.Timber, Material = Enum.Material.Wood, Parent = model })
+		for _, z in { -0.5, -0.17, 0.17, 0.5 } do
+			Kit.Detail({ Name = "RailPost", Size = Vector3.new(0.7, 3, 0.7), CFrame = frame * CFrame.new(x * (width / 2 - 0.4), 1.8, z * (length - 1)), Color = P.Timber, Material = Enum.Material.Wood, Parent = model })
+		end
+		Kit.Part({ Name = "Pier", Size = Vector3.new(2, 14, 2), CFrame = frame * CFrame.new(x * (width / 2 - 2), -7, 0), Color = P.Timber, Material = Enum.Material.Wood, Parent = model })
+	end
+	occupy(crossing, length / 2)
+end
+
+local function bridges(parent: Instance)
+	for _, road in Layout.Roads do
+		for i = 1, #road - 1 do
+			local a, b = road[i], road[i + 1]
+			local length = (b - a).Magnitude
+			local along = (b - a).Unit
+			local function side(d: number): number
+				local p = a + along * d
+				return p.Z - Geo.RiverZ(p.X)
+			end
+			local d = 0
+			while d < length do
+				local nextD = math.min(d + 2, length)
+				if side(d) * side(nextD) < 0 and Geo.InRiver((a + along * d).X, (a + along * d).Z, 4) then
+					roadBridge(parent, a + along * ((d + nextD) / 2), along)
+				end
+				d = nextD
+			end
+		end
+	end
+end
+
+-- === Supplies and hooks everywhere ===========================================
+
+-- A beam-lit crate on its own, near `p` (out where the towers are few).
+local function lonelyCrate(parent: Instance, p: Vector3)
+	if crateDistance(p) < 160 then
+		return
+	end
+	for try = 0, 5 do
+		local spot = p + Geo.Polar(try * 1.3, try * 14)
+		if clearSpot(spot, 8) and free(spot, 6) then
+			supplies(parent, grounded(spot), true)
+			occupy(spot, 5)
+			return
+		end
+	end
+end
+
+-- Last pass: on a 60-stud grid, any spot still more than 140 studs from
+-- something to hook gets a lone giant tree.
+local function fillGaps(parent: Instance, rng: Random)
+	local folder = Instance.new("Folder")
+	folder.Name = "LoneGiants"
+	folder.Parent = parent
+	local CELL = 60
+	local reach = W.LandRadius - 100
+	for x = -reach, reach, CELL do
+		for z = -reach, reach, CELL do
+			local centre = Vector3.new(x + CELL / 2, 0, z + CELL / 2)
+			local r = Geo.RadiusOf(centre)
+			if r > WALL_OUT + 60 and r < reach and anchorDistance(centre) > 140 then
+				local height = rng:NextNumber(100, 150)
+				for try = 0, 6 do
+					local p = centre + Geo.Polar(try * 2.1, try * 9)
+					if clearSpot(p, 14) and free(p, 12) and not nearRegion(p, Layout.Farms, 0) then
+						giantTree(folder, grounded(p, 3), height, rng)
+						break
+					end
+				end
+			end
+		end
+	end
+end
+
+-- Where giants appear: out on the plains south of the wall, in the open
+-- (never in the line of the forest or the farms), facing the wall.
 function Wilds.GiantSpawns(): { Vector3 }
 	local spawns = {}
-	for i = -6, 6 do
-		local angle = W.GateAngle + i * math.rad(14)
-		table.insert(spawns, Geo.Polar(angle, W.WallRadius + 190))
+	local function inLine(angle: number, region: Region): boolean
+		return math.abs(Geo.AngleDelta(region.Angle, angle)) < region.Spread + math.rad(4)
+	end
+	for i = -13, 13 do
+		local angle = W.GateAngle + i * math.rad(7)
+		local p = Geo.Polar(angle, W.GiantSpawnRadius)
+		local clear = not (inLine(angle, Layout.Forest) or inLine(angle, Layout.Farms) or nearRegion(p, Layout.GreatForest, 25))
+		if clear and not Geo.InRiver(p.X, p.Z, 10) and not Geo.InCastleHill(p, 20) then
+			table.insert(spawns, p)
+		end
+	end
+	if #spawns == 0 then
+		table.insert(spawns, Geo.Polar(W.GateAngle, W.GiantSpawnRadius))
 	end
 	return spawns
 end
 
+-- The edge of the world: an invisible wall just inside the hill ring.
+-- Hooks and the camera go through it (CanQuery off); nobody walks or
+-- flies through it. Persistent, so it's always there with streaming on.
+function Wilds.BuildBoundary(parent: Instance)
+	local model = Kit.Model("MapBoundary", parent)
+	model.ModelStreamingMode = Enum.ModelStreamingMode.Persistent
+	local radius, height = W.BoundaryRadius, W.BoundaryHeight
+	local n = 72
+	local length = 2 * radius * math.tan(math.pi / n) + 2
+	for i = 0, n - 1 do
+		local angle = i / n * math.pi * 2
+		Kit.Part({
+			Name = "Boundary",
+			Size = Vector3.new(length, height, 8),
+			CFrame = CFrame.new(Geo.Polar(angle, radius + 4, height / 2 - 40)) * CFrame.Angles(0, angle, 0),
+			Transparency = 1,
+			CanQuery = false,
+			CastShadow = false,
+			Parent = model,
+		})
+	end
+	CollectionService:AddTag(model, Config.Tags.MapBoundary)
+end
+
 function Wilds.Build(parent: Instance, rng: Random)
+	footprints, anchors, crates = {}, {}, {}
 	local folder = Instance.new("Folder")
 	folder.Name = "Wilds"
 	folder.Parent = parent
+	castle(folder)
 	forest(folder, rng)
 	greatForest(folder, rng)
 	training(folder, rng)
-	castle(folder)
-	signalTowers(folder, rng)
 	farms(folder, rng)
 	road(folder, rng)
+	bridges(folder)
+	signalTowers(folder, rng)
 	plains(folder, rng)
+	outerTowers(folder, rng)
+	-- Supplies out in the far north and north-west, and deep in the Great
+	-- Forest, where nothing else is.
+	for _, spot in { { 170, 1060 }, { 205, 1060 }, { 238, 1060 }, { 90, 1130 }, { 62, 1060 } } do
+		lonelyCrate(folder, Geo.Polar(math.rad(spot[1]), spot[2]))
+	end
+	fillGaps(folder, rng)
 end
 
 return Wilds

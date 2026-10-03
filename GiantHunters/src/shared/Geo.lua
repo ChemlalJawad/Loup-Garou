@@ -15,7 +15,7 @@ local T = W.WallThickness
 
 Geo.INSIDE_LIMIT = R - 14 -- giants inside stay this far from the wall's face
 Geo.OUTSIDE_LIMIT = R + T + 14 -- ...and outside, this far out
-Geo.LAND_LIMIT = W.LandRadius - 30
+Geo.LAND_LIMIT = W.LandRadius - 120 -- ...and never walk into the hill ring
 
 -- Angle from +Z (south) toward +X (east).
 function Geo.Polar(angle: number, radius: number, y: number?): Vector3
@@ -150,8 +150,31 @@ function Geo.RiverZ(x: number): number
 	return river.Z + river.Wave * math.sin(x / river.WaveLength)
 end
 
+-- In the river or one of the round pools it ends in (|x| = River.Reach).
 function Geo.InRiver(x: number, z: number, margin: number?): boolean
-	return math.abs(z - Geo.RiverZ(x)) < W.River.Width / 2 + (margin or 0)
+	local river = W.River
+	local extra = margin or 0
+	local reach = river.Reach
+	if math.abs(x) <= reach then
+		return math.abs(z - Geo.RiverZ(x)) < river.Width / 2 + extra
+	end
+	local endX = if x > 0 then reach else -reach
+	local dx, dz = x - endX, z - Geo.RiverZ(endX)
+	return math.sqrt(dx * dx + dz * dz) < river.PoolRadius + extra
+end
+
+-- The old castle's hill (west): its centre on the ground, and whether a
+-- point is on the hill (flat distance; `margin` widens it). Giants should
+-- keep off it.
+function Geo.CastleCentre(): Vector3
+	local castle = W.Castle
+	return Geo.Polar(castle.Angle, castle.Radius)
+end
+
+function Geo.InCastleHill(p: Vector3, margin: number?): boolean
+	local centre = Geo.CastleCentre()
+	local dx, dz = p.X - centre.X, p.Z - centre.Z
+	return math.sqrt(dx * dx + dz * dz) < W.Castle.HillRadius + (margin or 0)
 end
 
 return Geo

@@ -251,7 +251,18 @@ Config.World = {
 	PerimeterRoad = 272, -- the street running round inside the wall starts here
 	AvenueAngles = { 0, 60, 120, 180, 240, 300 }, -- degrees
 	AvenueWidth = 22,
-	River = { Z = -150, Width = 26, Wave = 18, WaveLength = 80, WaterY = -2 },
+	-- Reach: how far east and west (|x|) the river runs before it ends in a
+	-- round pool, well short of the hills.
+	River = { Z = -150, Width = 26, Wave = 18, WaveLength = 80, WaterY = -2, Reach = 1130, PoolRadius = 38 },
+	-- The edge of the world: the land is a round disc this wide (hills
+	-- included), and an invisible wall that hooks pass through keeps
+	-- everyone inside the hill ring.
+	EdgeRadius = 1450,
+	BoundaryRadius = 1290,
+	BoundaryHeight = 420,
+	GiantSpawnRadius = 680, -- giants appear this far out, south of the wall
+	-- The old castle (west), on its hill: shared so the giants can keep off it.
+	Castle = { Angle = math.rad(282), Radius = 900, HillRadius = 120, Top = 50 },
 }
 
 Config.Remotes = {
@@ -281,6 +292,7 @@ Config.Tags = {
 	LitWindow = "LitWindow", -- windows that glow warm at night (client)
 	PowerOrb = "PowerOrb",
 	DummyNape = "DummyNape", -- training dummies' targets
+	MapBoundary = "MapBoundary", -- the invisible wall round the edge of the land
 }
 
 -- === Day and night ===========================================================

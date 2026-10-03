@@ -10,6 +10,7 @@
 
 local CollectionService = game:GetService("CollectionService")
 local Debris = game:GetService("Debris")
+local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
 
@@ -33,7 +34,7 @@ local function frameAt(angle: number, y: number): CFrame
 	return CFrame.new(Geo.Polar(angle, R + T / 2, y)) * CFrame.Angles(0, angle, 0)
 end
 
-local function segment(parent: Instance, angle: number, length: number)
+local function segment(parent: Instance, angle: number, length: number, glow: boolean)
 	local model = Kit.Model("WallSegment", parent)
 	local base = frameAt(angle, 0)
 	Kit.Part({ Name = "Stone", Size = Vector3.new(length, H, T), CFrame = base * CFrame.new(0, H / 2, 0), Color = P.WallStone, Material = Enum.Material.Slate, Parent = model })
@@ -46,8 +47,9 @@ local function segment(parent: Instance, angle: number, length: number)
 	for _, x in { -length / 3, 0, length / 3 } do
 		Kit.Part({ Name = "Merlon", Size = Vector3.new(5, 4.4, 2.4), CFrame = base * CFrame.new(x, H + 2.8, T / 2 - 1.2), Color = P.WallBand, Material = Enum.Material.Slate, Parent = model })
 	end
-	-- A torch on the parapet: at night the wall is a ring of firelight.
-	Kit.Torch(model, base * CFrame.new(length * 0.25, H + 2.8, -T / 2 + 0.6))
+	-- A torch on the parapet: at night the wall is a ring of firelight
+	-- (every other one also casts light, which is what costs).
+	Kit.Torch(model, base * CFrame.new(length * 0.25, H + 2.8, -T / 2 + 0.6), glow)
 end
 
 local function door(parent: Instance, frame: CFrame, side: number): Model
@@ -240,31 +242,37 @@ local function hunterPost(parent: Instance): SpawnLocation
 end
 
 function Wall.Build(parent: Instance): SpawnLocation
-	local folder = Instance.new("Folder")
-	folder.Name = "GreatWall"
-	folder.Parent = parent
+	-- One persistent model: with streaming on, the wall, the gate and the
+	-- spawn post are always there on every client (the spawn before any
+	-- character loads, the wall as the landmark you can see from anywhere).
+	local wall = Kit.Model("GreatWall", parent)
+	wall.ModelStreamingMode = Enum.ModelStreamingMode.Persistent
 	local n = W.WallSegments
 	local length = 2 * (R + T) * math.tan(math.pi / n) + 0.6
 	for i = 0, n - 1 do
 		local angle = W.GateAngle + i / n * math.pi * 2
 		if i ~= 0 then
-			segment(folder, angle, length)
+			segment(wall, angle, length, i % 2 == 0)
 		end
 	end
-	gatehouse(folder)
+	gatehouse(wall)
 	for _, degrees in { 45, 90, 135, 225, 270, 315 } do
-		watchtower(folder, W.GateAngle + math.rad(degrees))
+		watchtower(wall, W.GateAngle + math.rad(degrees))
 	end
 	for _, offset in { -0.34, -0.17, 0.17, 0.34 } do
-		cannon(folder, W.GateAngle + offset)
+		cannon(wall, W.GateAngle + offset)
 	end
-	waterGates(folder)
-	return hunterPost(folder)
+	waterGates(wall)
+	return hunterPost(wall)
 end
 
 function Wall.IsBreached(): boolean
 	return breached
 end
+
+-- Flying debris is nearly weightless: it tumbles and bounces, but a door
+-- or a rock hitting a player barely nudges them (no flinging).
+local FEATHER = PhysicalProperties.new(0.02, 0.4, 0.1)
 
 -- The doors burst inward as tumbling debris, with rubble and a dust cloud.
 function Wall.Breach()
@@ -280,6 +288,7 @@ function Wall.Breach()
 				part.Anchored = false
 				part.CanCollide = true
 				part.CanQuery = false
+				part.CustomPhysicalProperties = FEATHER
 				part.AssemblyLinearVelocity = inward.Unit * 70 + Vector3.new(0, 30, 0)
 				part.AssemblyAngularVelocity = Vector3.new(math.random() * 2 - 1, math.random() * 2 - 1, math.random() * 2 - 1) * 2
 			end
@@ -307,6 +316,7 @@ function Wall.Breach()
 		})
 		rock.Anchored = false
 		rock.CanQuery = false
+		rock.CustomPhysicalProperties = FEATHER
 		rock.AssemblyLinearVelocity = inward.Unit * math.random(20, 60) + Vector3.new(math.random(-15, 15), math.random(5, 25), math.random(-15, 15))
 		Debris:AddItem(rock, 9)
 	end
@@ -332,11 +342,30 @@ function Wall.Breach()
 end
 
 -- New doors for a new round.
+-- Anyone standing where the doors go is stepped out of the way first (to
+-- the town side), so the new doors never close on a player.
+local function clearDoorway()
+	local frame = frameAt(W.GateAngle, 0)
+	for _, player in Players:GetPlayers() do
+		local character = player.Character
+		local root = character and character:FindFirstChild("HumanoidRootPart")
+		if character and root and root:IsA("BasePart") then
+			local offset = frame:PointToObjectSpace(root.Position)
+			if math.abs(offset.X) < W.GateWidth / 2 + 2 and math.abs(offset.Z) < T / 2 + 6 and offset.Y < W.GateHeight then
+				-- A wall frame's local -Z points into town.
+				local target = frame * CFrame.new(offset.X, math.max(offset.Y, 0) + 3, -(T / 2 + 10))
+				character:PivotTo(CFrame.new(target.Position) * root.CFrame.Rotation)
+			end
+		end
+	end
+end
+
 function Wall.Repair()
 	if not breached then
 		return
 	end
 	breached = false
+	clearDoorway()
 	hangDoors()
 end
 

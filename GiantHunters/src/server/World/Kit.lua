@@ -56,16 +56,30 @@ Kit.Palette = {
 
 export type Props = { [string]: any }
 
+-- Small or thin parts (posts, rails, rods, trim) cast no shadow: you
+-- can't see it, and every shadow caster costs a little on every frame.
+local function isThin(size: Vector3): boolean
+	local a, b, c = size.X, size.Y, size.Z
+	local largest = math.max(a, b, c)
+	local middle = a + b + c - largest - math.min(a, b, c)
+	return largest < 3 or middle < 1.2
+end
+
 -- An anchored part from a property table. `Class` picks WedgePart etc.
+-- Nothing in the map listens for touches, so CanTouch is off unless asked.
 function Kit.Part(props: Props): BasePart
 	local p = Instance.new(props.Class or "Part") :: BasePart
 	p.Anchored = true
+	p.CanTouch = false
 	p.TopSurface = Enum.SurfaceType.Smooth
 	p.BottomSurface = Enum.SurfaceType.Smooth
 	for key, value in props do
 		if key ~= "Parent" and key ~= "Class" then
 			(p :: any)[key] = value
 		end
+	end
+	if props.CastShadow == nil and props.Size and isThin(props.Size) then
+		p.CastShadow = false
 	end
 	p.Parent = props.Parent
 	return p
@@ -86,13 +100,14 @@ function Kit.Model(name: string, parent: Instance): Model
 	return model
 end
 
--- A cylinder between two points.
-function Kit.Rod(parent: Instance, name: string, a: Vector3, b: Vector3, diameter: number, color: Color3, material: Enum.Material?): BasePart
+-- A cylinder between two points. `detail` for fences, braces, struts and
+-- ropes: no shadow and nothing to bump into (hooks still bite).
+function Kit.Rod(parent: Instance, name: string, a: Vector3, b: Vector3, diameter: number, color: Color3, material: Enum.Material?, detail: boolean?): BasePart
 	local length = (b - a).Magnitude
 	local frame = if math.abs((b - a).Unit.Y) > 0.999
 		then CFrame.new((a + b) / 2) * Kit.UPRIGHT
 		else CFrame.lookAt((a + b) / 2, b) * Kit.ALONG_LOOK
-	return Kit.Part({
+	local rod = Kit.Part({
 		Name = name,
 		Shape = Enum.PartType.Cylinder,
 		Size = Vector3.new(length, diameter, diameter),
@@ -101,6 +116,11 @@ function Kit.Rod(parent: Instance, name: string, a: Vector3, b: Vector3, diamete
 		Material = material or Enum.Material.SmoothPlastic,
 		Parent = parent,
 	})
+	if detail then
+		rod.CastShadow = false
+		rod.CanCollide = false
+	end
+	return rod
 end
 
 -- The hunters' banner: blue cloth, cream trim, a shield with two crossed
@@ -120,7 +140,8 @@ function Kit.Banner(parent: Instance, cframe: CFrame, width: number, height: num
 end
 
 -- A supply station: crate, gas canisters, and a tall blue beam to find it.
--- `beam` false for crates that sit somewhere already easy to spot.
+-- `beam` false for crates that sit somewhere already easy to spot. The
+-- neon beam glows by itself at night: no light needed.
 function Kit.SupplyStation(parent: Instance, position: Vector3, beam: boolean?)
 	local model = Kit.Model("SupplyStation", parent)
 	local crate = Kit.Part({
@@ -151,7 +172,7 @@ function Kit.SupplyStation(parent: Instance, position: Vector3, beam: boolean?)
 		})
 	end
 	if beam ~= false then
-		local glow = Kit.Detail({
+		Kit.Detail({
 			Name = "Beacon",
 			Size = Vector3.new(1, 36, 1),
 			Position = position + Vector3.new(0, 24, 0),
@@ -162,10 +183,6 @@ function Kit.SupplyStation(parent: Instance, position: Vector3, beam: boolean?)
 			CanQuery = false,
 			Parent = model,
 		})
-		local light = Instance.new("PointLight")
-		light.Color = glow.Color
-		light.Range = 18
-		light.Parent = glow
 	end
 	CollectionService:AddTag(crate, Config.Tags.Supply)
 	return model
@@ -183,13 +200,15 @@ function Kit.Lamp(parent: Instance, position: Vector3, facing: number)
 	light.Color = Color3.fromRGB(255, 200, 130)
 	light.Range = 22
 	light.Brightness = 1.6
+	light.Enabled = false
 	light.Parent = lantern
 	CollectionService:AddTag(lantern, Config.Tags.NightLight) -- lit at night by each client
 end
 
 -- A torch: an iron bracket and a burning head (fire and warm light, lit at
 -- night by each client). `cframe` is the base of the shaft, upright.
-function Kit.Torch(parent: Instance, cframe: CFrame)
+-- `glow` false: fire only, no light (rows of torches light every other one).
+function Kit.Torch(parent: Instance, cframe: CFrame, glow: boolean?)
 	local model = Kit.Model("Torch", parent)
 	Kit.Detail({ Name = "Shaft", Size = Vector3.new(0.5, 4, 0.5), CFrame = cframe * CFrame.new(0, 2, 0), Color = Kit.Palette.Iron, Material = Enum.Material.Metal, Parent = model })
 	local head = Kit.Detail({ Name = "Head", Size = Vector3.new(1, 1.2, 1), CFrame = cframe * CFrame.new(0, 4.4, 0), Color = Color3.fromRGB(70, 46, 30), Material = Enum.Material.Wood, Parent = model })
@@ -200,12 +219,14 @@ function Kit.Torch(parent: Instance, cframe: CFrame)
 	fire.SecondaryColor = Color3.fromRGB(255, 220, 90)
 	fire.Enabled = false
 	fire.Parent = head
-	local light = Instance.new("PointLight")
-	light.Color = Color3.fromRGB(255, 160, 80)
-	light.Range = 24
-	light.Brightness = 2
-	light.Enabled = false
-	light.Parent = head
+	if glow ~= false then
+		local light = Instance.new("PointLight")
+		light.Color = Color3.fromRGB(255, 160, 80)
+		light.Range = 24
+		light.Brightness = 2
+		light.Enabled = false
+		light.Parent = head
+	end
 	CollectionService:AddTag(head, Config.Tags.NightLight)
 end
 
@@ -222,16 +243,18 @@ function Kit.Tree(parent: Instance, position: Vector3, height: number, rng: Rand
 		Material = Enum.Material.Wood,
 		Parent = model,
 	})
-	for i = 1, 3 do
-		local size = height * rng:NextNumber(0.42, 0.58)
+	-- Two leaf balls; only the big lower one casts a shadow.
+	for i = 1, 2 do
+		local size = height * rng:NextNumber(0.5, 0.64) * (if i == 1 then 1 else 0.85)
 		Kit.Part({
 			Name = "Leaves",
 			Shape = Enum.PartType.Ball,
 			Size = Vector3.one * size,
-			Position = position + Vector3.new(rng:NextNumber(-0.18, 0.18) * height, height * (0.62 + i * 0.09), rng:NextNumber(-0.18, 0.18) * height),
+			Position = position + Vector3.new(rng:NextNumber(-0.14, 0.14) * height, height * (0.66 + i * 0.12), rng:NextNumber(-0.14, 0.14) * height),
 			Color = Kit.Palette.Leaves[rng:NextInteger(1, #Kit.Palette.Leaves)],
 			Material = Enum.Material.Grass,
 			CanCollide = false,
+			CastShadow = i == 1,
 			Parent = model,
 		})
 	end
@@ -261,6 +284,7 @@ function Kit.Fir(parent: Instance, position: Vector3, height: number, rng: Rando
 			Color = green,
 			Material = Enum.Material.Grass,
 			CanCollide = false,
+			CastShadow = false,
 			Parent = model,
 		})
 	end
