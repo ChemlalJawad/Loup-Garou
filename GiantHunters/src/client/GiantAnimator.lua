@@ -298,7 +298,7 @@ local function animate(giant: Animated, dt: number, t: number, herePosition: Vec
 	local want = CFrame.new()
 	if giant.Hold > 0.5 then
 		want = CFrame.Angles(0, 0.2, 0) * CFrame.Angles(-0.3, 0, 0)
-	elseif herePosition and (herePosition - giant.Root.Position).Magnitude < STARE_DISTANCE then
+	elseif herePosition and not model:GetAttribute("Shifter") and (herePosition - giant.Root.Position).Magnitude < STARE_DISTANCE then
 		local headWorld = giant.Root.CFrame * CFrame.new(0, height * 0.5, 0)
 		local localDir = headWorld:VectorToObjectSpace((herePosition - headWorld.Position).Unit)
 		local yaw = math.clamp(math.atan2(-localDir.X, -localDir.Z), -1.1, 1.1)

@@ -88,6 +88,10 @@ local function round(): boolean
 			GiantService.SpawnGiant(kindName)
 			task.wait(0.5)
 		end
+		-- Sometimes the Beast Giant shows up too.
+		if wave >= Config.Waves.BeastFromWave and not GiantService.HasKind("Beast") and math.random() < Config.Beast.Chance then
+			GiantService.SpawnGiant("Beast")
+		end
 		if not fight() then
 			return false
 		end

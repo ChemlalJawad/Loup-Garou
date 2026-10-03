@@ -271,11 +271,11 @@ local function build()
 	-- Controls card (hidden on touch, where the buttons speak for themselves).
 	if not UserInputService.TouchEnabled then
 		local help = label({
-			Position = UDim2.new(0, 16, 1, -214),
-			Size = UDim2.fromOffset(420, 196),
+			Position = UDim2.new(0, 16, 1, -236),
+			Size = UDim2.fromOffset(420, 218),
 			BackgroundColor3 = PANEL,
 			BackgroundTransparency = 0.3,
-			Text = "  HOLD Q / E - left / right hook, then swing\n  HOLD SPACE - reel in (hooked) / gas (in the air)\n  SHIFT - gas dash      G - signal flare\n  CLICK or F - slash with both blades (spins in the air)\n  NECK = takedown   EYES = daze   ANKLES = trip\n  Attack from BEHIND - giants can't see you there\n  Grabbed? MASH to wriggle free!\n  Blue beams - resupply    Wall cannons - by the gate",
+			Text = "  Purple crystal = TITAN POWER (T to transform)\n  HOLD Q / E - left / right hook, then swing\n  HOLD SPACE - reel in (hooked) / gas (in the air)\n  SHIFT - gas dash      G - signal flare\n  CLICK or F - slash with both blades (spins in the air)\n  NECK = takedown   EYES = daze   ANKLES = trip\n  Attack from BEHIND - giants can't see you there\n  Grabbed? MASH to wriggle free!\n  Blue beams - resupply    Wall cannons - by the gate",
 			Font = Enum.Font.GothamMedium,
 			TextSize = 14,
 			TextXAlignment = Enum.TextXAlignment.Left,
@@ -319,7 +319,9 @@ local function cutInReach(here: Vector3): string?
 	local reach = Config.Blades.SlashRange
 	local found: string? = nil
 	for _, giant in CollectionService:GetTagged(Config.Tags.Giant) do
-		if giant:IsA("Model") and not giant:GetAttribute("Defeated") and not giant:GetAttribute("Event") then
+		-- (Titans on the hunters' side can't be cut, and neither can your own.)
+		local friendlyTitan = giant:GetAttribute("Shifter") ~= nil and (giant:GetAttribute("Side") ~= "Giants" or giant:GetAttribute("Shifter") == player.UserId)
+		if giant:IsA("Model") and not giant:GetAttribute("Defeated") and not giant:GetAttribute("Event") and not friendlyTitan then
 			local head = giant:FindFirstChild("Head")
 			local root = giant:FindFirstChild("Root")
 			local inFront = false

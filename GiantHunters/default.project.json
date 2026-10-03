@@ -39,10 +39,14 @@
       "$className": "Lighting",
       "$properties": {
         "Technology": "Future",
-        "ClockTime": 16.4,
+        "ClockTime": 9,
         "GeographicLatitude": 35,
         "Brightness": 3,
-        "OutdoorAmbient": [0.55, 0.5, 0.46],
+        "OutdoorAmbient": [
+          0.55,
+          0.5,
+          0.46
+        ],
         "EnvironmentDiffuseScale": 0.7,
         "EnvironmentSpecularScale": 0.6,
         "ShadowSoftness": 0.25
@@ -52,8 +56,16 @@
         "$properties": {
           "Density": 0.3,
           "Offset": 0.2,
-          "Color": [0.8, 0.75, 0.66],
-          "Decay": [0.48, 0.42, 0.36],
+          "Color": [
+            0.8,
+            0.75,
+            0.66
+          ],
+          "Decay": [
+            0.48,
+            0.42,
+            0.36
+          ],
           "Glare": 0.4,
           "Haze": 1.4
         }
@@ -61,7 +73,10 @@
       "Sky": {
         "$className": "Sky",
         "$properties": {
-          "SunAngularSize": 16
+          "SunAngularSize": 16,
+          "StarCount": 3000,
+          "MoonAngularSize": 16,
+          "CelestialBodiesShown": true
         }
       },
       "Bloom": {
@@ -84,7 +99,11 @@
         "$properties": {
           "Saturation": 0.08,
           "Contrast": 0.06,
-          "TintColor": [1, 0.97, 0.92]
+          "TintColor": [
+            1,
+            0.97,
+            0.92
+          ]
         }
       }
     },

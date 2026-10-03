@@ -165,8 +165,13 @@ local function releaseAll()
 	end
 end
 
+-- As a titan the hooks, gas and blades are put away.
+local function isTitan(): boolean
+	return character ~= nil and (character :: Model):GetAttribute("Shifted") == true
+end
+
 local function fire(hook: Hook)
-	if not root or not humanoid or humanoid.Health <= 0 or gas <= 0 or not hook.Hip then
+	if not root or not humanoid or humanoid.Health <= 0 or gas <= 0 or not hook.Hip or isTitan() then
 		return
 	end
 	local hit = GrappleController.AimTarget(hook.Side * settings.HookSideOffset)
@@ -306,7 +311,10 @@ local function step(dt: number)
 	if not root or not humanoid then
 		return
 	end
-	if humanoid.Health <= 0 or held then
+	if humanoid.Health <= 0 or held or isTitan() then
+		if isTitan() then
+			humanoid.AutoRotate = true
+		end
 		releaseAll()
 		if gasPuff then
 			gasPuff.Enabled = false

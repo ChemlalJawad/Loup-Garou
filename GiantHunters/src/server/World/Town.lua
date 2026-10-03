@@ -13,6 +13,7 @@
 --     the gate square with its barricades, bridges over the river, washing
 --     lines across the alleys, lamps along the avenues.
 
+local CollectionService = game:GetService("CollectionService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage.Shared.Config)
@@ -47,7 +48,10 @@ local function windowRow(model: Model, frame: CFrame, width: number, y: number, 
 	local spacing = width / count
 	for i = 1, count do
 		local x = -width / 2 + spacing * (i - 0.5)
-		Kit.Detail({ Name = "Window", Size = Vector3.new(2.2, 3.6, 0.4), CFrame = frame * CFrame.new(x, y, z), Color = P.Glass, Material = Enum.Material.Glass, Reflectance = 0.15, Parent = model })
+		local window = Kit.Detail({ Name = "Window", Size = Vector3.new(2.2, 3.6, 0.4), CFrame = frame * CFrame.new(x, y, z), Color = P.Glass, Material = Enum.Material.Glass, Reflectance = 0.15, Parent = model })
+		if rng:NextNumber() < 0.4 then
+			CollectionService:AddTag(window, Config.Tags.LitWindow) -- glows warm at night
+		end
 		Kit.Detail({ Name = "Sill", Size = Vector3.new(3, 0.4, 0.8), CFrame = frame * CFrame.new(x, y - 2, z - 0.2), Color = P.Cream, Material = Enum.Material.SmoothPlastic, Parent = model })
 		if flowers and rng:NextNumber() < 0.6 then
 			Kit.Detail({
@@ -528,6 +532,34 @@ local function washingLines(parent: Instance, rng: Random)
 	end
 end
 
+-- Lamps round the ring roads (the avenues have their own).
+local function ringLamps(parent: Instance)
+	for _, radius in W.RingRoads do
+		local count = math.floor(radius * math.pi * 2 / 42)
+		for i = 1, count do
+			local angle = i / count * math.pi * 2
+			for _, side in { -1, 1 } do
+				local r = radius + side * (W.RoadWidth / 2 - 1.2)
+				local p = Geo.Polar(angle, r)
+				if avenueClear(angle, r, 3) and not Geo.InRiver(p.X, p.Z, 4) and not Layout.InAnySite(angle, r) then
+					Kit.Lamp(parent, p, angle + (if side > 0 then 0 else math.pi))
+				end
+			end
+		end
+	end
+end
+
+-- Torches round the plaza and the gate square.
+local function torches(parent: Instance)
+	for i = 0, 11 do
+		local angle = i / 12 * math.pi * 2 + math.rad(15)
+		Kit.Torch(parent, CFrame.new(Geo.Polar(angle, W.PlazaRadius + 2)))
+	end
+	for i = -3, 3 do
+		Kit.Torch(parent, CFrame.new(Geo.Polar(i * 0.12, 214)))
+	end
+end
+
 -- Lamps along the avenues.
 local function avenueLamps(parent: Instance)
 	for _, degrees in W.AvenueAngles do
@@ -562,6 +594,8 @@ function Town.Build(parent: Instance, rng: Random)
 	bridges(folder)
 	washingLines(folder, rng)
 	avenueLamps(folder)
+	ringLamps(folder)
+	torches(folder)
 end
 
 return Town

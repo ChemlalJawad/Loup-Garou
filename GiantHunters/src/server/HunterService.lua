@@ -21,6 +21,7 @@ local Config = require(ReplicatedStorage.Shared.Config)
 local GiantService = require(script.Parent.GiantService)
 local WaveService = require(script.Parent.WaveService)
 local Broadcast = require(script.Parent.Broadcast)
+local ShifterService = require(script.Parent.ShifterService)
 
 local HunterService = {}
 
@@ -241,8 +242,8 @@ local function onSlash(player: Player)
 	if not hunter or not root or not root:IsA("BasePart") or not humanoid or humanoid.Health <= 0 then
 		return
 	end
-	if GiantService.IsHeld(player) then
-		return -- in a giant's hand, a slash is a wriggle (sent separately)
+	if GiantService.IsHeld(player) or (character :: Model):GetAttribute("Shifted") then
+		return -- held: a slash is a wriggle; a titan punches instead (ShifterService)
 	end
 	local now = os.clock()
 	if now - hunter.LastSlash < Config.Blades.SlashCooldown then
@@ -253,7 +254,14 @@ local function onSlash(player: Player)
 		remote(Config.Remotes.SlashResult):FireClient(player, "Dull", {})
 		return
 	end
-	local result, info = GiantService.TryHit(player, root)
+	local result: string, info: any = GiantService.TryHit(player, root)
+	if result == "NoTarget" then
+		-- A titan on the giants' side?
+		local shifterResult, shifterInfo = ShifterService.TryHit(player, root)
+		if shifterResult then
+			result, info = shifterResult, shifterInfo
+		end
+	end
 	if result ~= "NoTarget" then
 		hunter.Blades -= 1 -- blades only wear down on a real hit
 		pushState(player)
@@ -428,6 +436,9 @@ function HunterService.Init()
 	GiantService.Defeated.Event:Connect(onDefeated)
 	GiantService.Assist.Event:Connect(function(player: Player, reason: string)
 		award(player, ASSIST_POINTS[reason] or 0)
+	end)
+	ShifterService.Scored.Event:Connect(function(player: Player, amount: number)
+		award(player, amount)
 	end)
 
 	WaveService.RoundStarted.Event:Connect(function()

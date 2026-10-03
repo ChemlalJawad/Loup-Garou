@@ -99,6 +99,7 @@ export type GiantKind = {
 	Points: number,
 	Armor: number?, -- hits that crack the rock plate over the nape first
 	Abnormal: boolean?, -- sprints, zig-zags and leaps; picks its own targets
+	Powers: boolean?, -- throws boulders at rooftop hunters and roars them away
 	Look: GiantLook?,
 }
 
@@ -128,6 +129,30 @@ Config.GiantKinds = {
 		Armor = 3,
 		Look = { Body = "Stocky", Hair = "Bald", Shorts = Color3.fromRGB(70, 70, 80), Armor = true },
 	},
+	-- Shows up now and then from wave 3: throws boulders at hunters who think
+	-- they're safe on the rooftops, and roars anyone close away.
+	Beast = {
+		Name = "Beast",
+		Display = "Beast Giant",
+		Height = 52,
+		WalkSpeed = 8,
+		NapeHealth = 4,
+		GrabReach = 24,
+		Points = 12,
+		Powers = true,
+		Look = { Body = "Lanky", Hair = "Mop", Shorts = Color3.fromRGB(60, 46, 40) },
+	},
+	-- A player who took the titan power, transformed (see ShifterService).
+	Shifter = {
+		Name = "Shifter",
+		Display = "Titan Shifter",
+		Height = 34,
+		WalkSpeed = 0,
+		NapeHealth = 3,
+		GrabReach = 0,
+		Points = 8,
+		Look = { Body = "Stocky", Hair = "Mop", Shorts = Color3.fromRGB(70, 60, 55) },
+	},
 	-- Event only: peeks over the wall and kicks the gate in. Can't be hurt.
 	Wallbreaker = {
 		Name = "Wallbreaker",
@@ -140,6 +165,17 @@ Config.GiantKinds = {
 		Look = { Body = "Lanky", Hair = "Bald", Shorts = Color3.fromRGB(110, 60, 50) },
 	},
 } :: { [string]: GiantKind }
+
+-- The Beast Giant's powers.
+Config.Beast = {
+	ThrowEvery = { 5, 8 }, -- seconds between boulders
+	ThrowRange = 340,
+	ThrowFlight = 1.3, -- seconds in the air: room to dodge
+	ImpactRadius = 12,
+	RoarEvery = 14,
+	RoarRadius = 60,
+	Chance = 0.5, -- per wave, from wave 3 (never more than one at a time)
+}
 
 Config.Giants = {
 	ThinkInterval = 0.25, -- seconds between AI decisions
@@ -167,6 +203,7 @@ Config.Waves = {
 	BetweenRounds = 18,
 	WavesPerRound = 5,
 	MaxAlive = 16,
+	BeastFromWave = 3,
 }
 
 function Config.WaveRoster(round: number, wave: number): { string }
@@ -230,6 +267,7 @@ Config.Remotes = {
 	Feed = "GH_Feed", -- server -> all (text, tone)
 	Announce = "GH_Announce", -- server -> all (title, subtitle, tone)
 	Shake = "GH_Shake", -- server -> all (origin: Vector3, strength: number)
+	Shift = "GH_Shift", -- client -> server ("Choose", side) | ("Transform") | ("Punch") | ("Roar")
 }
 
 Config.Tags = {
@@ -237,6 +275,38 @@ Config.Tags = {
 	Supply = "SupplyStation",
 	Cannon = "WallCannon",
 	Spin = "Spin", -- client spins these (windmill sails)
+	NightLight = "NightLight", -- lanterns and torches: lit at night (client)
+	LitWindow = "LitWindow", -- windows that glow warm at night (client)
+	PowerOrb = "PowerOrb",
+}
+
+-- === Day and night ===========================================================
+-- A full 24 hours every DayMinutes real minutes. The server only moves the
+-- clock; each client paints the sky, the light and the lamps from it.
+Config.DayNight = {
+	DayMinutes = 16,
+	StartTime = 9,
+	NightStart = 19, -- lamps and torches on, giants' eyes glow, giants faster
+	NightEnd = 5.8,
+	NightSpeed = 1.2, -- giants walk this much faster in the dark
+}
+
+-- === Titan shifters ============================================================
+-- Now and then a glowing crystal appears in town. Whoever takes it chooses a
+-- side and can turn into a titan for a while: on the hunters' side your
+-- punches crush giants; on the giants' side they knock hunters out (and the
+-- hunters can cut your nape). Never more than Max shifters at once.
+Config.Shifters = {
+	Max = 2,
+	OrbEvery = 75, -- seconds between crystals while there's room for a shifter
+	Duration = 60, -- seconds as a titan
+	Cooldown = 40, -- before you can transform again
+	WalkSpeed = 30,
+	PunchCooldown = 0.9,
+	PunchReach = 0.5, -- x height, in front of the titan
+	RoarCooldown = 12,
+	RoarRadius = 70,
+	KnockoutPoints = 2, -- a rogue titan knocking out a hunter
 }
 
 -- Sounds: built-in Roblox client sound files (rbxasset://...), shipped with

@@ -16,13 +16,17 @@ end
 remotes.Parent = ReplicatedStorage
 
 local MapBuilder = require(script.Parent.MapBuilder)
+local DayNightService = require(script.Parent.DayNightService)
+local ShifterService = require(script.Parent.ShifterService)
 local GiantService = require(script.Parent.GiantService)
 local HunterService = require(script.Parent.HunterService)
 local CannonService = require(script.Parent.CannonService)
 local WaveService = require(script.Parent.WaveService)
 
 local world = MapBuilder.Build()
+DayNightService.Init()
 GiantService.Init(world.GiantSpawns)
+ShifterService.Init()
 HunterService.Init()
 CannonService.Init()
 WaveService.Init()

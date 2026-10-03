@@ -13,6 +13,8 @@ This is a separate Rojo project from Brainrot Hatch Wars, in the same repo.
 
 ![Giants and a hunter with twin swords](giants-preview.jpg)
 
+![Day and night](day-night-preview.jpg)
+
 *Offline previews, rendered outside Roblox from the same building code
 (so the lighting isn't Roblox's). Not Studio screenshots.*
 
@@ -51,6 +53,43 @@ The district, the giants and the HUD all build themselves. You can also
   road from the gate, the plains, hills all round.
 - **Wall cannons** either side of the gate: fire one at a giant to daze it.
 
+## Day and night
+
+A full 24 hours passes every 16 real minutes (`Config.DayNight`). The
+server only moves the clock; each client paints the sky from it
+(`Sky.lua`): blue noon, a gold and red sunset, a dark blue night with stars
+and a big moon, an orange dawn, with the atmosphere, colours, bloom, sun
+rays and clouds all changing with the hour.
+
+At night it's properly dark: torches burn along the whole wall and round
+the plaza and the gate square, the street lamps light up along the
+avenues, ring roads and bridges, and 4 windows in 10 glow warm. The
+giants' tiny pupils glow orange in the dark, and they walk 20% faster.
+
+## Titan shifters
+
+Now and then a glowing **purple crystal** appears in town (the plaza, the
+headquarters, the market, the gate square or the garden). Whoever takes it
+gets the **titan power** (never more than 2 players at once) and picks a
+side:
+
+- **Hunters' side** (blue outline): your punches crush giants (they count
+  as your takedowns) and your roar dazes them.
+- **Giants' side** (red outline): your punches knock hunters out (they
+  respawn on the wall) and your roar blows them away. Hunters can cut your
+  nape: 3 hits and you're thrown out of the titan, and the power is gone.
+
+Titans on opposite sides can fight each other. Press **T** to transform
+(60 s, then a 40 s cooldown) and T again to change back. As a titan, click
+or F punches and G roars. Hooks, gas and blades are put away.
+
+## The Beast Giant
+
+From wave 3 a **Beast Giant** sometimes appears (one at a time). It throws
+**boulders** at hunters who think they're safe on the rooftops or far
+away (they take over a second to land: keep moving), and **roars** away
+anyone who comes close. Worth 12 points.
+
 ## Controls
 
 | Action | PC | Gamepad | Mobile |
@@ -60,6 +99,8 @@ The district, the giants and the HUD all build themselves. You can also
 | Gas dash | Shift | B | "Dash" |
 | Slash with both blades (a full spin in the air) | Click or F | X | "Slash" |
 | Signal flare | G | Y | "Flare" |
+| Transform into a titan (with the titan power) | T | D-pad up | "Titan" |
+| Titan: punch / roar | Click or F / G | X / Y | "Punch" / "Roar" |
 | Wriggle free when grabbed | mash any of the above | | tap |
 | Resupply gas & blades | stand at a crate with a blue beam | | |
 | Fire a wall cannon | stand next to it | | |
@@ -154,7 +195,9 @@ sound you've uploaded (`rbxassetid://...`).
 | `src/server/World/Kit.lua`, `Layout.lua` | shared part helpers and set pieces; where the big pieces go |
 | `src/server/GiantFactory.lua` | part-built giant rig (rounded body, face, armour, Motor6D waist/limbs/neck, glowing nape, kinematic mover) |
 | `src/server/GiantService.lua` | giant AI, grabs and holds, swats, the three cuts, armour, takedowns, the Wallbreaker |
-| `src/server/WaveService.lua` | rounds and waves |
+| `src/server/WaveService.lua` | rounds and waves (and the odd Beast Giant) |
+| `src/server/DayNightService.lua` | the 24-hour clock |
+| `src/server/ShifterService.lua` | the titan crystal, sides, transforming, punches, roars, titan napes |
 | `src/server/HunterService.lua` | characters, leaderboard and ranks, twin swords, blades, resupply, slash validation, combos, flares, cable relay |
 | `src/server/CannonService.lua` | the wall cannons |
 | `src/server/Broadcast.lua` | kill feed, announcements, camera shakes |
@@ -162,6 +205,8 @@ sound you've uploaded (`rbxassetid://...`).
 | `src/client/GiantAnimator.lua` | client-only animation (walk, grab, hold, swat, kneel, daze, leap, kick, stare), footsteps, daze stars |
 | `src/client/Hud.lua`, `Radar.lua` | the HUD and the radar |
 | `src/client/Effects.lua` | camera shake, sounds, hit bursts, the windmill |
+| `src/client/SkyController.lua`, `src/shared/Sky.lua` | the sky by the hour; lamps, torches, windows and giants' eyes at night |
+| `src/client/ShifterController.lua` | choosing a side, T to transform, titan punch and roar |
 
 Movement runs on each player's own client, so the grapple feels instant.
 Damage is always validated by the server (cooldown, blades left, real

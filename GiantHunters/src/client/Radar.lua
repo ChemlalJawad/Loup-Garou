@@ -151,7 +151,13 @@ function Radar.Init(gui: ScreenGui)
 				if giantRoot and giantRoot:IsA("BasePart") then
 					local height = (giant:GetAttribute("Height") :: number?) or 20
 					local kind = giant:GetAttribute("Kind")
-					local color = if kind == "Runner" then Color3.fromRGB(255, 160, 40) elseif kind == "Armored" then Color3.fromRGB(190, 185, 170) else Color3.fromRGB(240, 70, 60)
+					local side = giant:GetAttribute("Side")
+					local color = if side == "Humans" then Color3.fromRGB(90, 160, 255)
+						elseif side == "Giants" then Color3.fromRGB(255, 60, 140)
+						elseif kind == "Runner" then Color3.fromRGB(255, 160, 40)
+						elseif kind == "Beast" then Color3.fromRGB(150, 90, 60)
+						elseif kind == "Armored" then Color3.fromRGB(190, 185, 170)
+						else Color3.fromRGB(240, 70, 60)
 					place(giantRoot.Position, math.clamp(height / 4, 6, 14), color)
 				end
 			end

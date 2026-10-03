@@ -36,6 +36,7 @@ local Geo = require(ReplicatedStorage.Shared.Geo)
 local GiantFactory = require(script.Parent.GiantFactory)
 local Wall = require(script.Parent.World.Wall)
 local Broadcast = require(script.Parent.Broadcast)
+local DayNightService = require(script.Parent.DayNightService)
 
 local GiantService = {}
 
@@ -60,6 +61,8 @@ type Giant = {
 	LeapUntil: number,
 	Phase: number, -- runners' zig-zag
 	Armor: number,
+	NextThrowAt: number, -- Beast powers
+	NextRoarAt: number,
 	Defeated: boolean,
 }
 
@@ -92,7 +95,8 @@ local function aliveRoot(player: Player): BasePart?
 	local character = player.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 	local root = character and character:FindFirstChild("HumanoidRootPart")
-	if humanoid and humanoid.Health > 0 and root and root:IsA("BasePart") then
+	-- Titan shifters are giants themselves: the others leave them alone.
+	if humanoid and humanoid.Health > 0 and root and root:IsA("BasePart") and not (character :: Model):GetAttribute("Shifted") then
 		return root
 	end
 	return nil
@@ -121,6 +125,20 @@ local function inFront(giant: Giant, point: Vector3, from: Vector3): boolean
 	return forward:Dot(flat.Unit) > Config.Giants.BehindDot
 end
 
+local function steamBurst(parent: BasePart, size: number, amount: number)
+	local steam = Instance.new("ParticleEmitter")
+	steam.Color = ColorSequence.new(Color3.fromRGB(245, 245, 250))
+	steam.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, size * 0.4), NumberSequenceKeypoint.new(1, size) })
+	steam.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.3), NumberSequenceKeypoint.new(1, 1) })
+	steam.Lifetime = NumberRange.new(1.5, 2.5)
+	steam.Speed = NumberRange.new(6, 14)
+	steam.SpreadAngle = Vector2.new(50, 50)
+	steam.Rate = 0
+	steam.Parent = parent
+	steam:Emit(amount)
+	Debris:AddItem(steam, 3)
+end
+
 -- === Moving ==================================================================
 
 local function steer(giant: Giant, toward: Vector3?, speedScale: number?)
@@ -134,7 +152,7 @@ local function steer(giant: Giant, toward: Vector3?, speedScale: number?)
 	elseif now < giant.LeapUntil then
 		y += giant.Kind.Height * 0.3
 	end
-	giant.Move.MaxVelocity = giant.Kind.WalkSpeed * (speedScale or 1)
+	giant.Move.MaxVelocity = giant.Kind.WalkSpeed * (speedScale or 1) * DayNightService.GiantSpeed()
 	giant.Move.Position = Vector3.new(goal.X, y, goal.Z)
 	local flat = Vector3.new(goal.X - here.X, 0, goal.Z - here.Z)
 	if flat.Magnitude > 2 then
@@ -334,6 +352,109 @@ local function swat(giant: Giant, player: Player, root: BasePart)
 	end)
 end
 
+-- === The Beast Giant's powers ================================================
+-- Boulders for hunters who think they're safe up high (slow enough to
+-- dodge), and a roar that blows away anyone close.
+
+local function throwBoulder(giant: Giant, player: Player, root: BasePart)
+	local model = giant.Rig.Model
+	model:SetAttribute("Swat", "Right") -- wind up the throwing arm
+	task.delay(0.6, function()
+		model:SetAttribute("Swat", "")
+		if not active(giant) or stunned(giant) then
+			return
+		end
+		local B = Config.Beast
+		local from = giant.Rig.Root.Position + Vector3.new(0, giant.Kind.Height * 0.7, 0)
+		local to = root.Position -- where you were: keep moving!
+		local rock = Instance.new("Part")
+		rock.Name = "Boulder"
+		rock.Size = Vector3.one * 6
+		rock.Color = Color3.fromRGB(120, 112, 100)
+		rock.Material = Enum.Material.Slate
+		rock.Anchored = true
+		rock.CanCollide = false
+		rock.CanQuery = false
+		rock.Position = from
+		rock.Parent = Workspace
+		local apex = (from + to) / 2 + Vector3.new(0, 40, 0)
+		local start = os.clock()
+		local connection: RBXScriptConnection
+		connection = RunService.Heartbeat:Connect(function()
+			local t = math.min((os.clock() - start) / B.ThrowFlight, 1)
+			rock.CFrame = CFrame.new(from:Lerp(apex, t):Lerp(apex:Lerp(to, t), t)) * CFrame.Angles(t * 6, t * 4, 0)
+			if t >= 1 then
+				connection:Disconnect()
+				Broadcast.Shake(to, 1)
+				steamBurst(rock, 8, 20)
+				for _, other in Players:GetPlayers() do
+					local otherRoot = aliveRoot(other)
+					if otherRoot and not held[other] and (otherRoot.Position - to).Magnitude < B.ImpactRadius then
+						local away = Geo.Flat(otherRoot.Position - to)
+						local push = (if away.Magnitude > 0.5 then away.Unit else Vector3.new(1, 0, 0)) + Vector3.new(0, 0.8, 0)
+						remote(Config.Remotes.Knocked):FireClient(other, push.Unit * 95)
+					end
+				end
+				rock.Transparency = 1
+				Debris:AddItem(rock, 3)
+			end
+		end)
+	end)
+end
+
+local function roar(giant: Giant)
+	local B = Config.Beast
+	local model = giant.Rig.Model
+	local here = giant.Rig.Root.Position
+	model:SetAttribute("Grabbing", true) -- the lunge pose, head thrown forward
+	steamBurst(giant.Rig.Head, giant.Kind.Height * 0.25, 40)
+	Broadcast.Shake(here, 1.6)
+	for _, player in Players:GetPlayers() do
+		local root = aliveRoot(player)
+		if root and not held[player] and (root.Position - here).Magnitude < B.RoarRadius then
+			local away = Geo.Flat(root.Position - here)
+			local push = (if away.Magnitude > 0.5 then away.Unit else Vector3.new(0, 0, 1)) + Vector3.new(0, 0.5, 0)
+			remote(Config.Remotes.Knocked):FireClient(player, push.Unit * 110)
+		end
+	end
+	task.delay(0.9, function()
+		model:SetAttribute("Grabbing", false)
+	end)
+end
+
+local function powers(giant: Giant, now: number)
+	local B = Config.Beast
+	local here = giant.Rig.Root.Position
+	if now >= giant.NextRoarAt then
+		for _, player in Players:GetPlayers() do
+			local root = aliveRoot(player)
+			if root and (root.Position - here).Magnitude < B.RoarRadius * 0.8 then
+				giant.NextRoarAt = now + B.RoarEvery
+				roar(giant)
+				return
+			end
+		end
+	end
+	if now >= giant.NextThrowAt then
+		-- Someone out of reach: up high, or far away.
+		local best, bestRoot, bestDistance = nil, nil, B.ThrowRange
+		for _, player in Players:GetPlayers() do
+			local root = aliveRoot(player)
+			if root and not held[player] then
+				local distance = (root.Position - here).Magnitude
+				local outOfReach = root.Position.Y >= giant.Kind.Height * 1.05 or distance > 90
+				if outOfReach and distance < bestDistance then
+					best, bestRoot, bestDistance = player, root, distance
+				end
+			end
+		end
+		if best and bestRoot then
+			giant.NextThrowAt = now + rng:NextNumber(B.ThrowEvery[1], B.ThrowEvery[2])
+			throwBoulder(giant, best, bestRoot)
+		end
+	end
+end
+
 -- === The brain ===============================================================
 
 local function think(giant: Giant)
@@ -351,6 +472,9 @@ local function think(giant: Giant)
 	if stunned(giant) then
 		steer(giant, nil)
 		return
+	end
+	if giant.Kind.Powers and not giant.Busy then
+		powers(giant, now)
 	end
 	local target = chooseTarget(giant)
 	if target then
@@ -449,6 +573,8 @@ function GiantService.SpawnGiant(kindName: string)
 		LeapUntil = 0,
 		Phase = rng:NextNumber(0, 6),
 		Armor = kind.Armor or 0,
+		NextThrowAt = now + 4,
+		NextRoarAt = now + 6,
 		Defeated = false,
 	}
 	if kind.Armor then
@@ -457,21 +583,12 @@ function GiantService.SpawnGiant(kindName: string)
 	if kind.Abnormal then
 		rig.Model:SetAttribute("Abnormal", true)
 	end
+	if kind.Powers then
+		Broadcast.Announce("THE BEAST GIANT", "It throws boulders - nowhere is safe. Keep moving!", "Danger")
+		Broadcast.Feed("A Beast Giant has appeared!", "Danger")
+	end
 end
 
-local function steamBurst(parent: BasePart, size: number, amount: number)
-	local steam = Instance.new("ParticleEmitter")
-	steam.Color = ColorSequence.new(Color3.fromRGB(245, 245, 250))
-	steam.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, size * 0.4), NumberSequenceKeypoint.new(1, size) })
-	steam.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.3), NumberSequenceKeypoint.new(1, 1) })
-	steam.Lifetime = NumberRange.new(1.5, 2.5)
-	steam.Speed = NumberRange.new(6, 14)
-	steam.SpreadAngle = Vector2.new(50, 50)
-	steam.Rate = 0
-	steam.Parent = parent
-	steam:Emit(amount)
-	Debris:AddItem(steam, 3)
-end
 
 local function defeat(giant: Giant, player: Player, clean: boolean, speed: number)
 	giant.Defeated = true
@@ -569,10 +686,7 @@ local function rescue(giant: Giant, player: Player): string?
 	return captive.DisplayName
 end
 
-local function cutNape(giant: Giant, player: Player, root: BasePart): (HitResult, HitInfo)
-	local speed = root.AssemblyLinearVelocity.Magnitude
-	local clean = speed >= Config.Blades.CleanCutSpeed
-	local damage = if clean then 1 else 0.5
+local function applyDamage(giant: Giant, player: Player, damage: number, clean: boolean, speed: number): (HitResult, HitInfo)
 	local info: HitInfo = { Kind = giant.Kind.Display, Clean = clean, Speed = speed, Position = giant.Rig.Nape.Position }
 	info.Rescued = rescue(giant, player)
 	if giant.Armor > 0 then
@@ -593,6 +707,49 @@ local function cutNape(giant: Giant, player: Player, root: BasePart): (HitResult
 		return "Defeated", info
 	end
 	return "Hit", info
+end
+
+local function cutNape(giant: Giant, player: Player, root: BasePart): (HitResult, HitInfo)
+	local speed = root.AssemblyLinearVelocity.Magnitude
+	local clean = speed >= Config.Blades.CleanCutSpeed
+	return applyDamage(giant, player, if clean then 1 else 0.5, clean, speed)
+end
+
+-- A titan shifter's punch (on the hunters' side): every giant within
+-- `radius` of `centre` takes a full hit and staggers.
+function GiantService.Punch(player: Player, centre: Vector3, radius: number): number
+	local count = 0
+	for _, giant in giants do
+		if not giant.Defeated then
+			local reach = radius + giant.Rig.TorsoWidth / 2
+			local body = giant.Rig.Root.Position + Vector3.new(0, giant.Rig.TorsoHeight * 0.5, 0)
+			if (body - centre).Magnitude <= reach or (giant.Rig.Head.Position - centre).Magnitude <= reach then
+				count += 1
+				rescue(giant, player)
+				daze(giant, 1.5)
+				applyDamage(giant, player, 1, true, 0)
+			end
+		end
+	end
+	return count
+end
+
+-- A titan shifter's roar (hunters' side): daze every giant close by.
+function GiantService.DazeAround(centre: Vector3, radius: number)
+	for _, giant in giants do
+		if not giant.Defeated and (giant.Rig.Root.Position - centre).Magnitude <= radius then
+			daze(giant, Config.Cuts.DazeTime)
+		end
+	end
+end
+
+function GiantService.HasKind(kindName: string): boolean
+	for _, giant in giants do
+		if not giant.Defeated and giant.Kind.Name == kindName then
+			return true
+		end
+	end
+	return false
 end
 
 -- In front of a giant's face (where its eyes are, and its nape isn't).

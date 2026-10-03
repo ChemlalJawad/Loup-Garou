@@ -29,6 +29,8 @@ local SKIN = {
 	Color3.fromRGB(196, 140, 104),
 	Color3.fromRGB(160, 108, 76),
 	Color3.fromRGB(118, 80, 58),
+	Color3.fromRGB(214, 196, 184), -- pale, a little grey: the eerie ones
+	Color3.fromRGB(196, 150, 140),
 }
 local SHORTS = {
 	Color3.fromRGB(90, 110, 160),
@@ -235,7 +237,7 @@ function GiantFactory.Build(kindName: string, position: Vector3, rng: Random): R
 
 	-- The grin: a wide, toothy smile wrapped round the muzzle, corners
 	-- turned up. Goofy from afar, a little unsettling up close - on brand.
-	local GRIN_SPAN, GRIN_PIECES = 0.75, 5
+	local GRIN_SPAN, GRIN_PIECES = 0.85, 5
 	local function grinPoint(turn: number): Vector3
 		local lift = headSize * 0.08 * (turn / GRIN_SPAN) ^ 2
 		return muzzleAt + onBall(muzzleRadius, turn, -headSize * 0.02 + lift, 0)
@@ -261,8 +263,11 @@ function GiantFactory.Build(kindName: string, position: Vector3, rng: Random): R
 		local eye = onBall(skull, side * 0.38, headSize * 0.1, -headSize * 0.08)
 		local eyeSize = if look.Crazy then (if side < 0 then 0.32 else 0.22) else 0.26
 		local gaze = if look.Crazy then Vector3.new(side * 0.04, side * 0.035, 0) * headSize else Vector3.zero
-		face(`Eye{i}`, Vector3.one * headSize * eyeSize, CFrame.new(eye), Color3.fromRGB(250, 250, 250), Enum.PartType.Ball)
-		face(`Pupil{i}`, Vector3.one * headSize * (if look.Crazy then 0.08 else 0.1), CFrame.new(eye + gaze + Vector3.new(0, 0, -headSize * (eyeSize / 2 - 0.015))), Color3.fromRGB(30, 25, 25), Enum.PartType.Ball)
+		-- A shadowed socket behind each eye: a hollow, staring look.
+		face(`Socket{i}`, Vector3.one * headSize * (eyeSize + 0.07), CFrame.new(eye + Vector3.new(0, headSize * 0.01, headSize * 0.03)), skin:Lerp(Color3.new(0, 0, 0), 0.35), Enum.PartType.Ball)
+		face(`Eye{i}`, Vector3.one * headSize * eyeSize, CFrame.new(eye), Color3.fromRGB(246, 242, 232), Enum.PartType.Ball)
+		-- Tiny pupils: a vacant stare (they glow at night - see SkyController).
+		face(`Pupil{i}`, Vector3.one * headSize * (if look.Crazy then 0.07 else 0.075), CFrame.new(eye + gaze + Vector3.new(0, 0, -headSize * (eyeSize / 2 - 0.015))), Color3.fromRGB(30, 25, 25), Enum.PartType.Ball)
 		local brow = onBall(skull, side * 0.38, headSize * 0.27, 0)
 		face(`Brow{i}`, Vector3.new(headSize * 0.26, headSize * 0.055, headSize * 0.07), CFrame.new(brow) * CFrame.Angles(0, -side * 0.38, side * -0.25), hairColor)
 		face(`Ear{i}`, Vector3.new(headSize * 0.1, headSize * 0.24, headSize * 0.24), CFrame.new(side * skull, -headSize * 0.02, headSize * 0.02), darker, Enum.PartType.Cylinder)

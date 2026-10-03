@@ -46,6 +46,8 @@ local function segment(parent: Instance, angle: number, length: number)
 	for _, x in { -length / 3, 0, length / 3 } do
 		Kit.Part({ Name = "Merlon", Size = Vector3.new(5, 4.4, 2.4), CFrame = base * CFrame.new(x, H + 2.8, T / 2 - 1.2), Color = P.WallBand, Material = Enum.Material.Slate, Parent = model })
 	end
+	-- A torch on the parapet: at night the wall is a ring of firelight.
+	Kit.Torch(model, base * CFrame.new(length * 0.25, H + 2.8, -T / 2 + 0.6))
 end
 
 local function door(parent: Instance, frame: CFrame, side: number): Model
@@ -114,6 +116,11 @@ local function gatehouse(parent: Instance)
 			for _, side in { -1, 1 } do
 				Kit.Detail({ Name = "Band", Size = Vector3.new(towerWidth + 0.8, 2.2, depth + 1.6), CFrame = frame * CFrame.new(side * (gw / 2 + 2.4 + towerWidth / 2 - 0.4), y, 0), Color = P.WallBand, Material = Enum.Material.Slate, Parent = gate })
 			end
+		end
+	end
+	for _, side in { -1, 1 } do
+		for _, z in { -1, 1 } do
+			Kit.Torch(gate, frame * CFrame.new(side * (gw / 2 + 4.5), 30, z * (depth / 2 + 0.8)))
 		end
 	end
 	Kit.Detail({ Name = "Keystone", Size = Vector3.new(gw + 4.8, 4, depth + 1), CFrame = frame * CFrame.new(0, gh + 2, 0), Color = P.WallBand, Material = Enum.Material.Slate, Parent = gate })

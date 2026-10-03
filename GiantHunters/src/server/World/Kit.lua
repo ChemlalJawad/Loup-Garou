@@ -181,9 +181,32 @@ function Kit.Lamp(parent: Instance, position: Vector3, facing: number)
 	local lantern = Kit.Detail({ Name = "Lantern", Size = Vector3.new(1.2, 1.6, 1.2), CFrame = top * CFrame.new(0, -1.4, -2.2), Color = Color3.fromRGB(255, 214, 140), Material = Enum.Material.Neon, Parent = model })
 	local light = Instance.new("PointLight")
 	light.Color = Color3.fromRGB(255, 200, 130)
-	light.Range = 16
-	light.Brightness = 1.2
+	light.Range = 22
+	light.Brightness = 1.6
 	light.Parent = lantern
+	CollectionService:AddTag(lantern, Config.Tags.NightLight) -- lit at night by each client
+end
+
+-- A torch: an iron bracket and a burning head (fire and warm light, lit at
+-- night by each client). `cframe` is the base of the shaft, upright.
+function Kit.Torch(parent: Instance, cframe: CFrame)
+	local model = Kit.Model("Torch", parent)
+	Kit.Detail({ Name = "Shaft", Size = Vector3.new(0.5, 4, 0.5), CFrame = cframe * CFrame.new(0, 2, 0), Color = Kit.Palette.Iron, Material = Enum.Material.Metal, Parent = model })
+	local head = Kit.Detail({ Name = "Head", Size = Vector3.new(1, 1.2, 1), CFrame = cframe * CFrame.new(0, 4.4, 0), Color = Color3.fromRGB(70, 46, 30), Material = Enum.Material.Wood, Parent = model })
+	local fire = Instance.new("Fire")
+	fire.Size = 3
+	fire.Heat = 7
+	fire.Color = Color3.fromRGB(255, 140, 40)
+	fire.SecondaryColor = Color3.fromRGB(255, 220, 90)
+	fire.Enabled = false
+	fire.Parent = head
+	local light = Instance.new("PointLight")
+	light.Color = Color3.fromRGB(255, 160, 80)
+	light.Range = 24
+	light.Brightness = 2
+	light.Enabled = false
+	light.Parent = head
+	CollectionService:AddTag(head, Config.Tags.NightLight)
 end
 
 -- A round-crowned broadleaf tree (town squares, gardens, the plains).
