@@ -112,7 +112,13 @@ side:
 
 Titans on opposite sides can fight each other. Press **T** to transform
 (60 s, then a 40 s cooldown) and T again to change back. As a titan, click
-or F punches and G roars. Hooks, gas and blades are put away.
+or F punches and G roars (titans can't jump). Hooks, gas and blades are put
+away.
+
+Don't want it? Pick **"No thanks"** when choosing a side. The power fades
+when you're knocked out or caught, when the round ends, or after 4
+minutes. A rogue titan's knockouts score nothing, and a knocked-out hunter
+can't be knocked out again for 10 seconds.
 
 ## The Beast Giant
 
@@ -127,17 +133,26 @@ anyone who comes close. Worth 12 points.
 |---|---|---|---|
 | Left / right hook (hold, then swing) | Q / E | L1 / R1 | "L Hook" / "R Hook" |
 | Reel in (hooked) / gas boost (in the air) | hold Space | A | "Gas" |
-| Gas dash | Shift | B | "Dash" |
+| Gas dash | Ctrl or C | B | "Dash" |
 | Slash with both blades (a full spin in the air) | Click or F | X | "Slash" |
 | Signal flare | G | Y | "Flare" |
 | Transform into a titan (with the titan power) | T | D-pad up | "Titan" |
 | Titan: punch / roar | Click or F / G | X / Y | "Punch" / "Roar" |
-| Wriggle free when grabbed | mash any of the above | | tap |
-| Resupply gas & blades | stand at a crate with a blue beam | | |
-| Fire a wall cannon | stand next to it | | |
+| Wriggle free when grabbed | mash any key or click | mash any button | tap anywhere |
+| Resupply gas & blades (at a crate with a blue beam) | R | D-pad down | tap the prompt |
+| Fire a wall cannon / take the titan crystal | R | D-pad down | tap the prompt |
 
-Shift-lock (camera lock) makes aiming easier: the crosshair turns green
-when a hook would land.
+Shift is left free for **shift-lock** (camera lock), which makes aiming
+easier: you aim from the centre of the screen, and the crosshair turns
+green when a hook would land. With a gamepad or on a touch screen you
+always aim from the centre. On phones and tablets the buttons sit in an arc
+round the jump button, and the whole HUD shrinks to fit the screen (the
+radar and the kill feed move to the top).
+
+The first time you play, a short **tutorial** walks you through it: hook
+a roof, reel in, slash a dummy at the Training Grounds (just north of the
+wall, where you start; an arrow shows the way), and resupply. You can skip
+it, and it won't come back.
 
 ### The grapple, like the anime's gear
 
@@ -147,7 +162,11 @@ when a hook would land.
 - Hook both sides at once to swing between two anchors.
 - Hold Space while hooked to **reel in** hard (uses gas): that's how you
   zip up a giant's back to its neck.
-- Hooks can bite giants too, and move with them.
+- Hooks can bite giants too, and move with them. Reeling onto a giant
+  stops just off its skin, and you cling on as it walks.
+- Hooks fire even with an empty tank: only reeling, boosting and dashing
+  use gas, and the tank trickles back while you hang on a cable. Hooks
+  don't bite water.
 - In the air you steer with WASD, face where you fly and lean into dives.
   A slash in the air is a full spin with blade trails.
 - Gas shows as white jets behind you, the view widens and the wind picks
@@ -157,15 +176,31 @@ when a hook would land.
 
 - **Rounds**: a short breather, the Wallbreaker breaches the gate, then 5
   waves pour in. The last wave brings an **Armored Giant**. Clear it and
-  the district is saved; the next round is a little harder.
+  the district is saved: everyone's blades and gas are refilled, and the
+  next round is a little harder. More hunters on the server means more
+  giants per wave (from 0.75x alone up to 2x with six or more), but never
+  more than 16 on the field at once: the rest wait their turn.
+- **The district's health** (the bar under the round banner) drains while
+  giants are inside the wall, and a little each time a hunter is grabbed or
+  caught. If it runs out, the **DISTRICT FALLS**: the giants are cleared,
+  the gate is rebuilt, and it's back to round 1. It's full again at the
+  start of every round.
+- **Each wave has a time limit** (2:30, shown on the banner). When it runs
+  out the giants **storm into town**, faster, and any straggler far out in
+  the wilds steams away. Some giants like to roam first: through the Great
+  Forest, round the Training Grounds, or out by the castle (they never
+  climb the castle hill).
 - **The three cuts**:
   - **Nape** (the glowing lump on the back of the neck), from behind or
     the side: the only thing that takes a giant down. Hit it going fast
     (35+ studs/s) for a **clean cut** (full damage); slow hits do half.
+    Swinging and climbing count, just dropping off a roof barely does.
   - **Eyes** (from in front): the giant is **dazed** for 4 s: hands over
     its face, stars round its head, no grabbing.
   - **Ankles**: the giant drops to its **knees** for 4.5 s, bringing its
     nape within easy reach.
+  - Trip or daze the same giant again soon after and it shakes it off
+    faster (and only the first one scores).
 - **Giants**:
   - **Small / Giant / Colossal**: they chase the nearest hunter they can
     reach. On a rooftop above their heads, you're safe.
@@ -181,9 +216,10 @@ when a hook would land.
     nose size, and ribs on the skinny ones. The Beast is a bearded gangly
     one.
 - **Grabs**: a giant raises its arms first (the warning). If it catches
-  you, you're held in its hand: **mash to wriggle free**, or a friend can
-  cut you loose (any cut on that giant). Not free after 3.5 s? You're
-  caught and sent back to the wall.
+  you, you're held in its hand: **mash anything to wriggle free** (any
+  key, click, tap or button; the bar fills as the server counts them), or
+  a friend can cut you loose (any cut on that giant). Not free after
+  3.5 s? You're caught and sent back to the wall.
 - **Swats**: fly round a giant's head in front of it and it swats you
   away. It can't see behind it - **attack from behind**.
 - **Blades**: a sword in each hand, 8 blades per life, one used per hit.
@@ -197,16 +233,22 @@ when a hook would land.
   to x5), +1 for a takedown at 70+ studs/s. Trips, dazes and cannon hits
   are worth 1, cracking armour 2, rescuing a friend 3. Ranks: Recruit,
   Scout, Hunter, Veteran, Captain, Commander.
+- **Saved**: your points (and so your rank), giants taken down, your best
+  round and whether you've done the tutorial are kept between sessions.
+- **The edge of the land**: wander past the hills (or fall through a gap)
+  and you're put back on the wall.
 
 ## The HUD
 
 Crosshair with left/right hook marks (yellow flying, green hooked); the
 gear panel (two gas tanks, two boxes of four blades, your speed, rank and
 points); a hint when a cut is in reach ("SLASH THE NAPE!", "TRIP",
-"DAZE"); the round and wave banner; announcements; a kill feed; the combo
+"DAZE"); the round and wave banner with the wave's time left and the
+district's health under it; announcements; a kill feed; the combo
 counter; a radar that turns with the camera (giants red, runners orange,
 armoured grey, hunters blue, crates cyan, the gate yellow, the wall a
-ring); the GRABBED! screen with a wriggle meter.
+ring, and arrows round its edge for giants out of range); the GRABBED!
+screen with a wriggle meter.
 
 ## Sounds
 
@@ -244,7 +286,14 @@ sound you've uploaded (`rbxassetid://...`).
 | `src/client/Effects.lua` | camera shake, sounds, hit bursts, the windmill |
 | `src/client/SkyController.lua`, `src/shared/Sky.lua` | the sky by the hour; lamps, torches, windows and giants' eyes at night |
 | `src/client/ShifterController.lua` | choosing a side, T to transform, titan punch and roar |
+| `src/client/TouchButtons.lua` | the on-screen buttons on phones and tablets |
+| `src/client/Tutorial.lua` | the first-join tutorial |
+| `src/server/Motion.lua` | where every hunter really is: server-measured speed, too-fast moves |
+| `src/server/DataService.lua` | saving points, giants, best round and the tutorial (DataStore) |
+| `src/server/Respawn.lua` | respawning on the wall, retried if it fails |
 
 Movement runs on each player's own client, so the grapple feels instant.
 Damage is always validated by the server (cooldown, blades left, real
-distance to the nape, eyes or ankle).
+distance to the nape, eyes or ankle), and speeds are measured by the server
+itself: a hunter who moves faster than the rig allows can't cut anything
+for a moment.

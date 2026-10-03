@@ -5,10 +5,15 @@
 --   * the gear panel: two gas tanks, two boxes of blades, your speed, your
 --     points and rank;
 --   * "SLASH!" / "TRIP" / "DAZE" hints when a cut is in reach;
---   * the round and wave banner, big announcements, a kill feed, a combo
---     counter, feedback toasts;
+--   * the round and wave banner with the district's health under it, big
+--     announcements, a kill feed, a combo counter, feedback toasts;
 --   * the radar (Radar.lua);
---   * GRABBED! (mash to wriggle free), SWATTED!, and the Caught screen.
+--   * GRABBED! (mash to wriggle free), SWATTED!, and the Caught screen;
+--   * the first-join tutorial (Tutorial.lua).
+--
+-- Everything is laid out in offsets and scaled as a whole to the screen
+-- (a UIScale on each piece), so it all fits on a phone; on touch screens
+-- the radar and the kill feed move to the top, clear of the buttons.
 
 local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
@@ -21,6 +26,7 @@ local Workspace = game:GetService("Workspace")
 local Config = require(ReplicatedStorage.Shared.Config)
 local Radar = require(script.Parent.Radar)
 local Effects = require(script.Parent.Effects)
+local Tutorial = require(script.Parent.Tutorial)
 
 local Hud = {}
 
@@ -79,6 +85,10 @@ local grabFrame: Frame
 local grabBar: Frame
 local grabTimer: Frame
 local flash: Frame
+local districtBack: Frame
+local districtFill: Frame
+local districtLabel: TextLabel
+local scales: { UIScale } = {}
 
 local toastToken = 0
 local announceToken = 0
@@ -89,8 +99,34 @@ local grabbed = false
 local grabStarted = 0
 local grabTime = Config.Giants.HoldTime
 local grabNeeded = Config.Giants.StruggleToEscape
-local wriggles = 0
-local lastWriggle = 0
+local wriggles = 0 -- the server's count
+local touch = UserInputService.TouchEnabled
+
+local function screenScale(): number
+	local camera = Workspace.CurrentCamera
+	if not camera then
+		return 1
+	end
+	local viewport = camera.ViewportSize
+	-- Laid out for 1280x720 and up; smaller screens shrink it, never below
+	-- what stays readable.
+	return math.clamp(math.min(viewport.X / 1280, viewport.Y / 720), 0.55, 1)
+end
+
+-- Gives a piece of the HUD a UIScale that follows the screen size.
+local function scaled(element: GuiObject)
+	local scale = Instance.new("UIScale")
+	scale.Scale = screenScale()
+	scale.Parent = element
+	table.insert(scales, scale)
+end
+
+local function rescale()
+	local s = screenScale()
+	for _, scale in scales do
+		scale.Scale = s
+	end
+end
 
 function Hud.Toast(text: string, color: Color3?)
 	toastToken += 1
@@ -214,6 +250,7 @@ local function build()
 			bladeIcons[index] = icon
 		end
 	end
+	scaled(panel)
 	speedLabel = label({ AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 8), Size = UDim2.fromOffset(110, 40), Text = "0", TextSize = 38, Parent = panel })
 	label({ AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 46), Size = UDim2.fromOffset(110, 14), Text = "SPEED", TextSize = 12, TextColor3 = BRASS, Parent = panel })
 	rankLabel = label({ AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 64), Size = UDim2.fromOffset(160, 18), Text = "RECRUIT  -  0 PTS", Font = Enum.Font.GothamBold, TextSize = 13, Parent = panel })
@@ -222,16 +259,36 @@ local function build()
 	waveLabel = label({ AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 52), Size = UDim2.fromOffset(520, 38), BackgroundTransparency = 0.25, BackgroundColor3 = PANEL, Text = "", TextSize = 20, TextColor3 = TONES.Gold, Parent = gui })
 	corner(waveLabel, 12)
 	new("UIStroke", { Color = BRASS, Thickness = 1.5, Parent = waveLabel })
+	scaled(waveLabel)
+	-- The district's health, under the banner.
+	districtBack = new("Frame", { AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 1, 6), Size = UDim2.fromOffset(360, 16), BackgroundColor3 = Color3.fromRGB(40, 30, 30), BackgroundTransparency = 0.2, Visible = false, Parent = waveLabel })
+	corner(districtBack, 8)
+	new("UIStroke", { Color = BRASS, Thickness = 1, Parent = districtBack })
+	districtFill = new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = TONES.Good, Parent = districtBack })
+	corner(districtFill, 8)
+	districtLabel = label({ Size = UDim2.fromScale(1, 1), Text = "DISTRICT", TextSize = 12, Font = Enum.Font.GothamBold, ZIndex = 2, Parent = districtBack })
 	announceTitle = label({ AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0.2, 0), Size = UDim2.fromOffset(900, 64), Text = "", TextScaled = true, TextTransparency = 1, TextStrokeTransparency = 1, Parent = gui })
-	announceSub = label({ AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0.2, 48), Size = UDim2.fromOffset(900, 28), Text = "", TextSize = 22, Font = Enum.Font.GothamBold, TextTransparency = 1, TextStrokeTransparency = 1, Parent = gui })
+	announceSub = label({ AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0.2, 48), Size = UDim2.fromOffset(900, 28), Text = "", TextSize = 22, Font = Enum.Font.GothamBold, TextWrapped = true, TextTransparency = 1, TextStrokeTransparency = 1, Parent = gui })
 	toastLabel = label({ AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0.36, 0), Size = UDim2.fromOffset(520, 56), Text = "", TextScaled = true, TextTransparency = 1, TextStrokeTransparency = 1, Parent = gui })
+	for _, l in { announceTitle, announceSub, toastLabel } do
+		scaled(l)
+	end
 
-	-- Kill feed, top right.
-	feedList = new("Frame", { AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -16, 0, 100), Size = UDim2.fromOffset(440, 170), BackgroundTransparency = 1, Parent = gui })
+	-- Kill feed, top right (top left on touch screens, where the radar
+	-- takes the top right).
+	feedList = new("Frame", {
+		AnchorPoint = if touch then Vector2.new(0, 0) else Vector2.new(1, 0),
+		Position = if touch then UDim2.new(0, 12, 0, 56) else UDim2.new(1, -16, 0, 100),
+		Size = UDim2.fromOffset(440, 170),
+		BackgroundTransparency = 1,
+		Parent = gui,
+	})
 	new("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 2), Parent = feedList })
+	scaled(feedList)
 
 	-- Combo, right of centre.
 	comboLabel = label({ AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0.5, 150, 0.5, -40), Size = UDim2.fromOffset(220, 48), Text = "", TextSize = 40, TextColor3 = TONES.Gold, TextXAlignment = Enum.TextXAlignment.Left, Parent = gui })
+	scaled(comboLabel)
 	local comboBack = new("Frame", { Position = UDim2.new(0, 0, 1, 2), Size = UDim2.fromOffset(150, 6), BackgroundColor3 = Color3.fromRGB(60, 60, 70), Parent = comboLabel })
 	corner(comboBack, 3)
 	comboBar = new("Frame", { Size = UDim2.fromScale(0, 1), BackgroundColor3 = TONES.Gold, Parent = comboBack })
@@ -239,25 +296,28 @@ local function build()
 
 	-- Grabbed: red edges, mash prompt, wriggle and time bars.
 	grabFrame = new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.fromRGB(120, 20, 20), BackgroundTransparency = 0.7, Visible = false, Parent = gui })
-	label({ AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.42), Size = UDim2.fromOffset(700, 70), Text = "GRABBED!", TextScaled = true, TextColor3 = TONES.Danger, Parent = grabFrame })
+	-- (The prompt and bars sit in one box, scaled together.)
+	local grabBox = new("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.45), Size = UDim2.fromOffset(700, 170), BackgroundTransparency = 1, Parent = grabFrame })
+	scaled(grabBox)
+	label({ AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 0), Size = UDim2.fromOffset(700, 70), Text = "GRABBED!", TextScaled = true, TextColor3 = TONES.Danger, Parent = grabBox })
 	label({
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.new(0.5, 0, 0.42, 56),
+		AnchorPoint = Vector2.new(0.5, 0),
+		Position = UDim2.new(0.5, 0, 0, 76),
 		Size = UDim2.fromOffset(700, 30),
-		Text = if UserInputService.TouchEnabled then "TAP FAST to wriggle free!" else "MASH F / SPACE / CLICK to wriggle free!",
+		Text = if touch then "TAP FAST to wriggle free!" else "MASH ANY KEY OR BUTTON to wriggle free!",
 		Font = Enum.Font.GothamBold,
 		TextSize = 24,
-		Parent = grabFrame,
+		Parent = grabBox,
 	})
-	local grabBack = new("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0.42, 100), Size = UDim2.fromOffset(360, 18), BackgroundColor3 = Color3.fromRGB(40, 30, 30), Parent = grabFrame })
+	local grabBack = new("Frame", { AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 118), Size = UDim2.fromOffset(360, 18), BackgroundColor3 = Color3.fromRGB(40, 30, 30), Parent = grabBox })
 	corner(grabBack, 9)
 	grabBar = new("Frame", { Size = UDim2.fromScale(0, 1), BackgroundColor3 = TONES.Good, Parent = grabBack })
 	corner(grabBar, 9)
-	local timerBack = new("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0.42, 124), Size = UDim2.fromOffset(360, 6), BackgroundColor3 = Color3.fromRGB(40, 30, 30), Parent = grabFrame })
+	local timerBack = new("Frame", { AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 144), Size = UDim2.fromOffset(360, 6), BackgroundColor3 = Color3.fromRGB(40, 30, 30), Parent = grabBox })
 	grabTimer = new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = TONES.Danger, Parent = timerBack })
 
 	caughtFrame = new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.fromRGB(30, 20, 40), BackgroundTransparency = 0.35, Visible = false, Parent = gui })
-	label({
+	local caughtLabel = label({
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Position = UDim2.fromScale(0.5, 0.45),
 		Size = UDim2.fromOffset(700, 120),
@@ -266,16 +326,18 @@ local function build()
 		TextColor3 = TONES.Gold,
 		Parent = caughtFrame,
 	})
+	scaled(caughtLabel)
 	flash = new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.fromRGB(255, 255, 255), BackgroundTransparency = 1, Parent = gui })
 
 	-- Controls card (hidden on touch, where the buttons speak for themselves).
-	if not UserInputService.TouchEnabled then
+	if not touch then
 		local help = label({
-			Position = UDim2.new(0, 16, 1, -236),
+			AnchorPoint = Vector2.new(0, 1),
+			Position = UDim2.new(0, 16, 1, -18),
 			Size = UDim2.fromOffset(420, 218),
 			BackgroundColor3 = PANEL,
 			BackgroundTransparency = 0.3,
-			Text = "  Purple crystal = TITAN POWER (T to transform)\n  HOLD Q / E - left / right hook, then swing\n  HOLD SPACE - reel in (hooked) / gas (in the air)\n  SHIFT - gas dash      G - signal flare\n  CLICK or F - slash with both blades (spins in the air)\n  NECK = takedown   EYES = daze   ANKLES = trip\n  Attack from BEHIND - giants can't see you there\n  Grabbed? MASH to wriggle free!\n  Blue beams - resupply    Wall cannons - by the gate",
+			Text = "  Purple crystal = TITAN POWER (T to transform)\n  HOLD Q / E - left / right hook, then swing\n  HOLD SPACE - reel in (hooked) / gas (in the air)\n  CTRL or C - gas dash      G - signal flare\n  CLICK or F - slash with both blades (spins in the air)\n  NECK = takedown   EYES = daze   ANKLES = trip\n  Attack from BEHIND - giants can't see you there\n  Grabbed? MASH to wriggle free!\n  R - resupply (blue beams), wall cannons, crystals",
 			Font = Enum.Font.GothamMedium,
 			TextSize = 14,
 			TextXAlignment = Enum.TextXAlignment.Left,
@@ -283,6 +345,7 @@ local function build()
 			Parent = gui,
 		})
 		corner(help, 10)
+		scaled(help)
 		task.delay(60, function()
 			TweenService:Create(help, TweenInfo.new(1), { BackgroundTransparency = 1, TextTransparency = 1 }):Play()
 		end)
@@ -359,7 +422,13 @@ end
 
 function Hud.Init(grapple: any)
 	build()
-	Radar.Init(gui)
+	scaled(Radar.Init(gui))
+	rescale()
+	local camera = Workspace.CurrentCamera
+	if camera then
+		camera:GetPropertyChangedSignal("ViewportSize"):Connect(rescale)
+	end
+	task.spawn(Tutorial.Init, gui, grapple, scaled)
 	local remotes = ReplicatedStorage:WaitForChild("Remotes")
 	local function remote(name: string): RemoteEvent
 		return remotes:WaitForChild(name) :: RemoteEvent
@@ -419,6 +488,12 @@ function Hud.Init(grapple: any)
 			end
 			grabFrame.Visible = true
 			Effects.Shake(0.6)
+		elseif state == "Wriggle" then
+			-- The server's count drives the bar.
+			if type(info) == "table" and type(info.Count) == "number" then
+				wriggles = info.Count
+				grabNeeded = info.Needed or grabNeeded
+			end
 		else
 			grabbed = false
 			grabFrame.Visible = false
@@ -429,18 +504,10 @@ function Hud.Init(grapple: any)
 			end
 		end
 	end)
-	UserInputService.InputBegan:Connect(function(input, _processed)
-		if not grabbed then
-			return
-		end
-		local kind = input.UserInputType
-		if kind == Enum.UserInputType.Keyboard or kind == Enum.UserInputType.MouseButton1 or kind == Enum.UserInputType.Touch or kind == Enum.UserInputType.Gamepad1 then
-			local now = os.clock()
-			if now - lastWriggle >= 1 / Config.Hunters.StruggleRate then
-				lastWriggle = now
-				wriggles += 1
-			end
-		end
+	-- A new body is never held (the server lets go when you respawn).
+	player.CharacterAdded:Connect(function()
+		grabbed = false
+		grabFrame.Visible = false
 	end)
 
 	remote(Config.Remotes.Knocked).OnClientEvent:Connect(function()
@@ -467,8 +534,22 @@ function Hud.Init(grapple: any)
 			waveLabel.Text = `{round}  -  SOMETHING IS AT THE GATE...`
 		elseif info.Phase == "Victory" then
 			waveLabel.Text = `{round}  -  DISTRICT SAVED!`
+		elseif info.Phase == "Fallen" then
+			waveLabel.Text = `{round}  -  THE DISTRICT HAS FALLEN`
 		else
-			waveLabel.Text = `{round}  -  WAVE {info.Wave}/{info.Waves}  -  {info.Alive} GIANT{if info.Alive == 1 then "" else "S"} LEFT`
+			local clock = ""
+			if type(info.TimeLeft) == "number" then
+				clock = if info.TimeLeft > 0 then `  -  {info.TimeLeft // 60}:{string.format("%02d", info.TimeLeft % 60)}` else "  -  STORMING IN!"
+			end
+			waveLabel.Text = `{round}  -  WAVE {info.Wave}/{info.Waves}  -  {info.Alive} GIANT{if info.Alive == 1 then "" else "S"} LEFT{clock}`
+		end
+		-- The district's health.
+		if type(info.District) == "number" and type(info.DistrictMax) == "number" and info.DistrictMax > 0 then
+			local ratio = math.clamp(info.District / info.DistrictMax, 0, 1)
+			districtBack.Visible = true
+			districtFill.Size = UDim2.fromScale(ratio, 1)
+			districtFill.BackgroundColor3 = if ratio > 0.5 then TONES.Good elseif ratio > 0.25 then TONES.Gold else TONES.Danger
+			districtLabel.Text = `DISTRICT  {math.floor(ratio * 100 + 0.5)}%`
 		end
 	end)
 
@@ -476,11 +557,8 @@ function Hud.Init(grapple: any)
 	local hookColors = { Idle = Color3.fromRGB(150, 155, 165), Flying = Color3.fromRGB(255, 220, 90), Attached = Color3.fromRGB(120, 255, 150) }
 	local hintTimer = 0
 	RunService.RenderStepped:Connect(function(dt: number)
-		local location = UserInputService:GetMouseLocation()
-		if UserInputService.MouseBehavior == Enum.MouseBehavior.LockCenter or UserInputService.TouchEnabled then
-			local size = Workspace.CurrentCamera.ViewportSize
-			location = Vector2.new(size.X / 2, size.Y / 2)
-		end
+		-- (The screen centre with shift-lock, touch or a gamepad.)
+		local location: Vector2 = grapple.AimPoint()
 		crosshair.Position = UDim2.fromOffset(location.X, location.Y)
 		local inRange = grapple.AimTarget(0) ~= nil
 		crosshair.BackgroundColor3 = if inRange then Color3.fromRGB(120, 255, 150) else Color3.fromRGB(255, 255, 255)

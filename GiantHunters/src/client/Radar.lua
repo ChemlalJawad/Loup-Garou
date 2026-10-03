@@ -1,13 +1,15 @@
 --!strict
--- The radar, bottom right: turns with the camera (up = where you're
--- looking). Giants are red dots sized by height (runners orange, armoured
--- grey), other hunters blue, supply crates cyan, the gate a yellow mark,
--- the Great Wall a ring.
+-- The radar, bottom right (top right on touch screens, clear of the
+-- buttons): turns with the camera (up = where you're looking). Giants are
+-- red dots sized by height (runners orange, armoured grey), other hunters
+-- blue, supply crates cyan, the gate a yellow mark, the Great Wall a ring.
+-- Giants beyond its range show as arrows round the edge, pointing at them.
 
 local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 
 local Config = require(ReplicatedStorage.Shared.Config)
@@ -36,11 +38,13 @@ local function round(parent: Instance)
 	corner.Parent = parent
 end
 
-function Radar.Init(gui: ScreenGui)
+-- Builds the radar in `gui`; returns its panel (the HUD scales it).
+function Radar.Init(gui: ScreenGui): Frame
+	local touch = UserInputService.TouchEnabled
 	local panel = frame({
 		Name = "Radar",
-		AnchorPoint = Vector2.new(1, 1),
-		Position = UDim2.new(1, -18, 1, -18),
+		AnchorPoint = if touch then Vector2.new(1, 0) else Vector2.new(1, 1),
+		Position = if touch then UDim2.new(1, -12, 0, 52) else UDim2.new(1, -18, 1, -18),
 		Size = UDim2.fromOffset(SIZE, SIZE),
 		BackgroundColor3 = Color3.fromRGB(20, 26, 22),
 		BackgroundTransparency = 0.25,
@@ -90,6 +94,28 @@ function Radar.Init(gui: ScreenGui)
 		return shown
 	end
 
+	-- Edge arrows for giants out of range.
+	local arrows: { TextLabel } = {}
+	local function arrow(i: number): TextLabel
+		local a = arrows[i]
+		if not a then
+			local created = Instance.new("TextLabel")
+			created.AnchorPoint = Vector2.new(0.5, 0.5)
+			created.Size = UDim2.fromOffset(14, 14)
+			created.BackgroundTransparency = 1
+			created.Text = "▲"
+			created.TextScaled = true
+			created.TextStrokeTransparency = 0.4
+			created.ZIndex = 4
+			created.Parent = panel
+			arrows[i] = created
+			a = created
+		end
+		local shown = a :: TextLabel
+		shown.Visible = true
+		return shown
+	end
+
 	local player = Players.LocalPlayer
 	local camera = Workspace.CurrentCamera
 	local elapsed = 0
@@ -124,7 +150,8 @@ function Radar.Init(gui: ScreenGui)
 		gate.Visible = gateVisible
 
 		local count = 0
-		local function place(p: Vector3, size: number, color: Color3)
+		local arrowCount = 0
+		local function place(p: Vector3, size: number, color: Color3, edge: boolean?)
 			local x, y, visible = toRadar(p)
 			if visible then
 				count += 1
@@ -132,6 +159,16 @@ function Radar.Init(gui: ScreenGui)
 				d.Position = UDim2.fromOffset(x, y)
 				d.Size = UDim2.fromOffset(size, size)
 				d.BackgroundColor3 = color
+			elseif edge then
+				-- Off the radar: an arrow on the rim, pointing its way.
+				local dx, dy = x - SIZE / 2, y - SIZE / 2
+				local rim = SIZE / 2 - 9
+				local stretch = rim / math.max(math.abs(dx), math.abs(dy))
+				arrowCount += 1
+				local a = arrow(arrowCount)
+				a.Position = UDim2.fromOffset(SIZE / 2 + dx * stretch, SIZE / 2 + dy * stretch)
+				a.Rotation = math.deg(math.atan2(dx, -dy))
+				a.TextColor3 = color
 			end
 		end
 		for _, crate in CollectionService:GetTagged(Config.Tags.Supply) do
@@ -158,14 +195,18 @@ function Radar.Init(gui: ScreenGui)
 						elseif kind == "Beast" then Color3.fromRGB(150, 90, 60)
 						elseif kind == "Armored" then Color3.fromRGB(190, 185, 170)
 						else Color3.fromRGB(240, 70, 60)
-					place(giantRoot.Position, math.clamp(height / 4, 6, 14), color)
+					place(giantRoot.Position, math.clamp(height / 4, 6, 14), color, true)
 				end
 			end
 		end
 		for i = count + 1, #dots do
 			dots[i].Visible = false
 		end
+		for i = arrowCount + 1, #arrows do
+			arrows[i].Visible = false
+		end
 	end)
+	return panel
 end
 
 return Radar

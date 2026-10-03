@@ -7,14 +7,23 @@
 --     the anchor like a pendulum. Let go to release and keep your momentum.
 --   Hold Space (A, or "Gas"): hooked - reel the cables in hard; unhooked,
 --     in the air - a gas burst along the camera. On the ground Space jumps.
---   Tap Shift (B, or "Dash"): a quick gas dash in the direction you steer.
+--   Tap Ctrl or C (B, or "Dash"): a quick gas dash in the direction you
+--     steer. (Shift is left alone for shift-lock.)
 --   WASD in the air: steer.
 --   Click / F (X, or "Slash"): swing both blades - a full spin in the air.
 --     Aim for the glowing lump on a giant's neck; faster = cleaner cut.
 --   G (Y, or "Flare"): fire a green signal flare.
 --
--- Grabbed by a giant: every key wriggles (mash to get free). Swatted: you
--- go flying and your hooks let go.
+-- Aiming: the mouse, or the centre of the screen with shift-lock, on a
+-- touch screen, or when you last used a gamepad.
+--
+-- Hooks fire even with an empty tank (only reeling, boosting and dashing
+-- use gas), and a hooked hunter's tank trickles back a little. Reeling onto
+-- a giant stops just off its skin, and you cling on as it moves.
+--
+-- Grabbed by a giant: every key, click, tap or button wriggles (mash to get
+-- free); the server counts them. Swatted: you go flying and your hooks let
+-- go.
 --
 -- Gas shows as white jets behind you, and the view widens with speed.
 --
@@ -30,8 +39,11 @@ local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 
+local CollectionService = game:GetService("CollectionService")
+
 local Config = require(ReplicatedStorage.Shared.Config)
 local Effects = require(script.Parent.Effects)
+local TouchButtons = require(script.Parent.TouchButtons)
 
 local GrappleController = {}
 
@@ -45,6 +57,8 @@ type Hook = {
 	Tip: Attachment?, -- flying hook head (on the terrain, moved each frame)
 	TargetPart: BasePart?,
 	TargetLocal: Vector3?, -- target in TargetPart's space (it may move)
+	TargetNormal: Vector3?, -- the surface's normal there, in TargetPart's space
+	OnGiant: boolean, -- bit a giant: reeling stops just off its skin
 	Anchor: Attachment?,
 	Length: number,
 	Beam: Beam?,
@@ -58,8 +72,8 @@ local character: Model? = nil
 local root: BasePart? = nil
 local humanoid: Humanoid? = nil
 local hooks: { [string]: Hook } = {
-	Left = { Name = "Left", Side = -1, Held = false, State = "Idle", Length = 0 },
-	Right = { Name = "Right", Side = 1, Held = false, State = "Idle", Length = 0 },
+	Left = { Name = "Left", Side = -1, Held = false, State = "Idle", OnGiant = false, Length = 0 },
+	Right = { Name = "Right", Side = 1, Held = false, State = "Idle", OnGiant = false, Length = 0 },
 }
 local gas = settings.GasMax
 local gasHeld = false
@@ -74,21 +88,42 @@ local BASE_FOV = 70
 local held = false -- in a giant's hand: inputs wriggle instead
 local wind: Sound? = nil
 local struggleRemote: RemoteEvent? = nil
+local lastWriggle = 0
+local reelingSince: number? = nil -- for the tutorial: how long you've been reeling in
+local titanJumpOff = false
 
 local rayParams = RaycastParams.new()
 rayParams.FilterType = Enum.RaycastFilterType.Exclude
+rayParams.IgnoreWater = true -- hooks never bite the river
 
 local function remote(name: string): RemoteEvent
 	return ReplicatedStorage:WaitForChild("Remotes"):WaitForChild(name) :: RemoteEvent
 end
 
-local function aimRay(): Ray
-	-- Mouse position on desktop; the screen centre with shift-lock or touch.
-	local location = UserInputService:GetMouseLocation()
-	if UserInputService.MouseBehavior == Enum.MouseBehavior.LockCenter or UserInputService.TouchEnabled then
+local GAMEPADS = {
+	[Enum.UserInputType.Gamepad1] = true,
+	[Enum.UserInputType.Gamepad2] = true,
+	[Enum.UserInputType.Gamepad3] = true,
+	[Enum.UserInputType.Gamepad4] = true,
+}
+
+-- Where on screen you're aiming (the crosshair): the mouse on desktop; the
+-- screen centre with shift-lock, on a touch screen, or on a gamepad.
+function GrappleController.AimPoint(): Vector2
+	local last = UserInputService:GetLastInputType()
+	local centre = UserInputService.MouseBehavior == Enum.MouseBehavior.LockCenter
+		or last == Enum.UserInputType.Touch
+		or GAMEPADS[last] == true
+		or (UserInputService.TouchEnabled and not UserInputService.MouseEnabled)
+	if centre then
 		local size = camera.ViewportSize
-		location = Vector2.new(size.X / 2, size.Y / 2)
+		return Vector2.new(size.X / 2, size.Y / 2)
 	end
+	return UserInputService:GetMouseLocation()
+end
+
+local function aimRay(): Ray
+	local location = GrappleController.AimPoint()
 	return camera:ViewportPointToRay(location.X, location.Y)
 end
 
@@ -152,7 +187,8 @@ local function release(hook: Hook, tellServer: boolean?)
 	end
 	local wasActive = hook.State ~= "Idle"
 	hook.Beam, hook.Anchor, hook.Tip = nil, nil, nil
-	hook.TargetPart, hook.TargetLocal = nil, nil
+	hook.TargetPart, hook.TargetLocal, hook.TargetNormal = nil, nil, nil
+	hook.OnGiant = false
 	hook.State = "Idle"
 	if wasActive and tellServer ~= false and hookRemote then
 		hookRemote:FireServer(hook.Name, nil, nil)
@@ -170,8 +206,21 @@ local function isTitan(): boolean
 	return character ~= nil and (character :: Model):GetAttribute("Shifted") == true
 end
 
+-- Part of a giant (or a titan)?
+local function isGiantPart(part: Instance): boolean
+	local model = part:FindFirstAncestorWhichIsA("Model")
+	while model do
+		if CollectionService:HasTag(model, Config.Tags.Giant) then
+			return true
+		end
+		model = model:FindFirstAncestorWhichIsA("Model")
+	end
+	return false
+end
+
 local function fire(hook: Hook)
-	if not root or not humanoid or humanoid.Health <= 0 or gas <= 0 or not hook.Hip or isTitan() then
+	-- (No gas needed to fire: an empty tank must never leave you stranded.)
+	if not root or not humanoid or humanoid.Health <= 0 or held or not hook.Hip or isTitan() then
 		return
 	end
 	local hit = GrappleController.AimTarget(hook.Side * settings.HookSideOffset)
@@ -182,6 +231,8 @@ local function fire(hook: Hook)
 	local targetPart = hit.Instance :: BasePart
 	hook.TargetPart = targetPart
 	hook.TargetLocal = targetPart.CFrame:PointToObjectSpace(hit.Position)
+	hook.TargetNormal = targetPart.CFrame:VectorToObjectSpace(hit.Normal)
+	hook.OnGiant = isGiantPart(targetPart)
 	-- The flying hook head: an attachment on the terrain we slide each frame.
 	local tip = Instance.new("Attachment")
 	tip.Name = "HookTip"
@@ -311,8 +362,14 @@ local function step(dt: number)
 	if not root or not humanoid then
 		return
 	end
-	if humanoid.Health <= 0 or held or isTitan() then
-		if isTitan() then
+	-- Titans don't jump (the server zeroes the jump too; the state is ours).
+	local titan = isTitan()
+	if titan ~= titanJumpOff then
+		titanJumpOff = titan
+		humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, not titan)
+	end
+	if humanoid.Health <= 0 or held or titan then
+		if titan then
 			humanoid.AutoRotate = true
 		end
 		releaseAll()
@@ -328,6 +385,11 @@ local function step(dt: number)
 	local position = root.Position
 	local velocity = root.AssemblyLinearVelocity
 	local reeling = gasHeld and gas > 0 and attachedCount() > 0
+	if reeling then
+		reelingSince = reelingSince or os.clock()
+	else
+		reelingSince = nil
+	end
 
 	for _, hook in hooks do
 		if hook.State == "Flying" and hook.Tip and hook.TargetPart and hook.TargetLocal then
@@ -350,9 +412,21 @@ local function step(dt: number)
 				release(hook) -- whatever it bit is gone (a giant steamed away)
 				continue
 			end
-			local toAnchor = anchor.WorldPosition - position
+			local anchorPoint = anchor.WorldPosition
+			local part = anchor.Parent :: BasePart
+			if hook.OnGiant and hook.TargetNormal then
+				-- Reel to just off a giant's skin, never through it.
+				anchorPoint += part.CFrame:VectorToWorldSpace(hook.TargetNormal) * settings.GiantStandOff
+			end
+			local toAnchor = anchorPoint - position
 			local distance = toAnchor.Magnitude
 			if distance < settings.ReleaseDistance then
+				if hook.OnGiant then
+					-- Arrived: cling on and ride along with it.
+					velocity = part.AssemblyLinearVelocity
+					hook.Length = settings.ReleaseDistance
+					continue
+				end
 				release(hook)
 				continue
 			end
@@ -391,6 +465,10 @@ local function step(dt: number)
 		end
 	elseif not hooked then
 		gas = math.min(settings.GasMax, gas + settings.GasRegenPerSecondGrounded * dt)
+	end
+	if hooked and not reeling then
+		-- A trickle while you hang on a cable.
+		gas = math.min(settings.GasMax, gas + settings.GasRegenPerSecondSwinging * dt)
 	end
 	if gas <= 0 then
 		gas = 0
@@ -441,11 +519,19 @@ end
 
 local function onCharacter(newCharacter: Model)
 	releaseAll()
+	held = false -- a fresh body is never in a giant's hand
+	titanJumpOff = false
 	character = newCharacter
 	root = newCharacter:WaitForChild("HumanoidRootPart", 10) :: BasePart?
 	humanoid = newCharacter:WaitForChild("Humanoid", 10) :: Humanoid?
 	gas = settings.GasMax
 	refreshFilter()
+	if humanoid then
+		-- Hunters flip and tumble through the air all the time: never let
+		-- the humanoid decide that's a fall and go floppy.
+		humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+		humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
+	end
 	if root then
 		for name, hook in hooks do
 			local hip = Instance.new("Attachment")
@@ -524,8 +610,17 @@ function GrappleController.IsHeld(): boolean
 	return held
 end
 
+-- Seconds you've been reeling in without a break (0 if you aren't).
+function GrappleController.ReelTime(): number
+	return if reelingSince then os.clock() - reelingSince else 0
+end
+
+-- Held: any key, click, tap or gamepad button is a wriggle. The server
+-- counts them (and caps the rate); the wriggle bar shows its count.
 local function struggle()
-	if struggleRemote then
+	local now = os.clock()
+	if struggleRemote and now - lastWriggle >= 1 / Config.Hunters.StruggleRate then
+		lastWriggle = now
 		struggleRemote:FireServer()
 	end
 end
@@ -554,36 +649,58 @@ function GrappleController.Init()
 		clearRemoteCable(other, "Right")
 		remoteCables[other] = nil
 	end)
+	-- A hunter who falls, is caught or respawns drops their cables.
+	local function watchCables(other: Player)
+		other.CharacterRemoving:Connect(function()
+			clearRemoteCable(other, "Left")
+			clearRemoteCable(other, "Right")
+		end)
+	end
+	for _, other in Players:GetPlayers() do
+		watchCables(other)
+	end
+	Players.PlayerAdded:Connect(watchCables)
 
+	UserInputService.InputBegan:Connect(function(input, _processed)
+		if not held then
+			return
+		end
+		local kind = input.UserInputType
+		if kind == Enum.UserInputType.Keyboard or kind == Enum.UserInputType.MouseButton1 or kind == Enum.UserInputType.MouseButton2 or kind == Enum.UserInputType.Touch or GAMEPADS[kind] then
+			struggle()
+		end
+	end)
+
+	-- (On touch screens our own buttons, from TouchButtons, replace the
+	-- default ones: they're laid out so nothing overlaps.)
+	local function pressHook(name: string, down: boolean)
+		local hook = hooks[name]
+		if held then
+			return
+		end
+		if down then
+			hook.Held = true
+			fire(hook)
+		else
+			hook.Held = false
+			release(hook)
+		end
+	end
 	local function hookAction(name: string): (string, Enum.UserInputState, InputObject) -> Enum.ContextActionResult
 		return function(_action, state, _input)
-			local hook = hooks[name]
-			if held then
-				if state == Enum.UserInputState.Begin then
-					struggle()
-				end
-				return Enum.ContextActionResult.Sink
-			end
 			if state == Enum.UserInputState.Begin then
-				hook.Held = true
-				fire(hook)
+				pressHook(name, true)
 			elseif state == Enum.UserInputState.End or state == Enum.UserInputState.Cancel then
-				hook.Held = false
-				release(hook)
+				pressHook(name, false)
 			end
 			return Enum.ContextActionResult.Sink
 		end
 	end
-	ContextActionService:BindAction("HookLeft", hookAction("Left"), true, Enum.KeyCode.Q, Enum.KeyCode.ButtonL1)
-	ContextActionService:BindAction("HookRight", hookAction("Right"), true, Enum.KeyCode.E, Enum.KeyCode.ButtonR1)
-	ContextActionService:SetTitle("HookLeft", "L Hook")
-	ContextActionService:SetTitle("HookRight", "R Hook")
+	ContextActionService:BindAction("HookLeft", hookAction("Left"), false, Enum.KeyCode.Q, Enum.KeyCode.ButtonL1)
+	ContextActionService:BindAction("HookRight", hookAction("Right"), false, Enum.KeyCode.E, Enum.KeyCode.ButtonR1)
 
 	ContextActionService:BindActionAtPriority("Gas", function(_action, state, input)
 		if held then
-			if state == Enum.UserInputState.Begin then
-				struggle()
-			end
 			return Enum.ContextActionResult.Sink
 		end
 		if state == Enum.UserInputState.Begin then
@@ -596,40 +713,73 @@ function GrappleController.Init()
 			gasHeld = false
 		end
 		return Enum.ContextActionResult.Pass
-	end, true, Enum.ContextActionPriority.High.Value, Enum.KeyCode.Space, Enum.KeyCode.ButtonA)
-	ContextActionService:SetTitle("Gas", "Gas")
+	end, false, Enum.ContextActionPriority.High.Value, Enum.KeyCode.Space, Enum.KeyCode.ButtonA)
 
+	-- Dash: Ctrl or C (Shift stays free for shift-lock).
 	ContextActionService:BindAction("Dash", function(_action, state, _input)
-		if state == Enum.UserInputState.Begin then
-			if held then
-				struggle()
-			else
-				dash()
-			end
+		if state == Enum.UserInputState.Begin and not held then
+			dash()
 		end
 		return Enum.ContextActionResult.Sink
-	end, true, Enum.KeyCode.LeftShift, Enum.KeyCode.ButtonB)
-	ContextActionService:SetTitle("Dash", "Dash")
+	end, false, Enum.KeyCode.LeftControl, Enum.KeyCode.C, Enum.KeyCode.ButtonB)
 
 	ContextActionService:BindAction("Slash", function(_action, state, _input)
-		if state == Enum.UserInputState.Begin then
-			if held then
-				struggle()
-			else
-				slash()
-			end
+		if state == Enum.UserInputState.Begin and not held then
+			slash()
 		end
 		return Enum.ContextActionResult.Pass
-	end, true, Enum.KeyCode.F, Enum.UserInputType.MouseButton1, Enum.KeyCode.ButtonX)
-	ContextActionService:SetTitle("Slash", "Slash")
+	end, false, Enum.KeyCode.F, Enum.UserInputType.MouseButton1, Enum.KeyCode.ButtonX)
 
-	ContextActionService:BindAction("Flare", function(_action, state, _input)
-		if state == Enum.UserInputState.Begin and not held then
+	local function flare()
+		if not held then
 			remote(Config.Remotes.Flare):FireServer()
 		end
+	end
+	ContextActionService:BindAction("Flare", function(_action, state, _input)
+		if state == Enum.UserInputState.Begin then
+			flare()
+		end
 		return Enum.ContextActionResult.Sink
-	end, true, Enum.KeyCode.G, Enum.KeyCode.ButtonY)
-	ContextActionService:SetTitle("Flare", "Flare")
+	end, false, Enum.KeyCode.G, Enum.KeyCode.ButtonY)
+
+	if TouchButtons.Enabled() then
+		TouchButtons.Init()
+		TouchButtons.Add("HookLeft", "HookLeft", "L HOOK", function()
+			pressHook("Left", true)
+		end, function()
+			pressHook("Left", false)
+		end)
+		TouchButtons.Add("HookRight", "HookRight", "R HOOK", function()
+			pressHook("Right", true)
+		end, function()
+			pressHook("Right", false)
+		end)
+		TouchButtons.Add("Gas", "Gas", "GAS", function()
+			if not held then
+				gasHeld = true
+			end
+		end, function()
+			gasHeld = false
+		end)
+		TouchButtons.Add("Dash", "Dash", "DASH", function()
+			if not held then
+				dash()
+			end
+		end)
+		TouchButtons.Add("Slash", "Slash", "SLASH", function()
+			if not held then
+				slash()
+			end
+		end)
+		TouchButtons.Add("Flare", "Flare", "FLARE", flare)
+		-- As a titan the gear is put away (ShifterController shows its own).
+		RunService.Heartbeat:Connect(function()
+			local gear = not isTitan()
+			for _, name in { "HookLeft", "HookRight", "Gas", "Dash", "Slash", "Flare" } do
+				TouchButtons.Show(name, gear)
+			end
+		end)
+	end
 
 	task.spawn(function()
 		local hookEvent = remote(Config.Remotes.Hook)
@@ -643,8 +793,9 @@ function GrappleController.Init()
 		remote(Config.Remotes.Held).OnClientEvent:Connect(function(state: string, reason: any)
 			if state == "Grabbed" then
 				held = true
+				gasHeld = false
 				releaseAll()
-			else
+			elseif state == "Free" then
 				held = false
 				-- Wriggled out or cut loose: a hop up and back, out of its reach.
 				if (reason == "Escaped" or reason == "Rescued") and root and humanoid then
