@@ -223,7 +223,7 @@ Config.Waves = {
 	-- storms into town, and stragglers further than StragglerRadius from the
 	-- centre steam away.
 	TimeLimit = 150,
-	StragglerRadius = 620,
+	StragglerRadius = 760, -- beyond the giant spawn ring (World.GiantSpawnRadius)
 	HurrySpeed = 1.4,
 	RoamChance = 0.2, -- giants that first roam the wilds (the forests, the training grounds, the castle)
 }
