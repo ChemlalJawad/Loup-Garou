@@ -87,6 +87,8 @@ export type GiantLook = {
 	Shorts: Color3?,
 	Crazy: boolean?, -- odd eyes: the "abnormal" look
 	Armor: boolean?, -- rock plates, one of them over the nape
+	Face: string?, -- force an expression: "Grin", "Sleepy" or "Gape"
+	Beard: boolean?, -- force a beard (true) or none (false)
 }
 
 export type GiantKind = {
@@ -116,7 +118,7 @@ Config.GiantKinds = {
 		GrabReach = 13,
 		Points = 3,
 		Abnormal = true,
-		Look = { Body = "Lanky", Hair = "Spiky", Shorts = Color3.fromRGB(240, 160, 40), Crazy = true },
+		Look = { Body = "Lanky", Hair = "Spiky", Shorts = Color3.fromRGB(240, 160, 40), Crazy = true, Face = "Gape", Beard = false },
 	},
 	Armored = {
 		Name = "Armored",
@@ -140,7 +142,7 @@ Config.GiantKinds = {
 		GrabReach = 24,
 		Points = 12,
 		Powers = true,
-		Look = { Body = "Lanky", Hair = "Mop", Shorts = Color3.fromRGB(60, 46, 40) },
+		Look = { Body = "Gangly", Hair = "Mop", Shorts = Color3.fromRGB(60, 46, 40), Beard = true, Face = "Gape" },
 	},
 	-- A player who took the titan power, transformed (see ShifterService).
 	Shifter = {
@@ -162,7 +164,7 @@ Config.GiantKinds = {
 		NapeHealth = 1,
 		GrabReach = 0,
 		Points = 0,
-		Look = { Body = "Lanky", Hair = "Bald", Shorts = Color3.fromRGB(110, 60, 50) },
+		Look = { Body = "Lanky", Hair = "Bald", Shorts = Color3.fromRGB(110, 60, 50), Face = "Grin", Beard = false },
 	},
 } :: { [string]: GiantKind }
 
@@ -242,7 +244,7 @@ Config.World = {
 	GateAngle = 0, -- the south gate
 	GateWidth = 36,
 	GateHeight = 56,
-	LandRadius = 720, -- open land outside the wall; hills beyond
+	LandRadius = 1300, -- the land outside the wall reaches this far; hills beyond
 	PlazaRadius = 56,
 	RingRoads = { 120, 200 }, -- radii of the two ring roads
 	RoadWidth = 16,
@@ -278,6 +280,7 @@ Config.Tags = {
 	NightLight = "NightLight", -- lanterns and torches: lit at night (client)
 	LitWindow = "LitWindow", -- windows that glow warm at night (client)
 	PowerOrb = "PowerOrb",
+	DummyNape = "DummyNape", -- training dummies' targets
 }
 
 -- === Day and night ===========================================================

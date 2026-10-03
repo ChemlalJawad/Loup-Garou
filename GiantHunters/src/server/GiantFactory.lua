@@ -52,14 +52,20 @@ local TEETH = Color3.fromRGB(250, 248, 236)
 -- Body types: multipliers on the base proportions, plus how far forward
 -- the giant slouches (radians). Bighead is the classic odd one out: short
 -- legs, a huge head and a grin you can see from the top of the wall.
+-- Gangly is the creepy one: thin as a rake, a small head, a deep stoop and
+-- arms that hang down past its knees.
 local BODY_TYPES = {
-	Lanky = { Width = 0.8, LimbLength = 1.08, Belly = 0.7, Head = 1, Hunch = 0.14 },
-	Stocky = { Width = 1.2, LimbLength = 0.92, Belly = 0.9, Head = 0.95, Hunch = 0.08 },
-	Chubby = { Width = 1.1, LimbLength = 0.95, Belly = 1.35, Head = 1.05, Hunch = 0.06 },
-	Bighead = { Width = 0.95, LimbLength = 0.86, Belly = 0.85, Head = 1.4, Hunch = 0.1 },
+	Lanky = { Width = 0.8, LimbLength = 1.08, ArmLength = 1, Belly = 0.7, Head = 1, Hunch = 0.14, Ribs = true },
+	Stocky = { Width = 1.2, LimbLength = 0.92, ArmLength = 1, Belly = 0.9, Head = 0.95, Hunch = 0.08, Ribs = false },
+	Chubby = { Width = 1.1, LimbLength = 0.95, ArmLength = 1, Belly = 1.35, Head = 1.05, Hunch = 0.06, Ribs = false },
+	Bighead = { Width = 0.95, LimbLength = 0.86, ArmLength = 1, Belly = 0.85, Head = 1.4, Hunch = 0.1, Ribs = false },
+	Gangly = { Width = 0.7, LimbLength = 1.15, ArmLength = 1.35, Belly = 0.6, Head = 0.85, Hunch = 0.2, Ribs = true },
 }
-local BODY_TYPE_NAMES = { "Lanky", "Stocky", "Chubby", "Bighead" }
+local BODY_TYPE_NAMES = { "Lanky", "Stocky", "Chubby", "Bighead", "Gangly" }
 local HAIR_STYLES = { "Bald", "Cap", "Mop", "Spiky" }
+-- Expressions: the classic wide grin, a dopey half-asleep stare, or a
+-- gaping mouth with a top and a bottom row of teeth.
+local FACES = { "Grin", "Grin", "Sleepy", "Gape" }
 
 -- Cylinders run along their local X; this turns one upright.
 local UPRIGHT = CFrame.Angles(0, 0, math.rad(90))
@@ -175,7 +181,7 @@ function GiantFactory.Build(kindName: string, position: Vector3, rng: Random): R
 	local legWidth = h * 0.11 * body.Width
 	local pelvisHeight = h * 0.08
 	local torsoHeight, torsoWidth, torsoDepth = h * 0.26, h * 0.28 * body.Width, h * 0.15 * body.Width
-	local upperArm, foreArm = h * 0.17 * body.LimbLength, h * 0.16 * body.LimbLength
+	local upperArm, foreArm = h * 0.17 * body.LimbLength * body.ArmLength, h * 0.16 * body.LimbLength * body.ArmLength
 	local armWidth = h * 0.085 * body.Width
 	local neckLength = h * 0.05
 	local headSize = h * 0.17 * body.Head
@@ -210,6 +216,14 @@ function GiantFactory.Build(kindName: string, position: Vector3, rng: Random): R
 	local torso = softBlock(model, "Torso", Vector3.new(torsoWidth, torsoHeight + tuck, torsoDepth), base * CFrame.new(0, torsoCentreY - tuck / 2, 0), skin, nil, true)
 	motor("Waist", root, torso, base * CFrame.new(0, waistY, 0), CFrame.Angles(-body.Hunch, 0, 0))
 	weld(torso, part(model, "Belly", Vector3.one * torsoWidth * 0.62 * body.Belly, base * CFrame.new(0, waistY + torsoHeight * 0.3, -torsoDepth * 0.28), skin, Enum.PartType.Ball))
+	if body.Ribs then
+		-- Skinny giants show their ribs: thin rolls across the chest.
+		for r = 1, 3 do
+			local y = torsoCentreY + torsoHeight * (0.02 + r * 0.1)
+			local width = torsoWidth * (0.48 + r * 0.06)
+			weld(torso, part(model, `Rib{r}`, Vector3.new(width, h * 0.016, h * 0.016), base * CFrame.new(0, y, -torsoDepth / 2 + h * 0.004), darker, Enum.PartType.Cylinder))
+		end
+	end
 	for i, side in { -1, 1 } do
 		weld(torso, part(model, `ShoulderCap{i}`, Vector3.one * armWidth * 1.45, base * CFrame.new(side * (torsoWidth / 2 + armWidth * 0.2), torsoCentreY + torsoHeight / 2 - armWidth * 0.55, 0), skin, Enum.PartType.Ball))
 	end
@@ -235,14 +249,30 @@ function GiantFactory.Build(kindName: string, position: Vector3, rng: Random): R
 	local muzzleRadius = headSize * 0.4
 	face("Muzzle", Vector3.one * muzzleRadius * 2, CFrame.new(muzzleAt), skin, Enum.PartType.Ball)
 
+	local expression = look.Face or FACES[rng:NextInteger(1, #FACES)]
+
 	-- The grin: a wide, toothy smile wrapped round the muzzle, corners
 	-- turned up. Goofy from afar, a little unsettling up close - on brand.
-	local GRIN_SPAN, GRIN_PIECES = 0.85, 5
+	-- Sleepy giants have a smaller, dopey one.
+	local GRIN_SPAN, GRIN_PIECES = if expression == "Sleepy" then 0.55 else 0.85, 5
 	local function grinPoint(turn: number): Vector3
 		local lift = headSize * 0.08 * (turn / GRIN_SPAN) ^ 2
 		return muzzleAt + onBall(muzzleRadius, turn, -headSize * 0.02 + lift, 0)
 	end
-	for g = 1, GRIN_PIECES do
+	if expression == "Gape" then
+		-- A round, gaping mouth sunk into the muzzle, a row of teeth along the
+		-- top and the bottom of it.
+		local mouthRadius = headSize * 0.17
+		local mouthAt = muzzleAt + onBall(muzzleRadius, 0, -headSize * 0.04, -mouthRadius * 0.55)
+		face("Mouth", Vector3.one * mouthRadius * 2, CFrame.new(mouthAt), LIPS:Lerp(Color3.new(0, 0, 0), 0.4), Enum.PartType.Ball)
+		for row, up in { 0.7, -0.7 } do
+			for t, turn in { -0.42, -0.14, 0.14, 0.42 } do
+				local at = mouthAt + onBall(mouthRadius, turn, up * mouthRadius, -headSize * 0.01)
+				face(`Tooth{row}{t}`, Vector3.new(headSize * 0.055, headSize * 0.06, headSize * 0.04), CFrame.lookAt(at, at + Vector3.new(math.sin(turn), 0, -math.cos(turn))), TEETH)
+			end
+		end
+	end
+	for g = 1, if expression == "Gape" then 0 else GRIN_PIECES do
 		local a = grinPoint(-GRIN_SPAN + (g - 1) * 2 * GRIN_SPAN / GRIN_PIECES)
 		local b = grinPoint(-GRIN_SPAN + g * 2 * GRIN_SPAN / GRIN_PIECES)
 		local along = (b - a).Unit
@@ -262,17 +292,24 @@ function GiantFactory.Build(kindName: string, position: Vector3, rng: Random): R
 	for i, side in { -1, 1 } do
 		local eye = onBall(skull, side * 0.38, headSize * 0.1, -headSize * 0.08)
 		local eyeSize = if look.Crazy then (if side < 0 then 0.32 else 0.22) else 0.26
-		local gaze = if look.Crazy then Vector3.new(side * 0.04, side * 0.035, 0) * headSize else Vector3.zero
+		local gaze = if look.Crazy
+			then Vector3.new(side * 0.04, side * 0.035, 0) * headSize
+			elseif expression == "Sleepy" then Vector3.new(0, -0.03, 0) * headSize
+			else Vector3.zero
 		-- A shadowed socket behind each eye: a hollow, staring look.
 		face(`Socket{i}`, Vector3.one * headSize * (eyeSize + 0.07), CFrame.new(eye + Vector3.new(0, headSize * 0.01, headSize * 0.03)), skin:Lerp(Color3.new(0, 0, 0), 0.35), Enum.PartType.Ball)
 		face(`Eye{i}`, Vector3.one * headSize * eyeSize, CFrame.new(eye), Color3.fromRGB(246, 242, 232), Enum.PartType.Ball)
 		-- Tiny pupils: a vacant stare (they glow at night - see SkyController).
 		face(`Pupil{i}`, Vector3.one * headSize * (if look.Crazy then 0.07 else 0.075), CFrame.new(eye + gaze + Vector3.new(0, 0, -headSize * (eyeSize / 2 - 0.015))), Color3.fromRGB(30, 25, 25), Enum.PartType.Ball)
+		if expression == "Sleepy" then
+			-- Heavy eyelids drooping over the top half of each eye.
+			face(`Lid{i}`, Vector3.one * headSize * eyeSize * 1.1, CFrame.new(eye + Vector3.new(0, headSize * eyeSize * 0.32, -headSize * 0.005)), darker, Enum.PartType.Ball)
+		end
 		local brow = onBall(skull, side * 0.38, headSize * 0.27, 0)
 		face(`Brow{i}`, Vector3.new(headSize * 0.26, headSize * 0.055, headSize * 0.07), CFrame.new(brow) * CFrame.Angles(0, -side * 0.38, side * -0.25), hairColor)
 		face(`Ear{i}`, Vector3.new(headSize * 0.1, headSize * 0.24, headSize * 0.24), CFrame.new(side * skull, -headSize * 0.02, headSize * 0.02), darker, Enum.PartType.Cylinder)
 	end
-	face("Nose", Vector3.one * headSize * 0.2, CFrame.new(onBall(skull, 0, -headSize * 0.04, 0)), darker, Enum.PartType.Ball)
+	face("Nose", Vector3.one * headSize * rng:NextNumber(0.16, 0.26), CFrame.new(onBall(skull, 0, -headSize * 0.04, 0)), darker, Enum.PartType.Ball)
 
 	-- Hair.
 	local style = look.Hair or HAIR_STYLES[rng:NextInteger(1, #HAIR_STYLES)]
@@ -289,6 +326,16 @@ function GiantFactory.Build(kindName: string, position: Vector3, rng: Random): R
 		for s = 1, 5 do
 			local angle = (s - 3) * 0.35
 			face(`Spike{s}`, Vector3.new(headSize * 0.18, headSize * 0.4, headSize * 0.18), CFrame.new(math.sin(angle) * headSize * 0.35, headSize * 0.48, headSize * 0.05) * CFrame.Angles(0, 0, -angle), hairColor)
+		end
+	end
+
+	-- Now and then a scruffy beard: a tuft under the chin and sideburns. It
+	-- sits well forward, so it never hides the nape.
+	local beard = if look.Beard ~= nil then look.Beard else rng:NextNumber() < 0.25
+	if beard then
+		face("Beard", Vector3.one * headSize * 0.56, CFrame.new(0, -headSize * 0.5, -headSize * 0.24), hairColor, Enum.PartType.Ball)
+		for i, side in { -1, 1 } do
+			face(`Sideburn{i}`, Vector3.one * headSize * 0.22, CFrame.new(onBall(skull, side * 0.95, -headSize * 0.14, -headSize * 0.04)), hairColor, Enum.PartType.Ball)
 		end
 	end
 

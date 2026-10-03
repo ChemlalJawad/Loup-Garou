@@ -15,6 +15,10 @@ This is a separate Rojo project from Brainrot Hatch Wars, in the same repo.
 
 ![Day and night](day-night-preview.jpg)
 
+![The Great Forest and the old castle](zones-preview.jpg)
+
+![Giant looks, and the hunters' uniform and gear](hunters-preview.jpg)
+
 *Offline previews, rendered outside Roblox from the same building code
 (so the lighting isn't Roblox's). Not Studio screenshots.*
 
@@ -48,10 +52,37 @@ The district, the giants and the HUD all build themselves. You can also
   church bell tower (the highest perch in town), the hunters' headquarters
   and supply depot, the market, a garden, the gate square with barricades,
   bridges over the river.
-- **Outside**: the forest of giant trees (a hunters' platform with a
-  supply crate up one trunk), farms with a windmill and wheat fields, the
-  road from the gate, the plains, hills all round.
+- **Outside** (the land reaches 1300 studs from the centre): the forest of
+  giant trees (a hunters' platform with a supply crate up one trunk),
+  farms with a windmill and wheat fields, the road from the gate, the
+  plains, hills all round.
+- **The Great Forest** (east): 76 trees taller than the wall (160-230
+  studs) and nothing else, spread over half a kilometre. The place to
+  swing from trunk to trunk at full speed; a few trunks carry platforms
+  with supplies and torches.
+- **The Training Grounds** (north, behind the wall): practice trees and 18
+  wooden giant dummies, some up on stilts, with a target on the back of
+  the neck. Cut them to practise your approach: the HUD tells you your
+  speed and whether it was a clean cut. No blades used, no points.
+- **The old castle** (west), on its hill: curtain walls with one side
+  fallen in, corner towers, a tall round keep, a supply crate.
+- **Signal towers** every 130 studs along the dirt roads that link the
+  gate, the castle, the forest and the training grounds (and down the
+  south road), and **groves of giant trees** dotted over the open plains:
+  there's always something to hook onto, so you can cross the whole land
+  on your cables.
 - **Wall cannons** either side of the gate: fire one at a giant to daze it.
+
+## The hunters' uniform
+
+Every hunter wears the corps' uniform over their avatar: a short brown
+jacket over a white shirt, white trousers, tall dark boots, leather straps
+across the chest and round the thighs, and a green cape with the corps'
+crossed-blades emblem. The grapple rig is on show: the reel box at the
+small of the back with its hook launchers, a gas tank either side, and a
+blade box low on each hip. The swords have a pistol-grip handle with a
+trigger, a squared hilt and a long blade scored with snap lines and cut
+off at an angle at the tip.
 
 ## Day and night
 
@@ -142,8 +173,13 @@ when a hook would land.
     target. Yellow shorts, odd eyes.
   - **Armored Giant**: rock plates; the one over its nape has to be
     cracked (3 hits) before the nape can be cut.
-  - All of them are part-built, soft and rounded, with a hunched walk, a
-    wide toothy grin and eyes that follow you.
+  - All of them are part-built, soft and rounded, with a hunched walk and
+    eyes that follow you. Each rolls a body (lanky, stocky, chubby,
+    big-headed, or **gangly**: thin as a rake, stooped, arms hanging past
+    its knees), an expression (a wide toothy grin, a dopey half-asleep
+    stare, or a gaping mouth full of teeth), hair, sometimes a beard, a
+    nose size, and ribs on the skinny ones. The Beast is a bearded gangly
+    one.
 - **Grabs**: a giant raises its arms first (the warning). If it catches
   you, you're held in its hand: **mash to wriggle free**, or a friend can
   cut you loose (any cut on that giant). Not free after 3.5 s? You're
@@ -191,7 +227,7 @@ sound you've uploaded (`rbxassetid://...`).
 | `src/server/World/Ground.lua` | Smooth Terrain: paving and roads, grass patchwork, fields, river, hills |
 | `src/server/World/Wall.lua` | the Great Wall, the breachable gate, watchtowers, cannons, the spawn post |
 | `src/server/World/Town.lua` | row houses, plaza, church, headquarters, market, garden, bridges |
-| `src/server/World/Wilds.lua` | giant forest, farms, windmill, road, plains, giant entry points |
+| `src/server/World/Wilds.lua` | giant forest, the Great Forest, training grounds, castle, signal towers, groves, farms, windmill, roads, plains, giant entry points |
 | `src/server/World/Kit.lua`, `Layout.lua` | shared part helpers and set pieces; where the big pieces go |
 | `src/server/GiantFactory.lua` | part-built giant rig (rounded body, face, armour, Motor6D waist/limbs/neck, glowing nape, kinematic mover) |
 | `src/server/GiantService.lua` | giant AI, grabs and holds, swats, the three cuts, armour, takedowns, the Wallbreaker |
@@ -199,6 +235,7 @@ sound you've uploaded (`rbxassetid://...`).
 | `src/server/DayNightService.lua` | the 24-hour clock |
 | `src/server/ShifterService.lua` | the titan crystal, sides, transforming, punches, roars, titan napes |
 | `src/server/HunterService.lua` | characters, leaderboard and ranks, twin swords, blades, resupply, slash validation, combos, flares, cable relay |
+| `src/server/HunterGear.lua` | the hunters' uniform, cape and grapple rig, built over each avatar |
 | `src/server/CannonService.lua` | the wall cannons |
 | `src/server/Broadcast.lua` | kill feed, announcements, camera shakes |
 | `src/client/GrappleController.lua` | flying hooks, taut-cable swing, reel, gas boost and dash, air spin slash, flares, being grabbed or swatted, other hunters' cables |

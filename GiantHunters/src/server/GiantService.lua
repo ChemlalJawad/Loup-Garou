@@ -172,7 +172,8 @@ local function wander(giant: Giant)
 		if wantInside then
 			target = Geo.Polar(rng:NextNumber(0, math.pi * 2), rng:NextNumber(30, Geo.INSIDE_LIMIT))
 		else
-			target = Geo.Polar(Config.World.GateAngle + rng:NextNumber(-1.2, 1.2), rng:NextNumber(Geo.OUTSIDE_LIMIT + 30, Geo.LAND_LIMIT - 80))
+			-- (They keep to the plains near the town, not the far wilds.)
+			target = Geo.Polar(Config.World.GateAngle + rng:NextNumber(-1.2, 1.2), rng:NextNumber(Geo.OUTSIDE_LIMIT + 30, math.min(Geo.LAND_LIMIT - 80, 650)))
 		end
 		giant.WanderTarget = target
 	end

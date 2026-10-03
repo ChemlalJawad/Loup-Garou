@@ -10,6 +10,32 @@ Layout.Forest = { Angle = math.rad(50), Spread = math.rad(28), Inner = 370, Oute
 Layout.Farms = { Angle = math.rad(-52), Spread = math.rad(24), Inner = 370, Outer = 610 } -- south-west
 Layout.RoadHalfWidth = 9
 
+-- Further out, places built for the grapple:
+--   * the Great Forest (east): trees taller than the wall, nothing else -
+--     swing from trunk to trunk for a kilometre;
+--   * the Training Grounds (north, behind the hunters' post): practice
+--     trees and wooden giant dummies to slash;
+--   * the old castle (west), on its hill;
+--   * signal towers along the roads between them, so you can hook your way
+--     across the open plains.
+Layout.GreatForest = { Angle = math.rad(95), Spread = math.rad(32), Inner = 720, Outer = 1240 }
+Layout.Training = { Angle = math.rad(180), Spread = math.rad(26), Inner = 340, Outer = 580 }
+Layout.Castle = { Angle = math.rad(282), Radius = 900, HillRadius = 120, Top = 50 }
+
+-- Roads out on the plains, as polylines (flat points; y ignored).
+local function polar(degrees: number, radius: number): Vector3
+	local a = math.rad(degrees)
+	return Vector3.new(math.sin(a) * radius, 0, math.cos(a) * radius)
+end
+Layout.Roads = {
+	-- From the gate road west to the castle.
+	{ polar(0, 420), polar(-30, 560), polar(-60, 760), polar(-78, 880) },
+	-- From the gate road east into the Great Forest.
+	{ polar(0, 470), polar(35, 560), polar(70, 680), polar(92, 800) },
+	-- Round the north, behind the wall, to the Training Grounds.
+	{ polar(-78, 880), polar(-120, 620), polar(-155, 420), polar(180, 380), polar(140, 520), polar(105, 720) },
+}
+
 -- The road out of the south gate wobbles a little as it heads south.
 function Layout.RoadX(z: number): number
 	return 14 * math.sin(z / 90)

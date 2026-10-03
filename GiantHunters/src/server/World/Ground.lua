@@ -100,7 +100,7 @@ local function wilds(terrain: Terrain)
 				elseif Layout.InRegion(p, Layout.Farms) then
 					material = farmField(x, z)
 					flat = true
-				elseif Layout.InRegion(p, Layout.Forest) then
+				elseif Layout.InRegion(p, Layout.Forest) or Layout.InRegion(p, Layout.GreatForest) or Layout.InRegion(p, Layout.Training) then
 					local floor = math.noise(x / 26, z / 26, 2.9)
 					material = if floor > 0.3 then Enum.Material.Mud elseif floor > -0.25 then Enum.Material.LeafyGrass else Enum.Material.Grass
 				else
@@ -134,13 +134,34 @@ end
 
 local function hills(terrain: Terrain, rng: Random)
 	-- A ring of grassy hills closes the land in; a few rockier ones.
-	for i = 1, 46 do
-		local angle = (i / 46) * math.pi * 2 + rng:NextNumber(-0.05, 0.05)
+	for i = 1, 96 do
+		local angle = (i / 96) * math.pi * 2 + rng:NextNumber(-0.03, 0.03)
 		local radius = rng:NextNumber(60, 120)
 		local distance = W.LandRadius + rng:NextNumber(10, 90)
 		local centre = Geo.Polar(angle, distance, -radius * rng:NextNumber(0.45, 0.7))
 		terrain:FillBall(centre, radius, if rng:NextNumber() < 0.2 then Enum.Material.Rock else Enum.Material.Grass)
 	end
+end
+
+-- Dirt roads across the plains (Layout.Roads), and the castle's hill.
+local function roads(terrain: Terrain)
+	for _, road in Layout.Roads do
+		for i = 1, #road - 1 do
+			local a, b = road[i], road[i + 1]
+			local middle = (a + b) / 2
+			local frame = CFrame.lookAt(Vector3.new(middle.X, -4, middle.Z), Vector3.new(b.X, -4, b.Z))
+			terrain:FillBlock(frame, Vector3.new(Layout.RoadHalfWidth * 2, 8, (b - a).Magnitude + Layout.RoadHalfWidth * 2), Enum.Material.Ground)
+		end
+	end
+end
+
+local function castleHill(terrain: Terrain)
+	local castle = Layout.Castle
+	local centre = Geo.Polar(castle.Angle, castle.Radius)
+	local radius = castle.HillRadius
+	terrain:FillBall(Vector3.new(centre.X, castle.Top - radius, centre.Z), radius, Enum.Material.Grass)
+	-- A rocky crown where the castle stands.
+	terrain:FillCylinder(CFrame.new(centre.X, castle.Top - 6, centre.Z), 12, 52, Enum.Material.Rock)
 end
 
 local function river(terrain: Terrain)
@@ -164,7 +185,9 @@ function Ground.Build(rng: Random)
 	terrain:FillBlock(CFrame.new(0, -DEPTH / 2, 0), Vector3.new(extent, DEPTH, extent), Enum.Material.Grass)
 	town(terrain)
 	wilds(terrain)
+	roads(terrain)
 	hills(terrain, rng)
+	castleHill(terrain)
 	river(terrain)
 
 	terrain.Decoration = true

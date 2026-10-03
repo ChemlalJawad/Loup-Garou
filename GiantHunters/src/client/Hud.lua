@@ -312,6 +312,14 @@ local RESULTS = {
 	Daze = function(_info: any)
 		Hud.Toast("DAZED! Get behind it!", TONES.Good)
 	end,
+	Training = function(info: any)
+		local speed = math.floor(info.Speed or 0)
+		if info.Clean then
+			Hud.Toast(`TRAINING CUT - CLEAN! ({speed} studs/s)`, Color3.fromRGB(140, 230, 255))
+		else
+			Hud.Toast(`Training cut ({speed} studs/s) - go faster!`, TONES.Info)
+		end
+	end,
 }
 
 -- The nearest cut in reach, for the hint under the crosshair.

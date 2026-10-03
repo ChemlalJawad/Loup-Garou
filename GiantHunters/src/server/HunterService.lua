@@ -22,6 +22,7 @@ local GiantService = require(script.Parent.GiantService)
 local WaveService = require(script.Parent.WaveService)
 local Broadcast = require(script.Parent.Broadcast)
 local ShifterService = require(script.Parent.ShifterService)
+local HunterGear = require(script.Parent.HunterGear)
 
 local HunterService = {}
 
@@ -89,10 +90,17 @@ end
 
 -- === Twin blades =============================================================
 -- A long, thin blade in each hand, built from parts on the server so every
--- player sees them. Each carries a (disabled) Trail the owner's client
--- flashes on during a slash. Dull blades (none left) turn grey.
+-- player sees them: a pistol-grip handle with a trigger (it releases the
+-- blade, so a fresh one can be slotted in from the box on the hip), a
+-- squared hilt, and a blade scored with the snap lines between its
+-- segments, cut off at an angle at the tip. Each carries a (disabled)
+-- Trail the owner's client flashes on during a slash. Dull blades (none
+-- left) turn grey.
 
-local BLADE_LENGTH = 4.6
+local BLADE_LENGTH = 5.2
+local TIP_LENGTH = 0.55
+local SHARP = Color3.fromRGB(215, 225, 235)
+local DULL = Color3.fromRGB(120, 115, 110)
 
 local function bladePart(name: string, size: Vector3, color: Color3, material: Enum.Material, parent: Instance): Part
 	local p = Instance.new("Part")
@@ -112,11 +120,30 @@ end
 local function attachSword(character: Model, hand: BasePart, side: number)
 	local sword = Instance.new("Model")
 	sword.Name = if side < 0 then "LeftSword" else "RightSword"
-	local grip = bladePart("Grip", Vector3.new(0.28, 0.28, 1.1), Color3.fromRGB(45, 45, 55), Enum.Material.Metal, sword)
-	local guard = bladePart("Guard", Vector3.new(0.7, 0.18, 0.2), Color3.fromRGB(160, 150, 120), Enum.Material.Metal, sword)
-	local blade = bladePart("Blade", Vector3.new(0.08, 0.42, BLADE_LENGTH), Color3.fromRGB(215, 225, 235), Enum.Material.Metal, sword)
+	local darkMetal = Color3.fromRGB(52, 54, 62)
+	local brass = Color3.fromRGB(176, 160, 116)
+	local grip = bladePart("Grip", Vector3.new(0.26, 0.34, 1), Color3.fromRGB(40, 34, 32), Enum.Material.Leather, sword)
+	local pommel = bladePart("Pommel", Vector3.new(0.3, 0.4, 0.16), darkMetal, Enum.Material.Metal, sword)
+	local triggerGuard = bladePart("TriggerGuard", Vector3.new(0.08, 0.06, 0.7), darkMetal, Enum.Material.Metal, sword)
+	local trigger = bladePart("Trigger", Vector3.new(0.07, 0.2, 0.07), brass, Enum.Material.Metal, sword)
+	local hilt = bladePart("Hilt", Vector3.new(0.34, 0.56, 0.42), darkMetal, Enum.Material.Metal, sword)
+	local collar = bladePart("Collar", Vector3.new(0.38, 0.6, 0.08), brass, Enum.Material.Metal, sword)
+	local blade = bladePart("Blade", Vector3.new(0.07, 0.42, BLADE_LENGTH - TIP_LENGTH), SHARP, Enum.Material.Metal, sword)
 	blade.Reflectance = 0.35
-	local edge = bladePart("Edge", Vector3.new(0.1, 0.06, BLADE_LENGTH), Color3.fromRGB(240, 250, 255), Enum.Material.Neon, sword)
+	-- The angled tip: a wedge whose point carries the cutting edge on.
+	local tip = Instance.new("WedgePart")
+	tip.Name = "BladeTip"
+	tip.Size = Vector3.new(0.07, 0.42, TIP_LENGTH)
+	tip.Color = SHARP
+	tip.Material = Enum.Material.Metal
+	tip.Reflectance = 0.35
+	tip.CanCollide = false
+	tip.CanQuery = false
+	tip.CanTouch = false
+	tip.Massless = true
+	tip.CastShadow = false
+	tip.Parent = sword
+	local edge = bladePart("Edge", Vector3.new(0.09, 0.05, BLADE_LENGTH - 0.15), Color3.fromRGB(240, 250, 255), Enum.Material.Neon, sword)
 
 	-- Held forward: grip in the fist, blade pointing ahead of the hand and
 	-- a little down, the ready stance.
@@ -128,23 +155,37 @@ local function attachSword(character: Model, hand: BasePart, side: number)
 		w.C0 = gripOffset * offset
 		w.Parent = p
 	end
+	local bladeStart = -0.9 -- where the blade leaves the hilt
+	local bladeMiddle = bladeStart - (BLADE_LENGTH - TIP_LENGTH) / 2
 	weldTo(grip, CFrame.new())
-	weldTo(guard, CFrame.new(0, 0, -0.6))
-	weldTo(blade, CFrame.new(0, 0, -0.7 - BLADE_LENGTH / 2))
-	weldTo(edge, CFrame.new(0, -0.22, -0.7 - BLADE_LENGTH / 2))
+	weldTo(pommel, CFrame.new(0, 0, 0.56))
+	weldTo(triggerGuard, CFrame.new(0, -0.3, -0.05))
+	weldTo(trigger, CFrame.new(0, -0.22, -0.22))
+	weldTo(hilt, CFrame.new(0, 0.06, -0.66))
+	weldTo(collar, CFrame.new(0, 0.06, -0.9))
+	weldTo(blade, CFrame.new(0, 0, bladeMiddle))
+	-- The wedge's tall face is its +Z: against the blade, sloping down to a
+	-- point on the cutting edge (the blade's underside).
+	weldTo(tip, CFrame.new(0, 0, bladeStart - (BLADE_LENGTH - TIP_LENGTH) - TIP_LENGTH / 2))
+	weldTo(edge, CFrame.new(0, -0.2, bladeStart - (BLADE_LENGTH - 0.15) / 2))
+	-- Snap lines: the blade is a stack of segments, broken off one by one.
+	for s = 1, 6 do
+		local line = bladePart(`SnapLine{s}`, Vector3.new(0.085, 0.36, 0.035), Color3.fromRGB(96, 104, 114), Enum.Material.Metal, sword)
+		weldTo(line, CFrame.new(0, 0.02, bladeStart - s * (BLADE_LENGTH - TIP_LENGTH) / 7) * CFrame.Angles(math.rad(30), 0, 0))
+	end
 
 	local base = Instance.new("Attachment")
 	base.Name = "TrailBase"
-	base.Position = Vector3.new(0, 0, BLADE_LENGTH / 2 - 0.2)
+	base.Position = Vector3.new(0, 0, (BLADE_LENGTH - TIP_LENGTH) / 2 - 0.2)
 	base.Parent = blade
-	local tip = Instance.new("Attachment")
-	tip.Name = "TrailTip"
-	tip.Position = Vector3.new(0, 0, -BLADE_LENGTH / 2)
-	tip.Parent = blade
+	local point = Instance.new("Attachment")
+	point.Name = "TrailTip"
+	point.Position = Vector3.new(0, -0.15, -(BLADE_LENGTH - TIP_LENGTH) / 2 - TIP_LENGTH)
+	point.Parent = blade
 	local trail = Instance.new("Trail")
 	trail.Name = "BladeTrail"
 	trail.Attachment0 = base
-	trail.Attachment1 = tip
+	trail.Attachment1 = point
 	trail.Lifetime = 0.18
 	trail.Color = ColorSequence.new(Color3.fromRGB(200, 235, 255))
 	trail.Transparency = NumberSequence.new(0.2, 1)
@@ -162,11 +203,13 @@ local function setBladesSharp(player: Player, sharp: boolean)
 	end
 	for _, name in { "LeftSword", "RightSword" } do
 		local sword = character:FindFirstChild(name)
-		local blade = sword and sword:FindFirstChild("Blade")
 		local edge = sword and sword:FindFirstChild("Edge")
-		if blade and blade:IsA("BasePart") then
-			blade.Color = if sharp then Color3.fromRGB(215, 225, 235) else Color3.fromRGB(120, 115, 110)
-			blade.Reflectance = if sharp then 0.35 else 0
+		for _, partName in { "Blade", "BladeTip" } do
+			local blade = sword and sword:FindFirstChild(partName)
+			if blade and blade:IsA("BasePart") then
+				blade.Color = if sharp then SHARP else DULL
+				blade.Reflectance = if sharp then 0.35 else 0
+			end
 		end
 		if edge and edge:IsA("BasePart") then
 			edge.Transparency = if sharp then 0 else 1
@@ -184,6 +227,7 @@ local function equipSwords(character: Model)
 	if right and right:IsA("BasePart") then
 		attachSword(character, right, 1)
 	end
+	HunterGear.Dress(character)
 end
 
 -- === Characters ==============================================================
@@ -260,6 +304,19 @@ local function onSlash(player: Player)
 		local shifterResult, shifterInfo = ShifterService.TryHit(player, root)
 		if shifterResult then
 			result, info = shifterResult, shifterInfo
+		end
+	end
+	if result == "NoTarget" then
+		-- A training dummy: practice cuts, free (no blade used, no points).
+		for _, target in CollectionService:GetTagged(Config.Tags.DummyNape) do
+			if target:IsA("BasePart") and (target.Position - root.Position).Magnitude <= Config.Blades.SlashRange + target.Size.X / 2 then
+				local toHunter = root.Position - target.Position
+				if toHunter.Magnitude < 0.01 or toHunter.Unit:Dot(target.CFrame.LookVector) < Config.Cuts.EyesFrontDot then
+					local speed = root.AssemblyLinearVelocity.Magnitude
+					remote(Config.Remotes.SlashResult):FireClient(player, "Training", { Speed = speed, Clean = speed >= Config.Blades.CleanCutSpeed, Position = target.Position })
+					return
+				end
+			end
 		end
 	end
 	if result ~= "NoTarget" then
