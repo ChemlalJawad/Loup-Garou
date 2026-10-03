@@ -75,14 +75,22 @@ The district, the giants and the HUD all build themselves. You can also
 
 ## The hunters' uniform
 
-Every hunter wears the corps' uniform over their avatar: a short brown
-jacket over a white shirt, white trousers, tall dark boots, leather straps
-across the chest and round the thighs, and a green cape with the corps'
-crossed-blades emblem. The grapple rig is on show: the reel box at the
-small of the back with its hook launchers, a gas tank either side, and a
-blade box low on each hip. The swords have a pistol-grip handle with a
-trigger, a squared hilt and a long blade scored with snap lines and cut
-off at an angle at the tip.
+Every hunter wears the corps' uniform, whatever their avatar. The server
+re-dresses the avatar through its HumanoidDescription (no asset ids):
+classic shirt and pants, layered clothing and back, waist, shoulder, front
+and neck accessories come off (hair, hats and the face stay), the body goes
+back to the default shape at normal scale, and the body colours become the
+uniform: a white shirt, brown jacket sleeves, white trousers. On top go the
+thin pieces: the jacket's panels over the torso and its collar, darker
+cuffs, tall dark boots, leather straps across the chest and round the
+thighs, a belt, and a green cape with the corps' crossed-blades emblem. If
+the avatar can't be re-dressed, fabric shells cover every body part
+instead. The grapple rig is on show: the reel box at the small of the back
+with its hook launchers (the cables leave from their tips), a gas tank
+either side, and a blade box low on each hip, behind the hands. The swords
+sit in the fist (the hand's grip attachment, on R15, R6 and Rthro alike),
+tipped up a little, with a pistol-grip handle and a trigger, a squared hilt
+and a long blade scored with snap lines and cut off at an angle at the tip.
 
 ## Day and night
 
@@ -171,15 +179,29 @@ when a hook would land.
     reach. On a rooftop above their heads, you're safe.
   - **Runner** (an abnormal): fast, zig-zags, leaps, and picks its own
     target. Yellow shorts, odd eyes.
-  - **Armored Giant**: rock plates; the one over its nape has to be
-    cracked (3 hits) before the nape can be cut.
-  - All of them are part-built, soft and rounded, with a hunched walk and
-    eyes that follow you. Each rolls a body (lanky, stocky, chubby,
-    big-headed, or **gangly**: thin as a rake, stooped, arms hanging past
-    its knees), an expression (a wide toothy grin, a dopey half-asleep
-    stare, or a gaping mouth full of teeth), hair, sometimes a beard, a
-    nose size, and ribs on the skinny ones. The Beast is a bearded gangly
-    one.
+  - **Sprinter** (an abnormal, from wave 3): lean and quick, zig-zags and
+    leaps like a Runner, ponytail and a smirk. She can cover her nape with a
+    crystal hand.
+  - **Crawler** (now and then from wave 1): slow, on all fours, its nape
+    right on top. The easy one for new hunters.
+  - **Armored Giant**: rock plates in pieces with dark seams and a helmet
+    set back off the eyes; the plate over its nape has to be cracked (3
+    hits, and you see the cracks glow and spread) before the nape can be
+    cut.
+  - **Beast Giant**: ape-like, dark fur all over with shaggy tufts, a bare
+    face, big ears, glowing eyes, knuckles near the ground. It steams.
+  - **Wallbreaker**: rock skin cracked with glowing orange seams, glowing
+    eyes, a heavy brow and a big jaw, steaming. Event only.
+  - All of them are part-built, soft and rounded, with a hunched walk.
+    Their pupils follow the nearest hunter and they blink. Each rolls a
+    body (lanky, stocky, chubby, big-headed, or **gangly**: thin as a rake,
+    stooped, arms hanging past its knees), an expression (a wide toothy
+    grin, a dopey half-asleep stare, a gaping mouth, a lopsided smirk, a
+    round "oh", buck teeth), brows (worried, angry, raised, flat), a nose
+    (round, button, long, wide), hair (bald, cap, mop, spiky, bowl,
+    mohawk, bun, curly; dark, brown, blond, ginger, grey or white),
+    sometimes a beard, and ribs on the skinny ones. Hair never covers the
+    nape. Giants 46 studs and up steam a little.
 - **Grabs**: a giant raises its arms first (the warning). If it catches
   you, you're held in its hand: **mash to wriggle free**, or a friend can
   cut you loose (any cut on that giant). Not free after 3.5 s? You're

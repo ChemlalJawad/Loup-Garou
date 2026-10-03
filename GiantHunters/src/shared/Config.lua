@@ -87,8 +87,20 @@ export type GiantLook = {
 	Shorts: Color3?,
 	Crazy: boolean?, -- odd eyes: the "abnormal" look
 	Armor: boolean?, -- rock plates, one of them over the nape
-	Face: string?, -- force an expression: "Grin", "Sleepy" or "Gape"
+	Face: string?, -- force an expression: "Grin", "Sleepy", "Gape", "Smirk", "Oh", "Bunny" or "Stern"
 	Beard: boolean?, -- force a beard (true) or none (false)
+	Skin: Color3?, -- fixed colours, so a signature giant always looks the same
+	HairColor: Color3?,
+	EyeColor: Color3?, -- glowing eyes of this colour
+	Steam: boolean?, -- steam rising off it (giants 46+ tall always steam a little)
+	Brows: string?, -- "Worried", "Angry", "Raised", "Flat" or "Heavy" (a brow ridge)
+	Nose: string?, -- "Ball", "Button", "Long" or "Wide"
+	Ears: string?, -- "Round", "Big" or "None"
+	Stone: boolean?, -- rocky skin with glowing seams (the Wallbreaker)
+	Fur: boolean?, -- tufts of fur on the shoulders, back, chest and forearms
+	Cheeks: boolean?, -- ridge lines under the eyes (titan shifters)
+	Pose: string?, -- "Crawl" (on all fours) or "Ape" (knuckles near the ground)
+	Guard: boolean?, -- a crystal hand that can cover the nape (attribute "Guarding")
 }
 
 export type GiantKind = {
@@ -118,7 +130,7 @@ Config.GiantKinds = {
 		GrabReach = 13,
 		Points = 3,
 		Abnormal = true,
-		Look = { Body = "Lanky", Hair = "Spiky", Shorts = Color3.fromRGB(240, 160, 40), Crazy = true, Face = "Gape", Beard = false },
+		Look = { Body = "Lanky", Hair = "Spiky", Shorts = Color3.fromRGB(240, 160, 40), Crazy = true, Face = "Gape", Beard = false, Brows = "Raised" },
 	},
 	Armored = {
 		Name = "Armored",
@@ -129,7 +141,7 @@ Config.GiantKinds = {
 		GrabReach = 19,
 		Points = 8,
 		Armor = 3,
-		Look = { Body = "Stocky", Hair = "Bald", Shorts = Color3.fromRGB(70, 70, 80), Armor = true },
+		Look = { Body = "Stocky", Hair = "Bald", Shorts = Color3.fromRGB(70, 70, 80), Armor = true, Skin = Color3.fromRGB(214, 168, 136), Brows = "Angry", Face = "Grin", Beard = false },
 	},
 	-- Shows up now and then from wave 3: throws boulders at hunters who think
 	-- they're safe on the rooftops, and roars anyone close away.
@@ -142,7 +154,44 @@ Config.GiantKinds = {
 		GrabReach = 24,
 		Points = 12,
 		Powers = true,
-		Look = { Body = "Gangly", Hair = "Mop", Shorts = Color3.fromRGB(60, 46, 40), Beard = true, Face = "Gape" },
+		Look = {
+			Body = "Ape",
+			Pose = "Ape",
+			Hair = "Mop",
+			Shorts = Color3.fromRGB(60, 46, 40),
+			Beard = true,
+			Face = "Gape",
+			Skin = Color3.fromRGB(84, 62, 50), -- dark fur all over (Fur)
+			HairColor = Color3.fromRGB(62, 45, 36),
+			EyeColor = Color3.fromRGB(255, 200, 80),
+			Brows = "Angry",
+			Ears = "Big",
+			Fur = true,
+		},
+	},
+	-- Abnormal and quick on her feet: zig-zags and leaps like a Runner, and can
+	-- cover her nape with a crystal hand (attribute "Guarding", see GiantFactory).
+	Sprinter = {
+		Name = "Sprinter",
+		Display = "Sprinter",
+		Height = 28,
+		WalkSpeed = 22,
+		NapeHealth = 2,
+		GrabReach = 14,
+		Points = 5,
+		Abnormal = true,
+		Look = { Body = "Agile", Hair = "Ponytail", Face = "Smirk", Brows = "Angry", Nose = "Button", Beard = false, Guard = true, Shorts = Color3.fromRGB(150, 60, 90) },
+	},
+	-- Slow, on all fours, nape on top: the easy one for new hunters.
+	Crawler = {
+		Name = "Crawler",
+		Display = "Crawler",
+		Height = 22,
+		WalkSpeed = 9,
+		NapeHealth = 1,
+		GrabReach = 10,
+		Points = 1,
+		Look = { Body = "Crawler", Pose = "Crawl", Face = "Grin", Hair = "Spiky", Beard = false }, -- nothing on the back of its head: the nape is right there
 	},
 	-- A player who took the titan power, transformed (see ShifterService).
 	Shifter = {
@@ -153,7 +202,19 @@ Config.GiantKinds = {
 		NapeHealth = 3,
 		GrabReach = 0,
 		Points = 8,
-		Look = { Body = "Stocky", Hair = "Mop", Shorts = Color3.fromRGB(70, 60, 55) },
+		Look = {
+			Body = "Stocky",
+			Hair = "Bun",
+			Shorts = Color3.fromRGB(70, 60, 55),
+			Face = "Stern",
+			Brows = "Angry",
+			Beard = false,
+			Cheeks = true,
+			Steam = true,
+			Skin = Color3.fromRGB(226, 178, 142),
+			HairColor = Color3.fromRGB(60, 40, 30),
+			EyeColor = Color3.fromRGB(120, 230, 150), -- re-tinted by side on clients (attribute "Side")
+		},
 	},
 	-- Event only: peeks over the wall and kicks the gate in. Can't be hurt.
 	Wallbreaker = {
@@ -164,7 +225,20 @@ Config.GiantKinds = {
 		NapeHealth = 1,
 		GrabReach = 0,
 		Points = 0,
-		Look = { Body = "Lanky", Hair = "Bald", Shorts = Color3.fromRGB(110, 60, 50), Face = "Grin", Beard = false },
+		Look = {
+			Body = "Lanky",
+			Hair = "Bald",
+			Shorts = Color3.fromRGB(110, 60, 50),
+			Face = "Grin",
+			Beard = false,
+			Skin = Color3.fromRGB(126, 104, 98), -- rock, a little red
+			Stone = true,
+			EyeColor = Color3.fromRGB(255, 170, 60),
+			Brows = "Heavy",
+			Nose = "Wide",
+			Ears = "None",
+			Steam = true,
+		},
 	},
 } :: { [string]: GiantKind }
 
@@ -221,6 +295,12 @@ function Config.WaveRoster(round: number, wave: number): { string }
 		end
 		if wave >= 4 and i % 7 == 0 then
 			kind = "Colossal"
+		end
+		if wave % 2 == 1 and i == 2 then
+			kind = "Crawler" -- one now and then, from the first wave
+		end
+		if wave >= 3 and i % 8 == 0 then
+			kind = "Sprinter"
 		end
 		table.insert(roster, kind)
 	end

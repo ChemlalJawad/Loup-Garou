@@ -10,7 +10,12 @@
 --   * Kneeling (ankle cut): down on its knees, hands forward;
 --   * Dazed (eyes, cannonball): hands to its face, head wobbling, stars;
 --   * Leap (runners): legs tucked; Kick (the Wallbreaker): one big kick;
---   * the stare: the head turns to follow the nearest hunter.
+--   * the stare: the head turns to follow the nearest hunter, the pupils
+--     follow whoever is closest, and it blinks now and then;
+--   * crawlers (Look.Pose "Crawl") walk on all fours;
+--   * Guarding (Sprinter): the right hand goes back over the nape and the
+--     crystal GuardHand shows; Armor: the nape plate's cracks light up as
+--     it takes hits; a titan shifter's eyes take its side's colour.
 -- Motor6D.Transform isn't replicated, so all of this is free network-wise.
 
 local CollectionService = game:GetService("CollectionService")
@@ -47,6 +52,16 @@ type Animated = {
 	Swing: number,
 	LastStep: number,
 	Stars: { BasePart }?,
+	Crawl: boolean,
+	Guard: number,
+	GuardHand: BasePart?,
+	Cracks: { BasePart },
+	MaxArmor: number,
+	LidShut: Vector3,
+	EyeRange: number,
+	Gaze: Vector3,
+	BlinkUntil: number,
+	NextBlink: number,
 }
 
 type Arm = { X: number, Z: number, Elbow: number, Side: number }
@@ -70,6 +85,27 @@ local function add(instance: Instance)
 		end
 	end
 	local head = instance:FindFirstChild("Head")
+	local guardHand = instance:FindFirstChild("GuardHand")
+	local cracks: { BasePart } = {}
+	for i = 1, 3 do
+		local crack = instance:FindFirstChild(`NapeCrack{i}`)
+		if crack and crack:IsA("BasePart") then
+			table.insert(cracks, crack)
+		end
+	end
+	local kind = Config.GiantKinds[(instance:GetAttribute("Kind") :: string?) or ""]
+	-- A titan shifter's eyes glow in its side's colour.
+	local side = instance:GetAttribute("Side")
+	if side == "Humans" or side == "Giants" then
+		for _, name in { "Eye1", "Eye2" } do
+			local eye = instance:FindFirstChild(name)
+			if eye and eye:IsA("BasePart") then
+				eye.Color = if side == "Humans" then Color3.fromRGB(110, 180, 255) else Color3.fromRGB(255, 80, 70)
+				eye.Material = Enum.Material.Neon
+			end
+		end
+	end
+	local lidShut = instance:GetAttribute("LidShut")
 	animated[instance] = {
 		Model = instance,
 		Root = root,
@@ -93,6 +129,16 @@ local function add(instance: Instance)
 		Swing = 0,
 		LastStep = 0,
 		Stars = nil,
+		Crawl = instance:GetAttribute("Pose") == "Crawl",
+		Guard = 0,
+		GuardHand = if guardHand and guardHand:IsA("BasePart") then guardHand else nil,
+		Cracks = cracks,
+		MaxArmor = if kind and kind.Armor then kind.Armor else 0,
+		LidShut = if typeof(lidShut) == "Vector3" then lidShut else Vector3.zero,
+		EyeRange = ((instance:GetAttribute("HeadSize") :: number?) or 4) * 0.04,
+		Gaze = Vector3.zero,
+		BlinkUntil = 0,
+		NextBlink = os.clock() + 1 + math.random() * 4,
 	}
 end
 
@@ -164,6 +210,11 @@ export type PoseInput = {
 	SwatSide: number, -- -1 left arm, 1 right arm
 	Swing: number,
 	Look: CFrame, -- where the head is turned
+	Crawl: boolean?, -- on all fours (Look.Pose "Crawl"): a four-legged gait
+	Guard: number?, -- the right hand reaching back over the nape (Sprinter)
+	Gaze: Vector3?, -- pupil offset in the head's frame, studs
+	Blink: number?, -- 0 open .. 1 shut
+	LidShut: Vector3?, -- how far a lid moves to shut (model attribute "LidShut")
 }
 
 -- The whole pose from a giant's state, as Motor6D transforms by motor name.
@@ -172,13 +223,21 @@ function GiantAnimator.Pose(p: PoseInput): { [string]: CFrame }
 	local pose: { [string]: CFrame } = {}
 	local reach, hold, kneel, daze, kick, leap = p.Reach, p.Hold, p.Kneel, p.Daze, p.Kick, p.Leap
 	local stride, t = p.Stride, p.Time
+	local crawl = p.Crawl == true
+	local guard = p.Guard or 0
 	local s = math.sin(p.Phase)
-	local swing = s * (if p.Abnormal then 0.75 else 0.5) * stride
+	local swing = s * (if p.Abnormal then 0.75 elseif crawl then 0.35 else 0.5) * stride
 
 	-- Trunk: the slouch is baked into the rig; this sways, bobs, breathes,
-	-- lunges, and hunches further for runners and stumbles.
+	-- lunges, and hunches further for runners and stumbles. A crawler rears
+	-- up to grab and flattens down when its legs are cut.
 	local bob = math.abs(math.cos(p.Phase)) * p.Height * 0.012 * stride
-	local lean = math.sin(p.Breath) * 0.02 - reach * 0.22 - kneel * 0.35 + hold * 0.08 - leap * 0.2 + kick * 0.15
+	local lean = math.sin(p.Breath) * 0.02 - leap * 0.2 + kick * 0.15
+	if crawl then
+		lean += reach * 0.5 - kneel * 0.12 + hold * 0.35
+	else
+		lean += -reach * 0.22 - kneel * 0.35 + hold * 0.08
+	end
 	if p.Abnormal then
 		lean -= 0.3 * stride
 	end
@@ -187,10 +246,15 @@ function GiantAnimator.Pose(p: PoseInput): { [string]: CFrame }
 
 	-- Legs: knees bend as each leg swings through; kneeling folds the shins
 	-- back flat; a leap tucks both legs; the kick swings the right leg up.
+	-- A crawler's knees are already down: its thighs just paddle.
 	local leftHip, rightHip = swing, -swing
 	local leftKnee, rightKnee = -math.max(s, 0) * 0.7 * stride, -math.max(-s, 0) * 0.7 * stride
-	leftHip, rightHip = lerp(leftHip, 0.1, kneel), lerp(rightHip, 0.1, kneel)
-	leftKnee, rightKnee = lerp(leftKnee, -1.5, kneel), lerp(rightKnee, -1.5, kneel)
+	if crawl then
+		leftKnee, rightKnee = math.max(-s, 0) * 0.25 * stride, math.max(s, 0) * 0.25 * stride
+	else
+		leftHip, rightHip = lerp(leftHip, 0.1, kneel), lerp(rightHip, 0.1, kneel)
+		leftKnee, rightKnee = lerp(leftKnee, -1.5, kneel), lerp(rightKnee, -1.5, kneel)
+	end
 	leftHip += 0.6 * leap
 	rightHip += 0.6 * leap
 	leftKnee -= 1.0 * leap
@@ -205,12 +269,14 @@ function GiantAnimator.Pose(p: PoseInput): { [string]: CFrame }
 
 	-- Arms. Shoulder angles: X swings forward, Z tilts out to the side
 	-- (negative on the left, positive on the right).
-	local flail = if p.Abnormal then 1.8 else 0.8
+	-- A crawler walks its arms like front legs: each one with the opposite
+	-- leg (left arm with right leg), elbows nearly straight.
+	local flail = if p.Abnormal then 1.8 elseif crawl then 1.1 else 0.8
 	local spread = if p.Abnormal then 0.35 * stride else 0
-	local elbow = 0.25 + math.abs(s) * 0.2 * stride
+	local elbow = if crawl then 0.05 + math.max(s, 0) * 0.25 * stride else 0.25 + math.abs(s) * 0.2 * stride
 	local arms: { Left: Arm, Right: Arm } = {
 		Left = { X = -swing * flail, Z = -0.08 - spread, Elbow = elbow, Side = -1 },
-		Right = { X = swing * flail, Z = 0.08 + spread, Elbow = elbow, Side = 1 },
+		Right = { X = swing * flail, Z = 0.08 + spread, Elbow = if crawl then 0.05 + math.max(-s, 0) * 0.25 * stride else elbow, Side = 1 },
 	}
 	for _, arm in { arms.Left, arms.Right } do
 		local side = arm.Side
@@ -218,9 +284,11 @@ function GiantAnimator.Pose(p: PoseInput): { [string]: CFrame }
 		arm.X = lerp(arm.X, 1.45, reach)
 		arm.Z += side * 0.25 * reach
 		arm.Elbow *= 1 - reach
-		-- Kneeling: hands forward to catch itself.
-		arm.X = lerp(arm.X, 0.75, kneel)
-		arm.Elbow = lerp(arm.Elbow, 0.2, kneel)
+		-- Kneeling: hands forward to catch itself (a crawler's already are).
+		if not crawl then
+			arm.X = lerp(arm.X, 0.75, kneel)
+			arm.Elbow = lerp(arm.Elbow, 0.2, kneel)
+		end
 		-- Swat: wind up out to the side, then sweep across the front.
 		if side == p.SwatSide then
 			arm.X = lerp(arm.X, 0.5, p.SwatRaise)
@@ -240,17 +308,39 @@ function GiantAnimator.Pose(p: PoseInput): { [string]: CFrame }
 	arms.Right.Z = lerp(arms.Right.Z, -0.25, hold)
 	arms.Right.Elbow = lerp(arms.Right.Elbow, 0.9, hold)
 	arms.Left.X = lerp(arms.Left.X, 0.5, hold)
+	-- Guarding (Sprinter): the right hand goes up and back over the nape.
+	arms.Right.X = lerp(arms.Right.X, 2.75, guard)
+	arms.Right.Z = lerp(arms.Right.Z, -0.45, guard)
+	arms.Right.Elbow = lerp(arms.Right.Elbow, 1.7, guard)
 	pose.LeftShoulder = CFrame.Angles(arms.Left.X, 0, arms.Left.Z)
 	pose.RightShoulder = CFrame.Angles(arms.Right.X, 0, arms.Right.Z)
 	pose.LeftElbow = CFrame.Angles(arms.Left.Elbow, 0, 0)
 	pose.RightElbow = CFrame.Angles(arms.Right.Elbow, 0, 0)
 
+	-- The head undoes the trunk's lean first, so turning to look at you is a
+	-- turn round the vertical (no drifting sideways when it leans).
 	local wobble = CFrame.Angles(math.sin(t * 2.6) * 0.15 * daze, math.sin(t * 2.3) * 0.35 * daze, math.sin(t * 3.1) * 0.2 * daze)
-	pose.Neck = p.Look * wobble
+	pose.Neck = CFrame.Angles(-lean, 0, 0) * p.Look * wobble
+
+	-- Eyes: the pupils slide toward whoever it's looking at; blinks.
+	local gaze = p.Gaze or Vector3.zero
+	pose.LeftEye = CFrame.new(gaze)
+	pose.RightEye = CFrame.new(gaze)
+	local shut = (p.LidShut or Vector3.zero) * math.clamp(p.Blink or 0, 0, 1)
+	pose.LeftLid = CFrame.new(shut)
+	pose.RightLid = CFrame.new(shut)
 	return pose
 end
 
-local function animate(giant: Animated, dt: number, t: number, herePosition: Vector3?)
+-- Shows a part only while `on` (writes only on a change).
+local function show(p: BasePart, on: boolean, transparency: number)
+	local want = if on then transparency else 1
+	if p.Transparency ~= want then
+		p.Transparency = want
+	end
+end
+
+local function animate(giant: Animated, dt: number, t: number, herePosition: Vector3?, hunters: { Vector3 })
 	local model = giant.Model
 	local height = giant.Height
 	local velocity = giant.Root.AssemblyLinearVelocity
@@ -274,6 +364,18 @@ local function animate(giant: Animated, dt: number, t: number, herePosition: Vec
 	giant.SwingTimer = math.max(giant.SwingTimer - dt, 0)
 	giant.Swing = ease(giant.Swing, if giant.SwingTimer > 0 then 1 else 0, 14, dt)
 	updateStars(giant, dazed, t)
+	giant.Guard = ease(giant.Guard, if model:GetAttribute("Guarding") then 1 else 0, 8, dt)
+	if giant.GuardHand then
+		show(giant.GuardHand, giant.Guard > 0.6, 0.2)
+	end
+	if #giant.Cracks > 0 and giant.MaxArmor > 0 then
+		-- The nape plate cracks a little more with every hit.
+		local armor = (model:GetAttribute("Armor") :: number?) or giant.MaxArmor
+		local broken = 1 - armor / giant.MaxArmor
+		for i, crack in giant.Cracks do
+			show(crack, broken >= (i - 0.5) / #giant.Cracks, 0)
+		end
+	end
 
 	-- The walk.
 	giant.Phase += dt * speed / (height * (if giant.Abnormal then 0.08 else 0.11))
@@ -307,6 +409,31 @@ local function animate(giant: Animated, dt: number, t: number, herePosition: Vec
 	end
 	giant.Look = giant.Look:Lerp(want, math.min(dt * 3, 1))
 
+	-- Eyes: the pupils slide toward the nearest hunter; a blink every few
+	-- seconds.
+	local head = giant.Head
+	local gaze = Vector3.zero
+	if head and not model:GetAttribute("Shifter") then
+		local nearest: Vector3? = nil
+		local best = STARE_DISTANCE * 1.5
+		for _, position in hunters do
+			local d = (position - head.Position).Magnitude
+			if d < best then
+				nearest, best = position, d
+			end
+		end
+		if nearest then
+			local direction = head.CFrame:VectorToObjectSpace((nearest - head.Position).Unit)
+			gaze = Vector3.new(math.clamp(direction.X * 1.6, -1, 1), math.clamp(direction.Y * 1.6, -1, 1), 0) * giant.EyeRange
+		end
+	end
+	giant.Gaze = giant.Gaze:Lerp(gaze, math.min(dt * 8, 1))
+	local now = os.clock()
+	if now >= giant.NextBlink then
+		giant.BlinkUntil = now + 0.16
+		giant.NextBlink = now + 2.5 + math.random() * 4
+	end
+
 	local pose = GiantAnimator.Pose({
 		Height = height,
 		Abnormal = giant.Abnormal,
@@ -324,6 +451,11 @@ local function animate(giant: Animated, dt: number, t: number, herePosition: Vec
 		SwatSide = giant.SwatSide,
 		Swing = giant.Swing,
 		Look = giant.Look,
+		Crawl = giant.Crawl,
+		Guard = giant.Guard,
+		Gaze = giant.Gaze,
+		Blink = if now < giant.BlinkUntil then 1 else 0,
+		LidShut = giant.LidShut,
 	})
 	for name, transform in pose do
 		set(giant.Motors, name, transform)
@@ -353,6 +485,15 @@ function GiantAnimator.Init()
 		local character = player.Character
 		local here = character and character:FindFirstChild("HumanoidRootPart")
 		local herePosition = if here and here:IsA("BasePart") then here.Position else nil
+		-- Everyone the pupils can follow (not titans: they hide inside one).
+		local hunters: { Vector3 } = {}
+		for _, other in Players:GetPlayers() do
+			local body = other.Character
+			local otherRoot = body and body:FindFirstChild("HumanoidRootPart")
+			if body and otherRoot and otherRoot:IsA("BasePart") and not body:GetAttribute("Shifted") then
+				table.insert(hunters, otherRoot.Position)
+			end
+		end
 		for model, giant in animated do
 			if not model.Parent then
 				updateStars(giant, false, 0)
@@ -366,7 +507,7 @@ function GiantAnimator.Init()
 			if herePosition and (giant.Root.Position - herePosition).Magnitude > VISIBLE_DISTANCE then
 				continue
 			end
-			animate(giant, dt, clock, herePosition)
+			animate(giant, dt, clock, herePosition, hunters)
 		end
 	end)
 end
