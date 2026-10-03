@@ -29,8 +29,9 @@ cd GiantHunters
 rojo serve
 ```
 
-In Studio, open a new **Baseplate** and delete the `Baseplate` and
-`SpawnLocation` parts. Then **Plugins → Rojo → Connect** and press **Play**.
+In Studio, open a new **Baseplate** (its `Baseplate` and `SpawnLocation`
+are removed automatically when the map builds). Then **Plugins → Rojo →
+Connect** and press **Play**.
 The district, the giants and the HUD all build themselves. You can also
 `rojo build -o GiantHunters.rbxlx` and open the file.
 
