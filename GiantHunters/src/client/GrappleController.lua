@@ -719,6 +719,11 @@ function GrappleController.GasMax(): number
 	return settings.GasMax
 end
 
+-- A technique (Second Wind) tops the tank up.
+function GrappleController.AddGas(amount: number)
+	gas = math.clamp(gas + amount, 0, settings.GasMax)
+end
+
 function GrappleController.IsHooked(): boolean
 	return attachedCount() > 0
 end

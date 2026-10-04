@@ -583,6 +583,20 @@ local function watchBounds()
 end
 
 -- Sends a hunter their gear state again (after an upgrade changes it).
+-- Spends one sharp blade (a technique's cut). False if there's none left.
+function HunterService.UseBlade(player: Player): boolean
+	local hunter = hunters[player]
+	if not hunter or hunter.Blades <= 0 then
+		return false
+	end
+	hunter.Blades -= 1
+	pushState(player)
+	if hunter.Blades <= 0 then
+		setBladesSharp(player, false)
+	end
+	return true
+end
+
 function HunterService.Refresh(player: Player)
 	pushState(player)
 end

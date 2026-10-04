@@ -40,6 +40,9 @@ export type Profile = {
 	-- Levels (LevelService):
 	Level: number, -- 1 to Config.Leveling.MaxLevel
 	XP: number, -- progress within the level
+	-- The shop (ShopService):
+	Owned: { [string]: boolean }, -- gear, technique and titan form ids bought
+	Equip: { [string]: string }, -- "Gear" / "Technique" / "Titan" -> id ("" for none)
 }
 
 -- Today's challenges: the UTC day they're for, progress and which are done.
@@ -74,6 +77,8 @@ local function blank(): Profile
 		Title = "",
 		Level = 1,
 		XP = 0,
+		Owned = {},
+		Equip = {},
 	}
 end
 
@@ -100,6 +105,10 @@ end
 
 local function isTrue(value: unknown): boolean?
 	return if value == true then true else nil
+end
+
+local function isText(value: unknown): string?
+	return if type(value) == "string" and #value <= 40 then value else nil
 end
 
 local function keyFor(player: Player): string
@@ -168,6 +177,8 @@ local function clean(stored: unknown): Profile
 		if type(data.Title) == "string" then
 			profile.Title = data.Title
 		end
+		profile.Owned = cleanMap(data.Owned, isTrue)
+		profile.Equip = cleanMap(data.Equip, isText)
 	end
 	return profile
 end
