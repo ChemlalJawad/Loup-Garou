@@ -177,8 +177,36 @@ side:
 
 Titans on opposite sides can fight each other. Press **T** to transform
 (60 s, then a 40 s cooldown) and T again to change back. As a titan, click
-or F punches and G roars (titans can't jump). Hooks, gas and blades are put
-away.
+or F uses your form's **Primary** power and G its **Secondary** power
+(titans can't jump); two tiles above the status line show each power's
+recharge. Hooks, gas and blades are put away.
+
+### Titan forms
+
+You turn into the form you have equipped (bought with Marks in the shop's
+**Titans** tab; `Config.TitanForms`). Everyone has the Classic Titan.
+
+| Form | Height | Speed | Nape | Primary (click / F) | Secondary (G) | Price | Level |
+|---|---|---|---|---|---|---|---|
+| Classic Titan (`Default`) | 34 | 30 | 3 | Punch (0.9 s) | Roar (12 s): dazes giants within 70 / blows hunters away | free | 1 |
+| Swiftfang | 24 | 42 | 2 | Pounce (1.6 s): a leap forward and a punch where it lands | Frenzy (15 s): 5 s at x1.5 speed, pounces recharge twice as fast | 250 | 3 |
+| Boulderhurler | 38 | 26 | 3 | Big Swing (1.1 s): a longer-reaching punch | Boulder Toss (6 s): lobs a boulder at the nearest enemy ahead (260 studs): giants hit and knocked silly / hunters knocked back | 400 | 5 |
+| Crystalcrown | 32 | 32 | 3 | Punch (0.9 s) | Crystal Guard (14 s): crystals burst out (daze giants / push hunters, 28 studs) and a crystal hand covers the nape for 4 s | 550 | 7 |
+| Stoneguard | 42 | 22 | 4 | Stone Fist (1.3 s): a heavy punch | Ground Slam (10 s): a shockwave dazes giants within 30 (pushes hunters back) | 700 | 9 |
+| Steamwarden | 52 | 18 | 5 | Heavy Punch (1.2 s) | Steam Vent (16 s): 4 s of steam - giants within 45 stay dazed and the nearest are scalded (a hit); hunters are pushed away | 1000 | 12 |
+
+Stoneguard's rock plates halve nape damage. On the giants' side the same
+powers only ever push or knock hunters out (never hurt them); powers hit
+titans on the other side too.
+
+**Titan Gauge**: if you own and equip a form other than the Classic Titan,
+a gauge (bottom left) fills with your takedowns on foot (+20, +10 more for
+a clean cut). Full, press **T** (or TITAN) to turn into your form straight
+away for 45 s on the hunters' side - once; the gauge then starts over.
+It still counts toward the 2-titan limit. The server checks the gauge,
+the form and the player's level.
+
+![Titan forms](titans-preview.jpg)
 
 Don't want it? Pick **"No thanks"** when choosing a side. The power fades
 when you're knocked out or caught, when the round ends, or after 4
@@ -201,8 +229,8 @@ anyone who comes close. Worth 12 points.
 | Gas dash | Ctrl or C | B | "Dash" |
 | Slash with both blades (a full spin in the air) | Click or F | X | "Slash" |
 | Signal flare | G | Y | "Flare" |
-| Transform into a titan (with the titan power) | T | D-pad up | "Titan" |
-| Titan: punch / roar | Click or F / G | X / Y | "Punch" / "Roar" |
+| Transform into a titan (with the titan power, or a full Titan Gauge) | T | D-pad up | "Titan" |
+| Titan: primary / secondary power | Click or F / G | X / Y | the two power buttons |
 | Wriggle free when grabbed | mash any key or click | mash any button | tap anywhere |
 | Resupply gas & blades (at a crate with a blue beam) | R | D-pad down | tap the prompt |
 | Fire a wall cannon / take the titan crystal | R | D-pad down | tap the prompt |
@@ -450,7 +478,7 @@ sound you've uploaded (`rbxassetid://...`).
 | `src/server/DayNightService.lua` | the 24-hour clock |
 | `src/server/WeatherService.lua`, `src/client/Weather.lua` | passing rain and fog: the server picks, each client fades the sky and the rain |
 | `src/client/Townsfolk.lua`, `Birds.lua`, `Breeze.lua` | client-only town life: villagers on a street graph, flocks of birds, washing and awnings in the wind |
-| `src/server/ShifterService.lua` | the titan crystal, sides, transforming, punches, roars, titan napes |
+| `src/server/ShifterService.lua` | the titan crystal, the Titan Gauge, sides, transforming into a form, its powers, titan napes |
 | `src/server/HunterService.lua` | characters, leaderboard and ranks, twin swords, blades, resupply, slash validation, combos, flares, cable relay |
 | `src/server/HunterGear.lua` | the hunters' uniform, cape and grapple rig, built over each avatar |
 | `src/server/CannonService.lua` | the wall cannons |
@@ -462,7 +490,7 @@ sound you've uploaded (`rbxassetid://...`).
 | `src/client/Juice.lua` | hit-stop, flashes and vignettes, floating score, speed lines, camera roll, grab tells, defeated giants slumping |
 | `src/client/Settings.lua` | the settings panel (session-only) |
 | `src/client/SkyController.lua`, `src/shared/Sky.lua` | the sky by the hour; lamps, torches, windows and giants' eyes at night |
-| `src/client/ShifterController.lua` | choosing a side, T to transform, titan punch and roar |
+| `src/client/ShifterController.lua` | choosing a side, T to transform, power keys and cooldowns, the Titan Gauge |
 | `src/client/TouchButtons.lua` | the on-screen buttons on phones and tablets |
 | `src/client/Tutorial.lua` | the first-join tutorial |
 | `src/server/Motion.lua` | where every hunter really is: server-measured speed, too-fast moves |

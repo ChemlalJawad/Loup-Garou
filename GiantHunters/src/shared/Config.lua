@@ -114,6 +114,8 @@ export type GiantLook = {
 	Cheeks: boolean?, -- ridge lines under the eyes (titan shifters)
 	Pose: string?, -- "Crawl" (on all fours) or "Ape" (knuckles near the ground)
 	Guard: boolean?, -- a crystal hand that can cover the nape (attribute "Guarding")
+	Crystal: boolean?, -- a crown of crystal spikes and crystal shoulder points (titan forms)
+	Spines: boolean?, -- short horn-like spines down the upper back, below the nape (titan forms)
 	-- Oddities (the abnormal variants). Left nil, they're rolled (see
 	-- Config.GiantOddities); set true or false to force one on or off.
 	Tilt: boolean?, -- the head hangs permanently to one side
@@ -409,7 +411,7 @@ Config.Remotes = {
 	Feed = "GH_Feed", -- server -> all (text, tone)
 	Announce = "GH_Announce", -- server -> all (title, subtitle, tone)
 	Shake = "GH_Shake", -- server -> all (origin: Vector3, strength: number)
-	Shift = "GH_Shift", -- client -> server ("Choose", side) | ("Decline") | ("Transform") | ("Punch") | ("Roar")
+	Shift = "GH_Shift", -- client -> server ("Choose", side) | ("Decline") | ("Transform") | ("Primary") | ("Secondary") | ("Gauge"); server -> client ("Dash", velocity)
 	Tutorial = "GH_Tutorial", -- client -> server ("Done")
 	-- Progression (ProgressService / UpgradeShop):
 	Progress = "GH_Progress", -- client -> server ("Sync") | ("Buy", track) | ("Cape", id) | ("Title", id?); server -> client ("State", snapshot) | ("Result", ok, message) | ("Challenge", text, reward) | ("Open")
@@ -476,23 +478,247 @@ Config.Ambient = {
 
 -- === Titan shifters ============================================================
 -- Now and then a glowing crystal appears in town. Whoever takes it chooses a
--- side and can turn into a titan for a while: on the hunters' side your
--- punches crush giants; on the giants' side they knock hunters out (and the
--- hunters can cut your nape). Never more than Max shifters at once.
+-- side and can turn into a titan for a while (their equipped form, see
+-- Config.TitanForms): on the hunters' side your punches crush giants; on
+-- the giants' side they knock hunters out (and the hunters can cut your
+-- nape). Never more than Max shifters at once.
 Config.Shifters = {
 	Max = 2,
 	OrbEvery = 75, -- seconds between crystals while there's room for a shifter
 	Duration = 60, -- seconds as a titan
 	Cooldown = 40, -- before you can transform again
-	WalkSpeed = 30,
-	PunchCooldown = 0.9,
-	PunchReach = 0.5, -- x height, in front of the titan
-	RoarCooldown = 12,
-	RoarRadius = 70,
+	-- (Walk speed, size, nape health and the powers come from the form:
+	-- Config.TitanForms.)
+	PounceSpeed = 95, -- Swiftfang's leap, studs a second forward (plus a hop)
+	BoulderFlight = 1.1, -- seconds a thrown boulder is in the air
+	PushForce = 100, -- how hard slams, vents and crystals push hunters away
 	KnockoutPoints = 0, -- a rogue titan knocking out a hunter (no farming players)
 	KnockoutImmunity = 10, -- seconds a knocked-out hunter can't be knocked out again
 	PowerLasts = 240, -- seconds before an unused (or used) titan power fades
+	-- The Titan Gauge: players who own and equip a titan form (other than
+	-- "Default") fill it with takedowns made on foot; full, T transforms
+	-- them straight away (hunters' side only, still within Max).
+	GaugeMax = 100,
+	GaugeTakedown = 20,
+	GaugeClean = 10, -- extra for a clean cut
+	GaugeDuration = 45, -- seconds as a titan from a full gauge (then it's gone)
 }
+
+-- === Titan forms ===============================================================
+-- What a shifter turns into. Bought with Marks in the shop ("Titans" tab,
+-- ShopService), which sets the player attribute "Equip_Titan" to the form's
+-- Id ("" or missing = "Default"). ShifterService reads it when you
+-- transform, from a crystal or a full Titan Gauge. Every form has two
+-- powers: Primary (click / F) and Secondary (G). `Action` picks what the
+-- server does; Reach, Radius, Range, Duration and Boost tune it.
+export type TitanPower = {
+	Key: string, -- "Primary" | "Secondary"
+	Name: string,
+	Cooldown: number,
+	Description: string,
+	Action: string, -- "Punch" | "Pounce" | "Roar" | "Slam" | "Frenzy" | "Boulder" | "Vent" | "CrystalGuard"
+	Reach: number?, -- Punch / Pounce: x height, in front of the titan
+	Radius: number?, -- studs
+	Range: number?, -- Boulder: studs
+	Duration: number?, -- seconds
+	Boost: number?, -- Frenzy: x walk speed
+}
+export type TitanForm = {
+	Id: string,
+	Display: string,
+	Description: string,
+	Price: number, -- Marks (never real money)
+	LevelRequired: number,
+	Order: number,
+	Height: number,
+	WalkSpeed: number,
+	NapeHealth: number,
+	DamageTaken: number?, -- x nape damage (rock plates soak some of it)
+	Look: GiantLook,
+	Powers: { TitanPower },
+}
+
+Config.TitanForms = {
+	Default = {
+		Id = "Default",
+		Display = "Classic Titan",
+		Description = "The titan the crystal gives everyone: steady, strong and loud.",
+		Price = 0,
+		LevelRequired = 1,
+		Order = 1,
+		Height = 34,
+		WalkSpeed = 30,
+		NapeHealth = 3,
+		Look = Config.GiantKinds.Shifter.Look :: GiantLook,
+		Powers = {
+			{ Key = "Primary", Name = "Punch", Cooldown = 0.9, Action = "Punch", Reach = 0.5, Description = "A big punch: giants stagger." },
+			{ Key = "Secondary", Name = "Roar", Cooldown = 12, Action = "Roar", Radius = 70, Description = "Dazes every giant close by (or blows hunters away)." },
+		},
+	},
+	Swiftfang = {
+		Id = "Swiftfang",
+		Display = "Swiftfang",
+		Description = "Small, lean and very fast. Pounces on giants from a distance.",
+		Price = 250,
+		LevelRequired = 3,
+		Order = 2,
+		Height = 24,
+		WalkSpeed = 42,
+		NapeHealth = 2,
+		Look = {
+			Body = "Agile",
+			Hair = "Spiky",
+			Shorts = Color3.fromRGB(40, 70, 90),
+			Face = "Smirk",
+			Brows = "Angry",
+			Nose = "Button",
+			Ears = "Big",
+			Beard = false,
+			Cheeks = true,
+			Steam = true,
+			Spines = true,
+			Skin = Color3.fromRGB(196, 150, 140),
+			HairColor = Color3.fromRGB(236, 234, 226),
+			EyeColor = Color3.fromRGB(120, 230, 150),
+		},
+		Powers = {
+			{ Key = "Primary", Name = "Pounce", Cooldown = 1.6, Action = "Pounce", Reach = 0.7, Description = "Leaps forward and lands a punch at the end of it." },
+			{ Key = "Secondary", Name = "Frenzy", Cooldown = 15, Action = "Frenzy", Duration = 5, Boost = 1.5, Description = "5 seconds of top speed, and pounces recharge twice as fast." },
+		},
+	},
+	Boulderhurler = {
+		Id = "Boulderhurler",
+		Display = "Boulderhurler",
+		Description = "Long furry arms that pick up rocks and lob them across town.",
+		Price = 400,
+		LevelRequired = 5,
+		Order = 3,
+		Height = 38,
+		WalkSpeed = 26,
+		NapeHealth = 3,
+		Look = {
+			Body = "Ape",
+			Pose = "Ape",
+			Hair = "Mop",
+			Shorts = Color3.fromRGB(80, 70, 60),
+			Face = "Grin",
+			Brows = "Heavy",
+			Nose = "Wide",
+			Beard = false,
+			Fur = true,
+			Cheeks = true,
+			Steam = true,
+			Skin = Color3.fromRGB(176, 140, 96), -- sandy fur all over
+			HairColor = Color3.fromRGB(150, 112, 70),
+			EyeColor = Color3.fromRGB(120, 230, 150),
+		},
+		Powers = {
+			{ Key = "Primary", Name = "Big Swing", Cooldown = 1.1, Action = "Punch", Reach = 0.62, Description = "Long arms: a punch that reaches further." },
+			{ Key = "Secondary", Name = "Boulder Toss", Cooldown = 6, Action = "Boulder", Range = 260, Radius = 16, Description = "Lobs a boulder at the nearest enemy ahead: giants are knocked silly, hunters knocked back." },
+		},
+	},
+	Crystalcrown = {
+		Id = "Crystalcrown",
+		Display = "Crystalcrown",
+		Description = "A crown of crystal, and a crystal hand that shields its nape.",
+		Price = 550,
+		LevelRequired = 7,
+		Order = 4,
+		Height = 32,
+		WalkSpeed = 32,
+		NapeHealth = 3,
+		Look = {
+			Body = "Lanky",
+			Hair = "Bald",
+			Shorts = Color3.fromRGB(70, 90, 130),
+			Face = "Stern",
+			Brows = "Flat",
+			Nose = "Button",
+			Ears = "None",
+			Beard = false,
+			Cheeks = true,
+			Steam = true,
+			Guard = true,
+			Crystal = true,
+			Skin = Color3.fromRGB(214, 196, 184),
+			EyeColor = Color3.fromRGB(120, 230, 150),
+		},
+		Powers = {
+			{ Key = "Primary", Name = "Punch", Cooldown = 0.9, Action = "Punch", Reach = 0.5, Description = "A quick, solid punch." },
+			{ Key = "Secondary", Name = "Crystal Guard", Cooldown = 14, Action = "CrystalGuard", Duration = 4, Radius = 28, Description = "Crystals burst out (dazing giants or pushing hunters) and a crystal hand guards your nape for 4 seconds." },
+		},
+	},
+	Stoneguard = {
+		Id = "Stoneguard",
+		Display = "Stoneguard",
+		Description = "Tall and slow, covered in rock plates that soak up nape hits.",
+		Price = 700,
+		LevelRequired = 9,
+		Order = 5,
+		Height = 42,
+		WalkSpeed = 22,
+		NapeHealth = 4,
+		DamageTaken = 0.5,
+		Look = {
+			Body = "Stocky",
+			Hair = "Bald",
+			Shorts = Color3.fromRGB(60, 60, 70),
+			Face = "Stern",
+			Brows = "Heavy",
+			Nose = "Wide",
+			Beard = false,
+			Armor = true,
+			Cheeks = true,
+			Steam = true,
+			Skin = Color3.fromRGB(200, 160, 130),
+			EyeColor = Color3.fromRGB(120, 230, 150),
+		},
+		Powers = {
+			{ Key = "Primary", Name = "Stone Fist", Cooldown = 1.3, Action = "Punch", Reach = 0.55, Description = "A heavy, slow punch that shakes the street." },
+			{ Key = "Secondary", Name = "Ground Slam", Cooldown = 10, Action = "Slam", Radius = 30, Description = "Both fists into the ground: a shockwave dazes every giant within 30 studs (or knocks hunters back)." },
+		},
+	},
+	Steamwarden = {
+		Id = "Steamwarden",
+		Display = "Steamwarden",
+		Description = "A huge, slow titan wrapped in hot steam.",
+		Price = 1000,
+		LevelRequired = 12,
+		Order = 6,
+		Height = 52,
+		WalkSpeed = 18,
+		NapeHealth = 5,
+		Look = {
+			Body = "Chubby",
+			Hair = "Curly",
+			Shorts = Color3.fromRGB(120, 60, 50),
+			Face = "Oh",
+			Brows = "Raised",
+			Nose = "Ball",
+			Beard = true,
+			Cheeks = true,
+			Steam = true,
+			Skin = Color3.fromRGB(226, 160, 130),
+			HairColor = Color3.fromRGB(176, 176, 172),
+			EyeColor = Color3.fromRGB(120, 230, 150),
+		},
+		Powers = {
+			{ Key = "Primary", Name = "Heavy Punch", Cooldown = 1.2, Action = "Punch", Reach = 0.45, Description = "A huge fist with a huge reach." },
+			{ Key = "Secondary", Name = "Steam Vent", Cooldown = 16, Action = "Vent", Radius = 45, Duration = 4, Description = "Blasts steam for 4 seconds: giants close by stay dazed and the nearest get scalded; hunters are pushed away." },
+		},
+	},
+} :: { [string]: TitanForm }
+
+-- The form a player transforms into: what they have equipped, if it exists
+-- and their level allows it (else the Default).
+function Config.TitanFormFor(equipped: unknown, level: unknown): TitanForm
+	local form = if type(equipped) == "string" then Config.TitanForms[equipped] else nil
+	local lvl = if type(level) == "number" then level else 1
+	if form and lvl >= form.LevelRequired then
+		return form
+	end
+	return Config.TitanForms.Default
+end
 
 -- === Gameplay systems ===========================================================
 -- (Grouped here: the district's health, anti-cheat tolerances, saving, the
