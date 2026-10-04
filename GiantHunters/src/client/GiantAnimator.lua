@@ -12,7 +12,11 @@
 --   * Leap (runners): legs tucked; Kick (the Wallbreaker): one big kick;
 --   * the stare: the head turns to follow the nearest hunter, the pupils
 --     follow whoever is closest, and it blinks now and then;
---   * crawlers (Look.Pose "Crawl") walk on all fours;
+--   * crawlers (Look.Pose "Crawl") walk on all fours; heavy giants (chubby,
+--     stocky, ape-like, or 40+ tall) waddle: a wide sway from foot to foot,
+--     arms out, the belly bouncing;
+--   * idling (standing still with nothing to do): now and then it scratches
+--     its head, looks slowly round, or sniffs the air toward a hunter;
 --   * Guarding (Sprinter): the right hand goes back over the nape and the
 --     crystal GuardHand shows; Armor: the nape plate's cracks light up as
 --     it takes hits; a titan shifter's eyes take its side's colour.
@@ -62,6 +66,11 @@ type Animated = {
 	Gaze: Vector3,
 	BlinkUntil: number,
 	NextBlink: number,
+	Heavy: boolean,
+	Idle: string, -- "", "Scratch", "LookAround" or "Sniff"
+	IdleUntil: number,
+	NextIdle: number,
+	Scratch: number,
 }
 
 type Arm = { X: number, Z: number, Elbow: number, Side: number }
@@ -69,6 +78,8 @@ type Arm = { X: number, Z: number, Elbow: number, Side: number }
 local animated: { [Model]: Animated } = {}
 local VISIBLE_DISTANCE = 800
 local STARE_DISTANCE = 140
+local SNIFF_DISTANCE = 260
+local HEAVY_BODIES = { Chubby = true, Stocky = true, Ape = true }
 
 local function add(instance: Instance)
 	if not instance:IsA("Model") or animated[instance] then
@@ -139,6 +150,11 @@ local function add(instance: Instance)
 		Gaze = Vector3.zero,
 		BlinkUntil = 0,
 		NextBlink = os.clock() + 1 + math.random() * 4,
+		Heavy = HEAVY_BODIES[(instance:GetAttribute("Body") :: string?) or ""] == true or ((instance:GetAttribute("Height") :: number?) or 0) >= 40,
+		Idle = "",
+		IdleUntil = 0,
+		NextIdle = os.clock() + 3 + math.random() * 5,
+		Scratch = 0,
 	}
 end
 
@@ -215,6 +231,8 @@ export type PoseInput = {
 	Gaze: Vector3?, -- pupil offset in the head's frame, studs
 	Blink: number?, -- 0 open .. 1 shut
 	LidShut: Vector3?, -- how far a lid moves to shut (model attribute "LidShut")
+	Heavy: boolean?, -- a waddling walk: wide sway, arms out, belly bounce
+	Scratch: number?, -- 0..1: the right hand up scratching its head (idle)
 }
 
 -- The whole pose from a giant's state, as Motor6D transforms by motor name.
@@ -231,7 +249,8 @@ function GiantAnimator.Pose(p: PoseInput): { [string]: CFrame }
 	-- Trunk: the slouch is baked into the rig; this sways, bobs, breathes,
 	-- lunges, and hunches further for runners and stumbles. A crawler rears
 	-- up to grab and flattens down when its legs are cut.
-	local bob = math.abs(math.cos(p.Phase)) * p.Height * 0.012 * stride
+	local heavy = p.Heavy == true and not crawl
+	local bob = math.abs(math.cos(p.Phase)) * p.Height * (if heavy then 0.018 else 0.012) * stride
 	local lean = math.sin(p.Breath) * 0.02 - leap * 0.2 + kick * 0.15
 	if crawl then
 		lean += reach * 0.5 - kneel * 0.12 + hold * 0.35
@@ -242,7 +261,12 @@ function GiantAnimator.Pose(p: PoseInput): { [string]: CFrame }
 		lean -= 0.3 * stride
 	end
 	local dazeSway = math.sin(t * 1.7) * 0.12 * daze
-	pose.Waist = CFrame.new(0, bob, 0) * CFrame.Angles(lean, s * 0.06 * stride, s * 0.05 * stride + dazeSway)
+	-- A heavy giant waddles: its weight rolls over onto each planted foot.
+	local roll = s * (if heavy then 0.1 else 0.05) * stride
+	local shift = if heavy then s * p.Height * 0.012 * stride else 0
+	pose.Waist = CFrame.new(shift, bob, 0) * CFrame.Angles(lean, s * 0.06 * stride, roll + dazeSway)
+	-- The belly (chubby and stocky giants) bounces a beat behind each step.
+	pose.Belly = CFrame.new(0, math.sin(p.Phase * 2 + 1.2) * p.Height * 0.008 * stride + math.sin(p.Breath) * p.Height * 0.002, 0)
 
 	-- Legs: knees bend as each leg swings through; kneeling folds the shins
 	-- back flat; a leap tucks both legs; the kick swings the right leg up.
@@ -272,7 +296,7 @@ function GiantAnimator.Pose(p: PoseInput): { [string]: CFrame }
 	-- A crawler walks its arms like front legs: each one with the opposite
 	-- leg (left arm with right leg), elbows nearly straight.
 	local flail = if p.Abnormal then 1.8 elseif crawl then 1.1 else 0.8
-	local spread = if p.Abnormal then 0.35 * stride else 0
+	local spread = if p.Abnormal then 0.35 * stride elseif heavy then 0.14 * stride else 0
 	local elbow = if crawl then 0.05 + math.max(s, 0) * 0.25 * stride else 0.25 + math.abs(s) * 0.2 * stride
 	local arms: { Left: Arm, Right: Arm } = {
 		Left = { X = -swing * flail, Z = -0.08 - spread, Elbow = elbow, Side = -1 },
@@ -312,6 +336,11 @@ function GiantAnimator.Pose(p: PoseInput): { [string]: CFrame }
 	arms.Right.X = lerp(arms.Right.X, 2.75, guard)
 	arms.Right.Z = lerp(arms.Right.Z, -0.45, guard)
 	arms.Right.Elbow = lerp(arms.Right.Elbow, 1.7, guard)
+	-- Scratching its head (idle): the right hand up by its ear, fingers going.
+	local scratch = p.Scratch or 0
+	arms.Right.X = lerp(arms.Right.X, 2.5, scratch)
+	arms.Right.Z = lerp(arms.Right.Z, 0.55, scratch)
+	arms.Right.Elbow = lerp(arms.Right.Elbow, 2.15 + math.sin(t * 15) * 0.15, scratch)
 	pose.LeftShoulder = CFrame.Angles(arms.Left.X, 0, arms.Left.Z)
 	pose.RightShoulder = CFrame.Angles(arms.Right.X, 0, arms.Right.Z)
 	pose.LeftElbow = CFrame.Angles(arms.Left.Elbow, 0, 0)
@@ -397,6 +426,36 @@ local function animate(giant: Animated, dt: number, t: number, herePosition: Vec
 
 	giant.Breath += dt * 1.4
 
+	-- Idling: standing still with nothing to do, now and then it scratches
+	-- its head, looks slowly round, or sniffs the air toward a hunter.
+	local now = os.clock()
+	local busy = giant.Crawl or not not model:GetAttribute("Shifter") or stride > 0.2
+		or giant.Reach + giant.Hold + giant.Kneel + giant.Daze + giant.Kick + giant.Leap + giant.Guard + giant.SwatRaise + giant.Swing > 0.05
+	local sniffAt: Vector3? = nil
+	if busy then
+		giant.Idle = ""
+	elseif giant.Idle ~= "" and now >= giant.IdleUntil then
+		giant.Idle = ""
+		giant.NextIdle = now + 4 + math.random() * 6
+	elseif giant.Idle == "" and now >= giant.NextIdle then
+		local roll = math.random(1, 3)
+		giant.Idle = if roll == 1 then "Scratch" elseif roll == 2 then "LookAround" else "Sniff"
+		giant.IdleUntil = now + 2.5 + math.random() * 2
+	end
+	if giant.Idle == "Sniff" then
+		local best = SNIFF_DISTANCE
+		for _, position in hunters do
+			local d = (position - giant.Root.Position).Magnitude
+			if d < best then
+				sniffAt, best = position, d
+			end
+		end
+		if not sniffAt then
+			giant.Idle = "LookAround" -- nobody to sniff out
+		end
+	end
+	giant.Scratch = ease(giant.Scratch, if giant.Idle == "Scratch" then 1 else 0, 5, dt)
+
 	-- Head: stares at you if you're close; looks down at whoever it's
 	-- holding (the wobble when dazed is part of the pose).
 	local want = CFrame.new()
@@ -408,6 +467,15 @@ local function animate(giant: Animated, dt: number, t: number, herePosition: Vec
 		local yaw = math.clamp(math.atan2(-localDir.X, -localDir.Z), -1.1, 1.1)
 		local pitch = math.clamp(math.asin(math.clamp(localDir.Y, -1, 1)), -0.6, 0.5)
 		want = CFrame.Angles(0, yaw, 0) * CFrame.Angles(pitch, 0, 0)
+	elseif sniffAt then
+		-- Nose up toward you, a quick little nodding sniff.
+		local localDir = giant.Root.CFrame:VectorToObjectSpace(sniffAt - giant.Root.Position)
+		local yaw = math.clamp(math.atan2(-localDir.X, -localDir.Z), -1, 1)
+		want = CFrame.Angles(0, yaw, 0) * CFrame.Angles(0.28 + math.sin(t * 11) * 0.06, 0, 0)
+	elseif giant.Idle == "LookAround" then
+		want = CFrame.Angles(0, math.sin((giant.IdleUntil - now) * 1.3) * 0.9, 0) * CFrame.Angles(0.08, 0, 0)
+	elseif giant.Idle == "Scratch" then
+		want = CFrame.Angles(0, 0, -0.18 * giant.Scratch) -- leaning into the scratch
 	end
 	giant.Look = giant.Look:Lerp(want, math.min(dt * 3, 1))
 
@@ -430,7 +498,6 @@ local function animate(giant: Animated, dt: number, t: number, herePosition: Vec
 		end
 	end
 	giant.Gaze = giant.Gaze:Lerp(gaze, math.min(dt * 8, 1))
-	local now = os.clock()
 	if now >= giant.NextBlink then
 		giant.BlinkUntil = now + 0.16
 		giant.NextBlink = now + 2.5 + math.random() * 4
@@ -458,6 +525,8 @@ local function animate(giant: Animated, dt: number, t: number, herePosition: Vec
 		Gaze = giant.Gaze,
 		Blink = if now < giant.BlinkUntil then 1 else 0,
 		LidShut = giant.LidShut,
+		Heavy = giant.Heavy,
+		Scratch = giant.Scratch,
 	})
 	for name, transform in pose do
 		set(giant.Motors, name, transform)

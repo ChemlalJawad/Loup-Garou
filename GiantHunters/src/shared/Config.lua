@@ -114,6 +114,21 @@ export type GiantLook = {
 	Cheeks: boolean?, -- ridge lines under the eyes (titan shifters)
 	Pose: string?, -- "Crawl" (on all fours) or "Ape" (knuckles near the ground)
 	Guard: boolean?, -- a crystal hand that can cover the nape (attribute "Guarding")
+	-- Oddities (the abnormal variants). Left nil, they're rolled (see
+	-- Config.GiantOddities); set true or false to force one on or off.
+	Tilt: boolean?, -- the head hangs permanently to one side
+	LongNeck: boolean?, -- a neck twice as long
+	Tongue: boolean?, -- tongue lolling out of a gaping mouth (forces Face "Gape")
+	OddArms: boolean?, -- one arm much longer than the other
+}
+
+-- How often the oddities turn up. Abnormals (Runners) roll each one at
+-- AbnormalChance; plain giants (no fixed Look) get a single one, rarely.
+-- Signature giants (a fixed Look that isn't abnormal) never roll.
+Config.GiantOddities = {
+	AbnormalChance = 0.35,
+	NormalChance = 0.06,
+	Names = { "Tilt", "LongNeck", "Tongue", "OddArms" },
 }
 
 export type GiantKind = {
