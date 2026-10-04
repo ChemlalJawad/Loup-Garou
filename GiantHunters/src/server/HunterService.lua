@@ -400,8 +400,8 @@ local function onSlash(player: Player)
 			end
 		end
 	end
-	if result ~= "NoTarget" then
-		hunter.Blades -= 1 -- blades only wear down on a real hit
+	if result ~= "NoTarget" and result ~= "Guarded" then
+		hunter.Blades -= 1 -- blades only wear down on a real hit (not on a guarding hand)
 		pushState(player)
 		if hunter.Blades <= 0 then
 			setBladesSharp(player, false)

@@ -372,6 +372,9 @@ local RESULTS = {
 	Trip = function(_info: any)
 		Hud.Toast("TRIPPED! It's on its knees!", TONES.Good)
 	end,
+	Guarded = function(_info: any)
+		Hud.Toast("BLOCKED! Wait for the hand to drop", Color3.fromRGB(190, 160, 255))
+	end,
 	Daze = function(_info: any)
 		Hud.Toast("DAZED! Get behind it!", TONES.Good)
 	end,

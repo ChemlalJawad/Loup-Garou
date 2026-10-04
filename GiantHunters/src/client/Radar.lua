@@ -194,6 +194,8 @@ function Radar.Init(gui: ScreenGui): Frame
 						elseif kind == "Runner" then Color3.fromRGB(255, 160, 40)
 						elseif kind == "Beast" then Color3.fromRGB(150, 90, 60)
 						elseif kind == "Armored" then Color3.fromRGB(190, 185, 170)
+						elseif kind == "Sprinter" then Color3.fromRGB(200, 120, 255)
+						elseif kind == "Crawler" then Color3.fromRGB(150, 170, 70)
 						else Color3.fromRGB(240, 70, 60)
 					place(giantRoot.Position, math.clamp(height / 4, 6, 14), color, true)
 				end

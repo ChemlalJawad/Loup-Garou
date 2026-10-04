@@ -246,7 +246,8 @@ it, and it won't come back.
     target. Yellow shorts, odd eyes.
   - **Sprinter** (an abnormal, from wave 3): lean and quick, zig-zags and
     leaps like a Runner, ponytail and a smirk. She can cover her nape with a
-    crystal hand.
+    crystal hand when you're close behind: watch her hand start to rise,
+    back off, and cut once it drops (a blocked cut costs no blade).
   - **Crawler** (now and then from wave 1): slow, on all fours, its nape
     right on top. The easy one for new hunters.
   - **Armored Giant**: rock plates in pieces with dark seams and a helmet
@@ -280,8 +281,9 @@ it, and it won't come back.
   forest platform).
 - **Gas**: used to reel in, boost and dash. Refills slowly on the ground,
   or fully at a crate.
-- **Score**: points per giant (Small 1, Giant 2, Runner 3, Colossal 4,
-  Armored 8), times your **combo** (takedowns within 8 s of each other, up
+- **Score**: points per giant (Small 1, Crawler 1, Giant 2, Runner 3,
+  Colossal 4, Sprinter 5, Armored 8, Beast 12), times your **combo**
+  (takedowns within 8 s of each other, up
   to x5), +1 for a takedown at 70+ studs/s. Trips, dazes and cannon hits
   are worth 1, cracking armour 2, rescuing a friend 3. Ranks: Recruit,
   Scout, Hunter, Veteran, Captain, Commander.
@@ -295,10 +297,11 @@ it, and it won't come back.
 Crosshair with left/right hook marks (yellow flying, green hooked); the
 gear panel (two gas tanks, two boxes of four blades, your speed, rank and
 points); a hint when a cut is in reach ("SLASH THE NAPE!", "TRIP",
-"DAZE"); the round and wave banner with the wave's time left and the
+"DAZE"; "BLOCKED!" when a Sprinter's hand covers the nape); the round and wave banner with the wave's time left and the
 district's health under it; announcements; a kill feed; the combo
 counter; a radar that turns with the camera (giants red, runners orange,
-armoured grey, hunters blue, crates cyan, the gate yellow, the wall a
+sprinters violet, crawlers olive, the Beast brown, armoured grey,
+hunters blue, crates cyan, the gate yellow, the wall a
 ring, and arrows round its edge for giants out of range); the GRABBED!
 screen with a wriggle meter.
 

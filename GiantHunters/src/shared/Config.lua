@@ -280,6 +280,14 @@ Config.Giants = {
 	BehindDot = -0.2, -- "behind" = further back than this from the giant's facing
 	DefeatFadeTime = 2.5,
 	RunnerLeap = { 3, 6 }, -- seconds between a runner's leaps
+	-- The Sprinter's guard: with a hunter within GuardRange x her height
+	-- behind her, now and then (GuardChance) the hand rises (GuardWindup s),
+	-- covers the nape for GuardTime s, then rests GuardCooldown s.
+	GuardRange = 1.2,
+	GuardChance = 0.6,
+	GuardWindup = 0.5,
+	GuardTime = 1.5,
+	GuardCooldown = 6,
 }
 
 -- === Rounds & waves ===========================================================

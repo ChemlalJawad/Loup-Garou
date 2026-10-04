@@ -160,6 +160,16 @@ function GrappleController.AimTarget(sideOffset: number?): RaycastResult?
 	return Workspace:Raycast(root.Position, fromRoot.Unit * (fromRoot.Magnitude + 4), rayParams) or first
 end
 
+-- Where a cable leaves a hunter: the tip of the hook launcher on their gear
+-- (HunterGear; it's rebuilt after the avatar is re-dressed, so look it up
+-- each time), or `fallback` (an attachment at the hip) until it's there.
+local function cableOrigin(character: Model?, side: number, fallback: Attachment): Attachment
+	local gear = character and character:FindFirstChild("HunterGear")
+	local launcher = gear and gear:FindFirstChild(if side < 0 then "HookLauncher1" else "HookLauncher2")
+	local origin = launcher and launcher:FindFirstChild("CableOrigin")
+	return if origin and origin:IsA("Attachment") then origin else fallback
+end
+
 local function makeBeam(from: Attachment, to: Attachment): Beam
 	local beam = Instance.new("Beam")
 	beam.Name = "Cable"
@@ -234,12 +244,13 @@ local function fire(hook: Hook)
 	hook.TargetNormal = targetPart.CFrame:VectorToObjectSpace(hit.Normal)
 	hook.OnGiant = isGiantPart(targetPart)
 	-- The flying hook head: an attachment on the terrain we slide each frame.
+	local origin = cableOrigin(player.Character, hook.Side, hook.Hip)
 	local tip = Instance.new("Attachment")
 	tip.Name = "HookTip"
-	tip.WorldPosition = hook.Hip.WorldPosition
 	tip.Parent = Workspace.Terrain
+	tip.WorldPosition = origin.WorldPosition
 	hook.Tip = tip
-	hook.Beam = makeBeam(hook.Hip, tip)
+	hook.Beam = makeBeam(origin, tip)
 	hook.State = "Flying"
 	Effects.Play("Hook", nil, 1, if hook.Side < 0 then 1 else 1.12)
 end
@@ -586,7 +597,8 @@ local function onRemoteHook(other: Player, side: string, part: BasePart?, localP
 	anchor.Position = localPos
 	anchor.Parent = part
 	remoteCables[other] = remoteCables[other] or {}
-	remoteCables[other][side] = { Beam = makeBeam(hip, anchor), Anchor = anchor, Hip = hip }
+	local origin = cableOrigin(other.Character, if side == "Left" then -1 else 1, hip)
+	remoteCables[other][side] = { Beam = makeBeam(origin, anchor), Anchor = anchor, Hip = hip }
 end
 
 function GrappleController.Gas(): number
@@ -826,6 +838,25 @@ function GrappleController.Init()
 	wind = windSound
 
 	RunService.Heartbeat:Connect(step)
+
+	-- Zoomed all the way in, the camera fades the whole character out; keep
+	-- the two swords in view (after the camera has had its say each frame).
+	RunService:BindToRenderStep("GH_SwordsInView", Enum.RenderPriority.Camera.Value + 1, function()
+		local character = player.Character
+		if not character then
+			return
+		end
+		for _, name in { "LeftSword", "RightSword" } do
+			local sword = character:FindFirstChild(name)
+			if sword then
+				for _, d in sword:GetDescendants() do
+					if d:IsA("BasePart") then
+						d.LocalTransparencyModifier = 0
+					end
+				end
+			end
+		end
+	end)
 end
 
 return GrappleController

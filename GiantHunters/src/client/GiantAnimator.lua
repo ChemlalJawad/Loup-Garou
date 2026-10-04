@@ -364,7 +364,9 @@ local function animate(giant: Animated, dt: number, t: number, herePosition: Vec
 	giant.SwingTimer = math.max(giant.SwingTimer - dt, 0)
 	giant.Swing = ease(giant.Swing, if giant.SwingTimer > 0 then 1 else 0, 14, dt)
 	updateStars(giant, dazed, t)
-	giant.Guard = ease(giant.Guard, if model:GetAttribute("Guarding") then 1 else 0, 8, dt)
+	-- The wind-up is the tell: the hand starts to rise before it covers.
+	local guardGoal = if model:GetAttribute("Guarding") then 1 elseif model:GetAttribute("GuardWindup") then 0.4 else 0
+	giant.Guard = ease(giant.Guard, guardGoal, 8, dt)
 	if giant.GuardHand then
 		show(giant.GuardHand, giant.Guard > 0.6, 0.2)
 	end

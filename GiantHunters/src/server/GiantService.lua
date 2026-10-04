@@ -14,10 +14,13 @@
 --   * A hunter flying round its head, in front or to the side: a swat that
 --     knocks them away. It never sees behind it - that's where you attack.
 --   * Runners (abnormals) sprint, zig-zag, leap, and pick their own prey.
+--   * Sprinters now and then cover their nape: a hunter close behind them,
+--     a short wind-up (attribute "GuardWindup", the hand starts to rise),
+--     then the crystal hand sits over the nape for a moment ("Guarding").
 --
 -- Cuts, through TryHit (HunterService checks cooldowns and blades first):
 --   * the nape, from behind or the side: damage (on armoured giants, the
---     rock plate cracks first);
+--     rock plate cracks first; a guarding Sprinter's hand blocks it);
 --   * the eyes, from in front of the face: dazed for a few seconds;
 --   * an ankle: down on its knees for a few seconds - nape within reach.
 -- Any cut on a giant that is holding someone sets them free.
@@ -73,9 +76,13 @@ type Giant = {
 	Roamer: boolean, -- wanders the wilds (forests, training grounds, castle) first
 	Hurry: boolean, -- the wave's time is up: straight into town, faster
 	Joints: { [string]: Motor6D }, -- Waist, RightShoulder, RightElbow (for the posed hand and nape)
+	Crawl: boolean, -- on all fours (Look.Pose "Crawl"): its trunk leans its own way
+	NextGuardAt: number, -- Sprinters: when the hand can cover the nape again
+	GuardUntil: number, -- the nape is covered until then (0: not guarding)
+	GuardWinding: boolean, -- the hand is on its way up
 }
 
-export type HitResult = "NoTarget" | "Hit" | "Defeated" | "Armor" | "ArmorBroken" | "Trip" | "Daze"
+export type HitResult = "NoTarget" | "Hit" | "Defeated" | "Armor" | "ArmorBroken" | "Trip" | "Daze" | "Guarded"
 export type HitInfo = {
 	Kind: string?, -- the giant's display name
 	Clean: boolean?,
@@ -158,7 +165,7 @@ local function heightAboveGround(player: Player, root: BasePart): number
 end
 
 -- The castle hill (west) is no place for a giant: they walk round it.
-local CASTLE_CENTRE = Geo.Polar(Layout.Castle.Angle, Layout.Castle.Radius)
+local CASTLE_CENTRE = Geo.CastleCentre()
 local CASTLE_KEEP = Layout.Castle.HillRadius + 15
 
 local function avoidCastle(here: Vector3, goal: Vector3): Vector3
@@ -334,9 +341,9 @@ local function heldHand(giant: Giant, t: number): Vector3?
 	if not shoulder or not elbow or not fore or not hand or not hand:IsA("BasePart") then
 		return nil
 	end
-	-- The trunk eases back as the client's does.
+	-- The trunk eases back as the client's does (a crawler rears up further).
 	local weight = 1 - math.exp(-5 * math.max(t - giant.HoldStarted, 0))
-	local torso = posedTorso(giant, 0.08 * weight)
+	local torso = posedTorso(giant, (if giant.Crawl then 0.35 else 0.08) * weight)
 	if not torso then
 		return nil
 	end
@@ -472,6 +479,75 @@ local function swat(giant: Giant, player: Player, root: BasePart)
 	end)
 end
 
+-- === The Sprinter's guard ====================================================
+-- A hunter close behind her: now and then a short wind-up (the hand starts
+-- to rise, attribute "GuardWindup"), then the crystal hand covers the nape
+-- for a moment ("Guarding") and nape cuts are blocked. Then a cooldown.
+
+local function guarding(giant: Giant): boolean
+	return os.clock() < giant.GuardUntil
+end
+
+-- Hand down at once (dazed, tripped).
+local function endGuard(giant: Giant)
+	if not giant.GuardWinding and giant.GuardUntil == 0 then
+		return
+	end
+	giant.GuardWinding = false
+	giant.GuardUntil = 0
+	local model = giant.Rig.Model
+	model:SetAttribute("GuardWindup", false)
+	model:SetAttribute("Guarding", false)
+end
+
+local function hunterBehind(giant: Giant): boolean
+	local nape = giant.Rig.Nape.Position
+	local range = giant.Kind.Height * Config.Giants.GuardRange
+	local body = giant.Rig.Root.Position
+	for _, player in Players:GetPlayers() do
+		local root = aliveRoot(player)
+		if root and not held[player] and (root.Position - nape).Magnitude < range and not inFront(giant, root.Position, body) then
+			return true
+		end
+	end
+	return false
+end
+
+local function guard(giant: Giant, now: number)
+	local G = Config.Giants
+	if not hunterBehind(giant) then
+		return
+	end
+	if rng:NextNumber() > G.GuardChance then
+		giant.NextGuardAt = now + 1.5 -- not this time
+		return
+	end
+	giant.NextGuardAt = now + G.GuardWindup + G.GuardTime + G.GuardCooldown
+	giant.GuardWinding = true
+	local model = giant.Rig.Model
+	model:SetAttribute("GuardWindup", true) -- clients start raising the hand: the tell
+	task.delay(G.GuardWindup, function()
+		if not giant.GuardWinding then
+			return -- called off (dazed, tripped)
+		end
+		giant.GuardWinding = false
+		model:SetAttribute("GuardWindup", false)
+		if not active(giant) or stunned(giant) or giant.Holding then
+			return
+		end
+		giant.GuardUntil = os.clock() + G.GuardTime
+		model:SetAttribute("Guarding", true)
+		task.delay(G.GuardTime, function()
+			if giant.GuardUntil ~= 0 and os.clock() >= giant.GuardUntil - 0.05 then
+				giant.GuardUntil = 0
+				if model.Parent then
+					model:SetAttribute("Guarding", false)
+				end
+			end
+		end)
+	end)
+end
+
 -- === The Beast Giant's powers ================================================
 -- Boulders for hunters who think they're safe up high (slow enough to
 -- dodge), and a roar that blows away anyone close.
@@ -590,19 +666,26 @@ local function think(giant: Giant)
 		return
 	end
 	if stunned(giant) then
+		endGuard(giant)
 		steer(giant, nil)
 		return
 	end
 	if giant.Kind.Powers and not giant.Busy then
 		powers(giant, now)
 	end
+	local look = giant.Kind.Look
+	if look and look.Guard and not giant.Busy and not giant.GuardWinding and now >= giant.NextGuardAt then
+		guard(giant, now)
+	end
+	-- (The guarding hand is busy: no grabs or swats with it up.)
+	local handFree = not giant.GuardWinding and not guarding(giant)
 	local target = chooseTarget(giant)
 	if target then
 		local root = target.Root
 		local inReach = (root.Position - chestPoint(giant)).Magnitude <= giant.Kind.GrabReach
-		if inReach and not giant.Busy then
+		if inReach and not giant.Busy and handFree then
 			tryGrab(giant, target.Player, root)
-		elseif not giant.Busy and now >= giant.NextSwatAt then
+		elseif not giant.Busy and handFree and now >= giant.NextSwatAt then
 			local swatPlayer, swatRoot = swatTarget(giant)
 			if swatPlayer and swatRoot then
 				swat(giant, swatPlayer, swatRoot)
@@ -638,7 +721,7 @@ local function think(giant: Giant)
 		return
 	end
 	-- Nobody to chase: still swat at anyone buzzing its head.
-	if not giant.Busy and now >= giant.NextSwatAt then
+	if not giant.Busy and handFree and now >= giant.NextSwatAt then
 		local swatPlayer, swatRoot = swatTarget(giant)
 		if swatPlayer and swatRoot then
 			swat(giant, swatPlayer, swatRoot)
@@ -709,6 +792,10 @@ function GiantService.SpawnGiant(kindName: string)
 		Roamer = not kind.Armor and not kind.Powers and rng:NextNumber() < Config.Waves.RoamChance,
 		Hurry = false,
 		Joints = joints,
+		Crawl = rig.Model:GetAttribute("Pose") == "Crawl",
+		NextGuardAt = now + 3,
+		GuardUntil = 0,
+		GuardWinding = false,
 	}
 	if kind.Armor then
 		rig.Model:SetAttribute("Armor", kind.Armor)
@@ -719,6 +806,8 @@ function GiantService.SpawnGiant(kindName: string)
 	if kind.Powers then
 		Broadcast.Announce("THE BEAST GIANT", "It throws boulders - nowhere is safe. Keep moving!", "Danger")
 		Broadcast.Feed("A Beast Giant has appeared!", "Danger")
+	elseif kind.Look and kind.Look.Guard then
+		Broadcast.Feed("A Sprinter is coming! She can cover her nape - wait for the hand to drop", "Danger")
 	end
 end
 
@@ -761,7 +850,8 @@ local function defeat(giant: Giant, player: Player, clean: boolean, speed: numbe
 	release(giant, "Rescued")
 	dissolve(giant)
 	GiantService.Defeated:Fire(player, giant.Kind.Name, clean, speed)
-	Broadcast.Feed(`{player.DisplayName} took down a {giant.Kind.Display}!`, if giant.Kind.Name == "Armored" then "Gold" else "Good")
+	local special = giant.Kind.Armor or giant.Kind.Powers or (giant.Kind.Look and giant.Kind.Look.Guard)
+	Broadcast.Feed(`{player.DisplayName} took down a {giant.Kind.Display}!`, if special then "Gold" else "Good")
 end
 
 -- Diminishing returns on stuns: how long this trip or daze lasts, and
@@ -805,6 +895,7 @@ end
 local function trip(giant: Giant, duration: number)
 	giant.KneelUntil = os.clock() + duration
 	giant.LeapUntil = 0
+	endGuard(giant)
 	local model = giant.Rig.Model
 	model:SetAttribute("Kneeling", true)
 	task.delay(duration, function()
@@ -816,6 +907,7 @@ end
 
 local function daze(giant: Giant, duration: number)
 	giant.DazeUntil = math.max(giant.DazeUntil, os.clock() + duration)
+	endGuard(giant)
 	local model = giant.Rig.Model
 	model:SetAttribute("Dazed", true)
 	task.delay(duration, function()
@@ -919,9 +1011,11 @@ local function posedNape(giant: Giant): Vector3?
 	if reach + hold + kneel == 0 then
 		return nil
 	end
-	-- (The same lean as GiantAnimator.Pose.)
+	-- (The same lean as GiantAnimator.Pose: a crawler rears up to grab and
+	-- flattens down when its legs are cut; its rest pose is in Waist.C0.)
+	local lean = if giant.Crawl then reach * 0.5 - kneel * 0.12 + hold * 0.35 else -reach * 0.22 - kneel * 0.35 + hold * 0.08
 	local rest = posedTorso(giant, 0)
-	local posed = posedTorso(giant, -reach * 0.22 - kneel * 0.35 + hold * 0.08)
+	local posed = posedTorso(giant, lean)
 	if not rest or not posed then
 		return nil
 	end
@@ -931,13 +1025,16 @@ end
 -- Called by HunterService after it has validated the slash (cooldown,
 -- blades, a believable position). `speed` is the server's own measure of the
 -- hunter's speed (Motion.CutSpeed). The nape comes first (from behind or the
--- side); then the eyes (from in front); then an ankle.
+-- side; a guarding Sprinter's hand blocks it, no blade used); then the eyes
+-- (from in front); then an ankle.
 function GiantService.TryHit(player: Player, root: BasePart, speed: number): (HitResult, HitInfo)
 	local here = root.Position
 	local reachBase = Config.Blades.SlashRange
 
 	local best: Giant? = nil
 	local bestDistance = math.huge
+	local blocked: Giant? = nil -- the nearest nape in reach behind a guarding hand
+	local blockedDistance = math.huge
 	for _, giant in giants do
 		if not giant.Defeated and not facing(giant, here) then
 			local nape = giant.Rig.Nape
@@ -949,13 +1046,23 @@ function GiantService.TryHit(player: Player, root: BasePart, speed: number): (Hi
 				d = math.min(d, (posed - here).Magnitude)
 				reach += Config.Cuts.PosedNapeSlack
 			end
-			if d <= reach and d < bestDistance then
-				best, bestDistance = giant, d
+			if d <= reach then
+				if guarding(giant) then
+					if d < blockedDistance then
+						blocked, blockedDistance = giant, d
+					end
+				elseif d < bestDistance then
+					best, bestDistance = giant, d
+				end
 			end
 		end
 	end
 	if best then
 		return cutNape(best, player, speed)
+	end
+	if blocked then
+		local hand = blocked.Rig.GuardHand or blocked.Rig.Nape
+		return "Guarded", { Kind = blocked.Kind.Display, Position = hand.Position }
 	end
 
 	for _, giant in giants do
