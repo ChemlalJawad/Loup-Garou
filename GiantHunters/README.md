@@ -288,9 +288,51 @@ it, and it won't come back.
   are worth 1, cracking armour 2, rescuing a friend 3. Ranks: Recruit,
   Scout, Hunter, Veteran, Captain, Commander.
 - **Saved**: your points (and so your rank), giants taken down, your best
-  round and whether you've done the tutorial are kept between sessions.
+  round and whether you've done the tutorial are kept between sessions,
+  and so are your Marks, upgrades, challenges, cape and title (below).
 - **The edge of the land**: wander past the hills (or fall through a gap)
   and you're put back on the wall.
+
+## Upgrades & challenges
+
+- **Marks** are earned in play, never bought: 1 per point scored, +1 for a
+  takedown with a clean cut, +2 for cutting a friend loose, and at the end
+  of a round you took part in, +10 (+2 x the round number) when the
+  district is saved or +3 if it falls. Daily challenges pay more.
+- **The upgrade shop**: press the **UPGRADES** button (left edge of the
+  screen) or walk up to an **upgrade board** (on the side of the
+  headquarters and by the spawn post on the wall; R / D-pad down / tap).
+  Six tracks, 3-4 levels each, each level dearer than the last
+  (`Config.Upgrades`):
+
+  | Track | What it does | Levels |
+  |---|---|---|
+  | Gas Tank | more gas | 100 > 115 > 130 > 145 > 160 |
+  | Gas Refill | faster refill on foot and on a cable | +20% a level |
+  | Reel Strength | faster, harder reel | +6% a level |
+  | Hook Range | longer cables | 170 > 180 > 190 > 200 > 210 studs |
+  | Blade Box | blades per resupply | 8 > 9 > 10 > 12 |
+  | Blade Edge | a clean nape cut may keep its blade | 15% / 30% / 45% |
+
+  The server owns every level and checks every purchase (data loaded, a
+  real track, the level cap, the price, one request every 0.25 s). Blades
+  are applied on the server; the grapple numbers are applied on each
+  client from the player's attributes (`Upgrades.lua`).
+- **Daily challenges**: three a day (the same for everyone, new at midnight
+  UTC) from a pool of twelve: clean cuts, takedowns, a Sprinter, Crawlers,
+  rescuing a friend, cracking an Armored plate, reaching wave 4, saving the
+  district, cutting training dummies, trips, dazes, a full-speed takedown.
+  Progress bars in the shop's Challenges tab; finishing one pays its Marks
+  at once.
+- **Looks** (no asset ids, just colours): cape colours with a matching
+  emblem (Corps Green to start; Scout Blue, Garrison Red, Royal Purple and
+  Commander Gold by rank; Sunrise Orange and Snow White for daily
+  challenges; Midnight for 150 giants), and a small title over your head,
+  your rank and a title you've earned ("Veteran • Giant Slayer"), seen from
+  up to 70 studs.
+- **Round summary**: when a round ends (saved or fallen) each hunter gets
+  their own card: takedowns, clean cuts, best cut speed, points and Marks
+  earned.
 
 ## The HUD
 
@@ -344,7 +386,10 @@ sound you've uploaded (`rbxassetid://...`).
 | `src/client/TouchButtons.lua` | the on-screen buttons on phones and tablets |
 | `src/client/Tutorial.lua` | the first-join tutorial |
 | `src/server/Motion.lua` | where every hunter really is: server-measured speed, too-fast moves |
-| `src/server/DataService.lua` | saving points, giants, best round and the tutorial (DataStore) |
+| `src/server/DataService.lua` | saving points, giants, best round, the tutorial and the progression (DataStore; missing keys load as defaults) |
+| `src/server/ProgressService.lua` | Marks, upgrade purchases, daily challenges, capes and titles, upgrade boards, the round summary |
+| `src/shared/Upgrades.lua` | upgrade levels to values (player attributes `Up_<Track>`), the upgraded grapple settings |
+| `src/client/UpgradeShop.lua` | the shop (upgrades, challenges, looks), its button, the round summary card |
 | `src/server/Respawn.lua` | respawning on the wall, retried if it fails |
 
 Movement runs on each player's own client, so the grapple feels instant.

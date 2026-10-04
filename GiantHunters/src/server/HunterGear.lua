@@ -27,6 +27,7 @@
 -- never gets in the way of the grapple or the slashes. R15 and R6 both
 -- work; on R6 the rig is built on the bottom of the torso.
 
+local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 
 local HunterGear = {}
@@ -229,7 +230,17 @@ end
 
 -- `rigTop`: the height (in the torso's frame) of the top of the reel box on
 -- R6, where the torso is also the hips; the cape stops above it there.
-local function cape(gear: Model, torso: BasePart, rigTop: number?)
+-- The cape's colours: the player's "CapeColor" and "EmblemColor"
+-- attributes (ProgressService sets them from the chosen cape), else the
+-- corps' green and blue.
+local function capeColors(character: Model): (Color3, Color3)
+	local player = Players:GetPlayerFromCharacter(character)
+	local color = player and player:GetAttribute("CapeColor")
+	local emblem = player and player:GetAttribute("EmblemColor")
+	return if typeof(color) == "Color3" then color else CAPE, if typeof(emblem) == "Color3" then emblem else EMBLEM_BLUE
+end
+
+local function cape(gear: Model, torso: BasePart, rigTop: number?, color: Color3, emblemColor: Color3)
 	local s = torso.Size
 	local top = s.Y / 2 + 0.05
 	-- Down to the waist: short enough to leave the reel box in sight.
@@ -238,15 +249,15 @@ local function cape(gear: Model, torso: BasePart, rigTop: number?)
 	local back = s.Z / 2 + PAD * 3.2
 	-- Hung from the shoulders, swinging out a touch at the bottom.
 	local hang = CFrame.new(0, top, back) * CFrame.Angles(math.rad(if rigTop then -14 else -8), 0, 0)
-	local cloth = gearPart(gear, "Cape", Vector3.new(width, length, 0.08), CAPE, Enum.Material.Fabric)
+	local cloth = gearPart(gear, "Cape", Vector3.new(width, length, 0.08), color, Enum.Material.Fabric)
 	attach(torso, cloth, hang * CFrame.new(0, -length / 2, 0))
 	-- The hood, rolled up round the back of the neck.
-	local hood = gearPart(gear, "CapeHood", Vector3.new(s.X * 0.95, 0.38, 0.38), CAPE:Lerp(Color3.new(0, 0, 0), 0.12), Enum.Material.Fabric, Enum.PartType.Cylinder)
+	local hood = gearPart(gear, "CapeHood", Vector3.new(s.X * 0.95, 0.38, 0.38), color:Lerp(Color3.new(0, 0, 0), 0.12), Enum.Material.Fabric, Enum.PartType.Cylinder)
 	attach(torso, hood, CFrame.new(0, top, back - 0.12))
 	-- The corps' emblem: a blue shield with two crossed blades.
 	local emblemSize = math.min(width * 0.4, length * 0.7)
 	local emblemAt = hang * CFrame.new(0, -length * 0.45, 0.05)
-	local shield = gearPart(gear, "EmblemShield", Vector3.new(0.04, emblemSize, emblemSize), EMBLEM_BLUE, Enum.Material.Fabric, Enum.PartType.Cylinder)
+	local shield = gearPart(gear, "EmblemShield", Vector3.new(0.04, emblemSize, emblemSize), emblemColor, Enum.Material.Fabric, Enum.PartType.Cylinder)
 	attach(torso, shield, emblemAt * CFrame.Angles(0, math.rad(90), 0))
 	for i, side in { -1, 1 } do
 		local blade = gearPart(gear, `EmblemBlade{i}`, Vector3.new(0.09, emblemSize * 1.25, 0.03), STEEL, Enum.Material.Metal)
@@ -384,7 +395,8 @@ function HunterGear.Dress(character: Model)
 		end
 		jacket(gear, torso, not uniform)
 		chestStraps(gear, torso)
-		cape(gear, torso, if r6 then -torso.Size.Y / 2 + 0.35 + 0.05 + hipSize.Y * 0.4 else nil)
+		local capeColor, emblemColor = capeColors(character)
+		cape(gear, torso, if r6 then -torso.Size.Y / 2 + 0.35 + 0.05 + hipSize.Y * 0.4 else nil, capeColor, emblemColor)
 	end
 	if hips then
 		if not r6 and not uniform then
@@ -396,6 +408,27 @@ function HunterGear.Dress(character: Model)
 	end
 	limbs(gear, character, not uniform)
 	gear.Parent = character
+end
+
+-- Re-colours a dressed hunter's cape and emblem from the player's
+-- attributes (after they pick another cape), without re-dressing.
+function HunterGear.RecolorCape(character: Model)
+	local gear = character:FindFirstChild("HunterGear")
+	if not gear then
+		return
+	end
+	local color, emblem = capeColors(character)
+	for _, item in gear:GetChildren() do
+		if item:IsA("BasePart") then
+			if item.Name == "Cape" then
+				item.Color = color
+			elseif item.Name == "CapeHood" then
+				item.Color = color:Lerp(Color3.new(0, 0, 0), 0.12)
+			elseif item.Name == "EmblemShield" then
+				item.Color = emblem
+			end
+		end
+	end
 end
 
 return HunterGear

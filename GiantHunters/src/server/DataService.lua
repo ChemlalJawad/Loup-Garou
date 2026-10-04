@@ -1,6 +1,11 @@
 --!strict
 -- Saving hunters between sessions: points (and so the rank), giants taken
--- down, the best round reached, and whether they've done the tutorial.
+-- down, the best round reached, and whether they've done the tutorial; and
+-- the progression (ProgressService): Marks, upgrade levels, today's
+-- challenges, lifetime totals, the chosen cape and title.
+--
+-- Older saves simply lack the newer keys: every missing or bad key loads as
+-- its default.
 --
 -- Everything is careful: every DataStore call is in a pcall and retried with
 -- a growing pause, saves use UpdateAsync (they never blindly overwrite), the
@@ -22,6 +27,22 @@ export type Profile = {
 	Giants: number,
 	BestRound: number,
 	TutorialDone: boolean,
+	-- Progression (ProgressService):
+	Marks: number,
+	Upgrades: { [string]: number }, -- track -> level
+	Challenges: Challenges,
+	ChallengesDone: number, -- lifetime
+	CleanCuts: number, -- lifetime clean nape cuts
+	Rescues: number, -- lifetime friends cut loose
+	Cape: string, -- Config.Cosmetics.Capes id
+	Title: string, -- Config.Cosmetics.Titles id, "" for none
+}
+
+-- Today's challenges: the UTC day they're for, progress and which are done.
+export type Challenges = {
+	Day: number,
+	Progress: { [string]: number },
+	Done: { [string]: boolean },
 }
 
 type Session = {
@@ -34,7 +55,45 @@ local store: DataStore? = nil
 local sessions: { [Player]: Session } = {}
 
 local function blank(): Profile
-	return { Points = 0, Giants = 0, BestRound = 0, TutorialDone = false }
+	return {
+		Points = 0,
+		Giants = 0,
+		BestRound = 0,
+		TutorialDone = false,
+		Marks = 0,
+		Upgrades = {},
+		Challenges = { Day = 0, Progress = {}, Done = {} },
+		ChallengesDone = 0,
+		CleanCuts = 0,
+		Rescues = 0,
+		Cape = Config.Cosmetics.DefaultCape,
+		Title = "",
+	}
+end
+
+local function count(value: unknown): number?
+	if type(value) == "number" and value == value and value >= 0 and value < math.huge then
+		return math.floor(value)
+	end
+	return nil
+end
+
+-- A { [string]: number } (or boolean) table, keys and values checked.
+local function cleanMap<T>(stored: unknown, check: (unknown) -> T?): { [string]: T }
+	local out: { [string]: T } = {}
+	if type(stored) == "table" then
+		for key, value in stored :: { [unknown]: unknown } do
+			local checked = check(value)
+			if type(key) == "string" and #key <= 40 and checked ~= nil then
+				out[key] = checked
+			end
+		end
+	end
+	return out
+end
+
+local function isTrue(value: unknown): boolean?
+	return if value == true then true else nil
 end
 
 local function keyFor(player: Player): string
@@ -79,13 +138,29 @@ local function clean(stored: unknown): Profile
 	local profile = blank()
 	if type(stored) == "table" then
 		local data = stored :: { [string]: unknown }
-		for _, key in { "Points", "Giants", "BestRound" } do
-			local value = data[key]
-			if type(value) == "number" and value == value and value >= 0 then
-				(profile :: any)[key] = math.floor(value)
+		for _, key in { "Points", "Giants", "BestRound", "Marks", "ChallengesDone", "CleanCuts", "Rescues" } do
+			local value = count(data[key])
+			if value then
+				(profile :: any)[key] = value
 			end
 		end
 		profile.TutorialDone = data.TutorialDone == true
+		profile.Upgrades = cleanMap(data.Upgrades, count)
+		local challenges = data.Challenges
+		if type(challenges) == "table" then
+			local c = challenges :: { [string]: unknown }
+			profile.Challenges = {
+				Day = count(c.Day) or 0,
+				Progress = cleanMap(c.Progress, count),
+				Done = cleanMap(c.Done, isTrue),
+			}
+		end
+		if type(data.Cape) == "string" then
+			profile.Cape = data.Cape
+		end
+		if type(data.Title) == "string" then
+			profile.Title = data.Title
+		end
 	end
 	return profile
 end
@@ -124,6 +199,15 @@ function DataService.Set(player: Player, key: string, value: any)
 	end
 end
 
+-- Marks the profile for the next save after changing it in place (nested
+-- tables: upgrades, challenges).
+function DataService.Touch(player: Player)
+	local session = sessions[player]
+	if session then
+		session.Dirty = true
+	end
+end
+
 function DataService.Save(player: Player)
 	local session = sessions[player]
 	local dataStore = store
@@ -131,7 +215,14 @@ function DataService.Save(player: Player)
 		return
 	end
 	session.Dirty = false
+	-- (A deep enough copy: the nested tables can change while this yields.)
 	local profile = table.clone(session.Profile)
+	profile.Upgrades = table.clone(profile.Upgrades)
+	profile.Challenges = {
+		Day = profile.Challenges.Day,
+		Progress = table.clone(profile.Challenges.Progress),
+		Done = table.clone(profile.Challenges.Done),
+	}
 	local ok = retry(`save {player.Name}`, function()
 		return dataStore:UpdateAsync(keyFor(player), function(stored: unknown)
 			-- Keep the best of both for the things that only ever go up.

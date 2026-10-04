@@ -1,7 +1,7 @@
 --!strict
 -- Server boot: remotes first (everything else waits on them), then the
--- district, then saving and position tracking, giants, hunters, cannons,
--- and the round loop.
+-- district, then saving and position tracking, giants, hunters, progression
+-- (Marks, upgrades, challenges, looks), cannons, and the round loop.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -25,6 +25,7 @@ local GiantService = require(script.Parent.GiantService)
 local HunterService = require(script.Parent.HunterService)
 local CannonService = require(script.Parent.CannonService)
 local WaveService = require(script.Parent.WaveService)
+local ProgressService = require(script.Parent.ProgressService)
 
 local world = MapBuilder.Build()
 DataService.Init()
@@ -33,6 +34,7 @@ DayNightService.Init()
 GiantService.Init(world.GiantSpawns)
 ShifterService.Init()
 HunterService.Init(world.Spawn)
+ProgressService.Init(world.Spawn) -- (after HunterService: it builds on its events)
 CannonService.Init()
 WaveService.Init()
 -- Titan powers don't outlast the round they were won in.

@@ -21,6 +21,7 @@ local Workspace = game:GetService("Workspace")
 
 local Config = require(ReplicatedStorage.Shared.Config)
 local Geo = require(ReplicatedStorage.Shared.Geo)
+local Upgrades = require(ReplicatedStorage.Shared.Upgrades)
 local Motion = require(script.Parent.Motion)
 local Respawn = require(script.Parent.Respawn)
 local DataService = require(script.Parent.DataService)
@@ -31,6 +32,10 @@ local ShifterService = require(script.Parent.ShifterService)
 local HunterGear = require(script.Parent.HunterGear)
 
 local HunterService = {}
+
+-- For ProgressService (Marks, challenges, the round summary):
+HunterService.Awarded = Instance.new("BindableEvent") -- (player, points)
+HunterService.Slashed = Instance.new("BindableEvent") -- (player, result, info): every slash's outcome, "Training" included
 
 type Hunter = {
 	Blades: number,
@@ -67,6 +72,11 @@ local function promptKeys(prompt: ProximityPrompt)
 	prompt.GamepadKeyCode = Config.Prompts.Gamepad
 end
 
+-- Blades per resupply, with the hunter's Blade Box upgrade.
+local function maxBlades(player: Player): number
+	return Upgrades.For(player, "BladeCount")
+end
+
 local function remote(name: string): RemoteEvent
 	return remotes:WaitForChild(name) :: RemoteEvent
 end
@@ -87,7 +97,7 @@ local function pushState(player: Player)
 	if hunter then
 		remote(Config.Remotes.State):FireClient(player, {
 			Blades = hunter.Blades,
-			MaxBlades = Config.Blades.Max,
+			MaxBlades = maxBlades(player),
 			Combo = hunter.Combo,
 			ComboLeft = math.max(hunter.ComboUntil - os.clock(), 0),
 			Points = points(player),
@@ -117,6 +127,7 @@ local function award(player: Player, amount: number)
 		Broadcast.Feed(`{player.DisplayName} is now a {after}!`, "Gold")
 	end
 	pushState(player)
+	HunterService.Awarded:Fire(player, amount)
 end
 
 -- === Twin blades =============================================================
@@ -311,7 +322,7 @@ end
 
 local function onPlayerAdded(player: Player)
 	hunters[player] = {
-		Blades = Config.Blades.Max,
+		Blades = maxBlades(player),
 		NextSlash = 0,
 		Combo = 0,
 		ComboUntil = 0,
@@ -336,7 +347,7 @@ local function onPlayerAdded(player: Player)
 		-- A fresh set of blades every life.
 		local hunter = hunters[player]
 		if hunter then
-			hunter.Blades = Config.Blades.Max
+			hunter.Blades = maxBlades(player)
 			pushState(player)
 		end
 		task.spawn(equipSwords, character)
@@ -394,13 +405,18 @@ local function onSlash(player: Player)
 			if target:IsA("BasePart") and (target.Position - root.Position).Magnitude <= Config.Blades.SlashRange + target.Size.X / 2 then
 				local toHunter = root.Position - target.Position
 				if toHunter.Magnitude < 0.01 or toHunter.Unit:Dot(target.CFrame.LookVector) < Config.Cuts.EyesFrontDot then
-					remote(Config.Remotes.SlashResult):FireClient(player, "Training", { Speed = speed, Clean = speed >= Config.Blades.CleanCutSpeed, Position = target.Position })
+					local practice = { Speed = speed, Clean = speed >= Config.Blades.CleanCutSpeed, Position = target.Position }
+					remote(Config.Remotes.SlashResult):FireClient(player, "Training", practice)
+					HunterService.Slashed:Fire(player, "Training", practice)
 					return
 				end
 			end
 		end
 	end
-	if result ~= "NoTarget" and result ~= "Guarded" then
+	-- (Blade Edge upgrade: a clean nape cut sometimes keeps its blade.)
+	local nape = result == "Hit" or result == "Defeated" or result == "Armor" or result == "ArmorBroken"
+	local kept = nape and type(info) == "table" and info.Clean == true and math.random() < Upgrades.For(player, "BladeEdge")
+	if result ~= "NoTarget" and result ~= "Guarded" and not kept then
 		hunter.Blades -= 1 -- blades only wear down on a real hit (not on a guarding hand)
 		pushState(player)
 		if hunter.Blades <= 0 then
@@ -408,6 +424,7 @@ local function onSlash(player: Player)
 		end
 	end
 	remote(Config.Remotes.SlashResult):FireClient(player, result, info)
+	HunterService.Slashed:Fire(player, result, info)
 end
 
 local function onDefeated(player: Player, kindName: string, _clean: boolean, speed: number)
@@ -516,7 +533,7 @@ local function wireSupply(crate: Instance)
 	prompt.Triggered:Connect(function(player)
 		local hunter = hunters[player]
 		if hunter and ready(player) then
-			hunter.Blades = Config.Blades.Max
+			hunter.Blades = maxBlades(player)
 			pushState(player)
 			setBladesSharp(player, true)
 			remote(Config.Remotes.Resupplied):FireClient(player) -- client refills its gas
@@ -553,6 +570,11 @@ local function watchBounds()
 			end
 		end
 	end
+end
+
+-- Sends a hunter their gear state again (after an upgrade changes it).
+function HunterService.Refresh(player: Player)
+	pushState(player)
 end
 
 -- `spawn`: the hunters' post on the wall (MapBuilder's World.Spawn).
@@ -599,7 +621,7 @@ function HunterService.Init(spawn: BasePart?)
 				return
 			end
 			local world = (part :: BasePart).CFrame:PointToWorldSpace(localPos :: Vector3)
-			if (world - root.Position).Magnitude > Config.Grapple.Range + 60 then
+			if (world - root.Position).Magnitude > Upgrades.For(player, "HookRange") + 60 then
 				return
 			end
 		end
@@ -641,7 +663,7 @@ function HunterService.Init(spawn: BasePart?)
 			if profile and round > profile.BestRound then
 				DataService.Set(player, "BestRound", round)
 			end
-			hunter.Blades = Config.Blades.Max
+			hunter.Blades = maxBlades(player)
 			setBladesSharp(player, true)
 			pushState(player)
 			remote(Config.Remotes.Resupplied):FireClient(player)

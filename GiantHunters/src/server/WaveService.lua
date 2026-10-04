@@ -29,6 +29,7 @@ local WaveService = {}
 WaveService.RoundStarted = Instance.new("BindableEvent") -- (round)
 WaveService.RoundEnded = Instance.new("BindableEvent") -- (round): the district was saved
 WaveService.DistrictFallen = Instance.new("BindableEvent") -- (round)
+WaveService.WaveStarted = Instance.new("BindableEvent") -- (round, wave)
 
 type Outcome = "Victory" | "Empty" | "Fallen"
 
@@ -127,6 +128,7 @@ local function round(): Outcome
 		state.WaveEndsAt = os.clock() + Config.Waves.TimeLimit
 		local roster = Config.WaveRoster(state.Round, wave, Config.WaveScale(#Players:GetPlayers()))
 		local boss = wave == Config.Waves.WavesPerRound
+		WaveService.WaveStarted:Fire(state.Round, wave)
 		Broadcast.Announce(`WAVE {wave}`, if boss then "An Armored Giant is coming - crack its nape plate!" else `{#roster} giants incoming`, if boss then "Gold" else "Danger")
 		for _, kindName in roster do
 			-- Room on the field first.

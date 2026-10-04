@@ -396,6 +396,9 @@ Config.Remotes = {
 	Shake = "GH_Shake", -- server -> all (origin: Vector3, strength: number)
 	Shift = "GH_Shift", -- client -> server ("Choose", side) | ("Decline") | ("Transform") | ("Punch") | ("Roar")
 	Tutorial = "GH_Tutorial", -- client -> server ("Done")
+	-- Progression (ProgressService / UpgradeShop):
+	Progress = "GH_Progress", -- client -> server ("Sync") | ("Buy", track) | ("Cape", id) | ("Title", id?); server -> client ("State", snapshot) | ("Result", ok, message) | ("Challenge", text, reward) | ("Open")
+	RoundSummary = "GH_RoundSummary", -- server -> client ({ Round, Won, Takedowns, CleanCuts, BestSpeed, Points, Marks })
 }
 -- (Held also sends ("Wriggle", { Count, Needed }): the server's own count of
 -- a held hunter's wriggles, which drives the wriggle bar. Wave also carries
@@ -489,6 +492,145 @@ Config.Bounds = {
 Config.Prompts = {
 	Key = Enum.KeyCode.R,
 	Gamepad = Enum.KeyCode.DPadDown,
+}
+
+-- === Progression: Marks, upgrades, daily challenges, cosmetics ===============
+-- Marks are a saved currency earned in play (never bought): one per point
+-- scored, plus bonuses below. They buy upgrades for the rig at the
+-- hunters' headquarters (or from the shop button). See Upgrades.lua for the
+-- effective values and ProgressService for the rules.
+Config.Marks = {
+	PerPoint = 1,
+	CleanTakedown = 1, -- extra for a takedown with a clean cut
+	Rescue = 2, -- extra for cutting a friend loose
+	RoundWon = 10, -- for everyone who sees a round through...
+	RoundWonPerRound = 2, -- ...plus this x the round number
+	DistrictFallen = 3, -- a little something for trying
+}
+
+export type UpgradeTrack = {
+	Display: string,
+	Info: string,
+	Costs: { number }, -- Costs[n]: Marks to go from level n-1 to level n
+	Values: { number }, -- Values[n + 1]: the effective value at level n (level 0 first)
+	Format: string, -- how the shop shows a value: "Number", "Percent" (a x1.2 multiplier shows +20%) or "Studs"
+}
+
+Config.Upgrades = {
+	Order = { "GasTank", "GasRegen", "ReelStrength", "HookRange", "BladeCount", "BladeEdge" },
+	Tracks = {
+		GasTank = {
+			Display = "Gas Tank",
+			Info = "Bigger tanks: more gas for reeling, boosts and dashes.",
+			Costs = { 40, 90, 160, 260 },
+			Values = { 100, 115, 130, 145, 160 }, -- Config.Grapple.GasMax
+			Format = "Number",
+		},
+		GasRegen = {
+			Display = "Gas Refill",
+			Info = "Your tanks refill faster on foot and on a cable.",
+			Costs = { 40, 90, 160, 260 },
+			Values = { 1, 1.2, 1.4, 1.6, 1.8 }, -- x GasRegenPerSecondGrounded / Swinging
+			Format = "Percent",
+		},
+		ReelStrength = {
+			Display = "Reel Strength",
+			Info = "The reel winds in faster and pulls harder.",
+			Costs = { 50, 110, 190, 300 },
+			Values = { 1, 1.06, 1.12, 1.18, 1.24 }, -- x ReelSpeed and ReelAcceleration
+			Format = "Percent",
+		},
+		HookRange = {
+			Display = "Hook Range",
+			Info = "Longer cables: hooks reach further.",
+			Costs = { 50, 110, 190, 300 },
+			Values = { 170, 180, 190, 200, 210 }, -- Config.Grapple.Range
+			Format = "Studs",
+		},
+		BladeCount = {
+			Display = "Blade Box",
+			Info = "More spare blades in each box.",
+			Costs = { 60, 140, 260 },
+			Values = { 8, 9, 10, 12 }, -- blades per resupply (Config.Blades.Max)
+			Format = "Number",
+		},
+		BladeEdge = {
+			Display = "Blade Edge",
+			Info = "Finer steel: a clean cut sometimes keeps its blade.",
+			Costs = { 80, 180, 320 },
+			Values = { 0, 0.15, 0.3, 0.45 }, -- chance a clean nape cut uses no blade
+			Format = "Percent",
+		},
+	} :: { [string]: UpgradeTrack },
+	ActionCooldown = 0.25, -- seconds between shop requests the server accepts
+	PromptDistance = 10,
+}
+
+-- Three daily challenges a day (UTC), picked from the pool by the date, so
+-- everyone gets the same three. Progress is saved; finishing one pays out
+-- its Marks straight away.
+-- Event: what counts. "CleanCut" (a clean nape hit), "Takedown" (Kind: only
+-- that giant), "FastTakedown" (a takedown at Config.Hunters.SpeedKill+),
+-- "Assist" (Reason: "Trip", "Daze", "Rescue", "Armor"), "Wave" (reach wave
+-- Goal), "RoundWon", "Dummy" (a training dummy cut).
+export type Challenge = {
+	Id: string,
+	Text: string,
+	Event: string,
+	Goal: number,
+	Reward: number,
+	Kind: string?,
+	Reason: string?,
+}
+
+Config.Challenges = {
+	PerDay = 3,
+	Pool = {
+		{ Id = "CleanCuts", Text = "Make 5 clean cuts", Event = "CleanCut", Goal = 5, Reward = 30 },
+		{ Id = "Takedowns", Text = "Take down 8 giants", Event = "Takedown", Goal = 8, Reward = 30 },
+		{ Id = "Rescue", Text = "Cut a friend loose", Event = "Assist", Reason = "Rescue", Goal = 1, Reward = 40 },
+		{ Id = "Sprinter", Text = "Take down a Sprinter", Event = "Takedown", Kind = "Sprinter", Goal = 1, Reward = 40 },
+		{ Id = "Crawlers", Text = "Take down 3 Crawlers", Event = "Takedown", Kind = "Crawler", Goal = 3, Reward = 25 },
+		{ Id = "Armor", Text = "Crack an Armored Giant's plate", Event = "Assist", Reason = "Armor", Goal = 1, Reward = 40 },
+		{ Id = "Wave4", Text = "Reach wave 4", Event = "Wave", Goal = 4, Reward = 30 },
+		{ Id = "SaveDistrict", Text = "Save the district", Event = "RoundWon", Goal = 1, Reward = 50 },
+		{ Id = "Dummies", Text = "Cut 10 training dummies", Event = "Dummy", Goal = 10, Reward = 20 },
+		{ Id = "Trips", Text = "Trip 3 giants (ankle cuts)", Event = "Assist", Reason = "Trip", Goal = 3, Reward = 25 },
+		{ Id = "Dazes", Text = "Daze 3 giants (eye cuts)", Event = "Assist", Reason = "Daze", Goal = 3, Reward = 25 },
+		{ Id = "FastCut", Text = "Take down a giant at full speed (70+)", Event = "FastTakedown", Goal = 1, Reward = 35 },
+	} :: { Challenge },
+}
+
+-- Cosmetics: no asset ids, just colours and words. Capes (and their emblem)
+-- and titles shown above your head, unlocked by rank, by saved totals, or
+-- by finishing daily challenges. Unlock: Rank (a rank name), or Stat (a
+-- saved total: "Giants", "CleanCuts", "Rescues", "ChallengesDone",
+-- "BestRound") with At (how many).
+export type Unlock = { Rank: string?, Stat: string?, At: number? }
+export type Cape = { Id: string, Display: string, Color: Color3, Emblem: Color3, Unlock: Unlock? }
+export type Title = { Id: string, Display: string, Unlock: Unlock }
+
+Config.Cosmetics = {
+	DefaultCape = "Corps",
+	Capes = {
+		{ Id = "Corps", Display = "Corps Green", Color = Color3.fromRGB(46, 84, 58), Emblem = Color3.fromRGB(70, 110, 190) },
+		{ Id = "Scout", Display = "Scout Blue", Color = Color3.fromRGB(46, 70, 120), Emblem = Color3.fromRGB(220, 220, 230), Unlock = { Rank = "Scout" } },
+		{ Id = "Garrison", Display = "Garrison Red", Color = Color3.fromRGB(130, 44, 44), Emblem = Color3.fromRGB(220, 190, 120), Unlock = { Rank = "Hunter" } },
+		{ Id = "Royal", Display = "Royal Purple", Color = Color3.fromRGB(86, 52, 120), Emblem = Color3.fromRGB(230, 200, 110), Unlock = { Rank = "Veteran" } },
+		{ Id = "Sunrise", Display = "Sunrise Orange", Color = Color3.fromRGB(200, 110, 40), Emblem = Color3.fromRGB(60, 50, 44), Unlock = { Stat = "ChallengesDone", At = 3 } },
+		{ Id = "Snow", Display = "Snow White", Color = Color3.fromRGB(226, 228, 232), Emblem = Color3.fromRGB(58, 92, 150), Unlock = { Stat = "ChallengesDone", At = 12 } },
+		{ Id = "Midnight", Display = "Midnight", Color = Color3.fromRGB(30, 32, 44), Emblem = Color3.fromRGB(120, 200, 255), Unlock = { Stat = "Giants", At = 150 } },
+		{ Id = "Gold", Display = "Commander Gold", Color = Color3.fromRGB(190, 150, 60), Emblem = Color3.fromRGB(46, 84, 58), Unlock = { Rank = "Commander" } },
+	} :: { Cape },
+	Titles = {
+		{ Id = "GiantSlayer", Display = "Giant Slayer", Unlock = { Stat = "Giants", At = 25 } },
+		{ Id = "NapeAce", Display = "Nape Ace", Unlock = { Stat = "CleanCuts", At = 50 } },
+		{ Id = "Rescuer", Display = "Rescuer", Unlock = { Stat = "Rescues", At = 5 } },
+		{ Id = "WallKeeper", Display = "Wall Keeper", Unlock = { Stat = "BestRound", At = 3 } },
+		{ Id = "DailyHero", Display = "Daily Hero", Unlock = { Stat = "ChallengesDone", At = 10 } },
+		{ Id = "Legend", Display = "Living Legend", Unlock = { Stat = "Giants", At = 500 } },
+	} :: { Title },
+	TitleDistance = 70, -- studs: the title over a hunter's head fades out past this
 }
 
 -- Sounds: built-in Roblox client sound files (rbxasset://...), shipped with
