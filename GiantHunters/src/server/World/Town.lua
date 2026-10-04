@@ -385,7 +385,7 @@ local function market(parent: Instance, rng: Random)
 				for _, x in { -3.6, 3.6 } do
 					Kit.Detail({ Name = "Pole", Size = Vector3.new(0.5, 8, 0.5), CFrame = frame * CFrame.new(x, 4, 2), Color = P.Timber, Material = Enum.Material.Wood, Parent = model })
 				end
-				Kit.Part({
+				local awning = Kit.Part({
 					Class = "WedgePart",
 					Name = "Awning",
 					Size = Vector3.new(9, 2.4, 5),
@@ -394,6 +394,7 @@ local function market(parent: Instance, rng: Random)
 					Material = Enum.Material.Fabric,
 					Parent = model,
 				})
+				CollectionService:AddTag(awning, Config.Tags.Sway) -- swayed by the breeze (client Breeze.lua)
 				for g = -1, 1 do
 					Kit.Detail({ Name = "Goods", Shape = Enum.PartType.Ball, Size = Vector3.one * 1.4, CFrame = frame * CFrame.new(g * 2.4, 3.7, -0.3), Color = pick({ Color3.fromRGB(230, 120, 40), Color3.fromRGB(200, 40, 50), Color3.fromRGB(120, 180, 60), Color3.fromRGB(240, 210, 90) }, rng), Material = Enum.Material.SmoothPlastic, Parent = model })
 				end
@@ -517,7 +518,7 @@ local function washingLines(parent: Instance, rng: Random)
 				local across = Vector3.new(math.cos(angle), 0, -math.sin(angle))
 				for i = 1, 2 do
 					local t = i / 3
-					Kit.Detail({
+					local cloth = Kit.Detail({
 						Name = "Cloth",
 						Size = Vector3.new(1.6, 2.2, 0.1),
 						CFrame = CFrame.lookAt(a:Lerp(b, t) - Vector3.new(0, 1.1, 0), a:Lerp(b, t) - Vector3.new(0, 1.1, 0) + across),
@@ -525,6 +526,7 @@ local function washingLines(parent: Instance, rng: Random)
 						Material = Enum.Material.Fabric,
 						Parent = model,
 					})
+					CollectionService:AddTag(cloth, Config.Tags.Sway) -- flaps in the breeze (client)
 				end
 			end
 		end

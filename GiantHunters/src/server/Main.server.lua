@@ -35,6 +35,7 @@ ShifterService.Init()
 HunterService.Init(world.Spawn)
 CannonService.Init()
 WaveService.Init()
+require(script.Parent.WeatherService).Init()
 -- Titan powers don't outlast the round they were won in.
 WaveService.RoundEnded.Event:Connect(ShifterService.ClearPowers)
 WaveService.DistrictFallen.Event:Connect(ShifterService.ClearPowers)

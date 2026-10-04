@@ -426,6 +426,7 @@ Config.Tags = {
 	PowerOrb = "PowerOrb",
 	DummyNape = "DummyNape", -- training dummies' targets
 	MapBoundary = "MapBoundary", -- the invisible wall round the edge of the land
+	Sway = "Sway", -- washing and awnings: moved by the breeze on each client
 }
 
 -- === Day and night ===========================================================
@@ -437,6 +438,37 @@ Config.DayNight = {
 	NightStart = 20, -- lamps and torches on, giants' eyes glow, giants faster
 	NightEnd = 5,
 	NightSpeed = 1.2, -- giants walk this much faster in the dark
+}
+
+-- === Weather =================================================================
+-- Now and then a soft rain or a fog bank rolls in for a few minutes (never
+-- while someone is still doing the tutorial). The server picks it and sets
+-- the Workspace attribute "Weather" ("Clear", "Rain" or "Fog"); each client
+-- fades the sky, the rain and the townsfolk into it (Weather.lua, Sky.lua).
+Config.Weather = {
+	Attribute = "Weather",
+	ClearMinutes = { 6, 11 }, -- dry spell between two fronts
+	Minutes = { 2, 4 }, -- how long a front lasts
+	RainChance = 0.6, -- rain, else fog
+	FadeSeconds = 20, -- clients ease in and out over this
+	RainRate = 420, -- drops a second round the camera (a third on phones)
+}
+
+-- === Ambient life (client only) ==============================================
+-- Townsfolk strolling the streets by day (indoors when the giants come),
+-- flocks of birds over the roofs, washing and awnings moving in the breeze.
+-- All of it is made and moved on each client, near the camera only.
+Config.Ambient = {
+	Villagers = 30, -- most townsfolk out at once (by day)
+	VillagersNight = 8,
+	VillagersLowEnd = 14, -- phones and low graphics
+	VillagerRange = 250, -- studs from the camera they live within
+	VillagerSpeed = { 4, 6.5 }, -- strolling; they run at x2.4 when a wave is on
+	Flocks = 3,
+	FlocksLowEnd = 2,
+	BirdsPerFlock = 6,
+	BirdScatter = 130, -- a giant this close sends a flock flying
+	SwayRange = 220, -- washing and awnings move only this close
 }
 
 -- === Titan shifters ============================================================

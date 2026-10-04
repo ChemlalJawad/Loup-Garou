@@ -70,4 +70,50 @@ function Sky.At(clock: number): Look
 	return KEYS[1].Look
 end
 
+-- Weather on top of the hour's look: `kind` "Rain" or "Fog", faded in by
+-- `amount` (0 clear .. 1 full). Rain greys and dims the day and covers the
+-- sky; fog thickens the air into a pale haze. Soft either way: never a
+-- storm. At night the change is mostly the cloud and the air.
+local function weatherTarget(look: Look, kind: string): Look
+	local out = table.clone(look :: any)
+	local day = 1 - look.Night
+	if kind == "Rain" then
+		out.Brightness = look.Brightness * (1 - 0.35 * day)
+		out.Exposure = look.Exposure - 0.12 * day
+		out.OutdoorAmbient = look.OutdoorAmbient:Lerp(rgb(120, 126, 136), 0.5 * day)
+		out.ShiftTop = look.ShiftTop:Lerp(rgb(150, 156, 168), 0.6 * day)
+		out.Density = look.Density + 0.12
+		out.Haze = look.Haze + 1.2
+		out.Glare = 0
+		out.AirColor = look.AirColor:Lerp(rgb(150, 158, 170), 0.7 * day)
+		out.Tint = look.Tint:Lerp(rgb(224, 232, 244), 0.6)
+		out.Saturation = look.Saturation - 0.18
+		out.SunRays = 0
+		out.CloudColor = look.CloudColor:Lerp(rgb(128, 134, 146), 0.75)
+		out.CloudCover = 0.86
+	else -- Fog
+		out.Density = look.Density + 0.3
+		out.Haze = look.Haze + 2.6
+		out.Glare = look.Glare * 0.3
+		out.AirColor = look.AirColor:Lerp(rgb(214, 218, 222), 0.75 * day)
+		out.AirDecay = look.AirDecay:Lerp(rgb(170, 176, 184), 0.6 * day)
+		out.Saturation = look.Saturation - 0.1
+		out.SunRays = look.SunRays * 0.3
+		out.CloudCover = math.max(look.CloudCover, 0.7)
+	end
+	return out :: Look
+end
+
+function Sky.WithWeather(look: Look, kind: string, amount: number): Look
+	if amount <= 0 or (kind ~= "Rain" and kind ~= "Fog") then
+		return look
+	end
+	local target = weatherTarget(look, kind)
+	local out: any = {}
+	for key, value in look :: any do
+		out[key] = mix(value, (target :: any)[key], math.clamp(amount, 0, 1))
+	end
+	return out :: Look
+end
+
 return Sky

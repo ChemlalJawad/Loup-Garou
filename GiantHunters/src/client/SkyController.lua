@@ -2,7 +2,8 @@
 -- Paints the sky from the server's clock, on this client only:
 --   * light, atmosphere, colour grade, bloom, sun rays and clouds follow
 --     the hour (Sky.lua): blue noon, gold and red sunset, dark blue night
---     with stars and a big moon;
+--     with stars and a big moon; a passing rain or fog (Weather.lua) is
+--     blended on top (Sky.WithWeather);
 --   * at night every lamp lantern and torch lights up (fire and light),
 --     4 windows in 10 glow warm, and the giants' tiny pupils burn orange.
 -- Lights change only when night falls or ends, not every frame. On phones
@@ -19,6 +20,7 @@ local Workspace = game:GetService("Workspace")
 
 local Config = require(ReplicatedStorage.Shared.Config)
 local Sky = require(ReplicatedStorage.Shared.Sky)
+local Weather = require(script.Parent.Weather)
 
 local SkyController = {}
 
@@ -42,6 +44,9 @@ local function lowEnd(): boolean
 	end)
 	return ok and level ~= Enum.SavedQualitySetting.Automatic and level.Value <= 4
 end
+
+-- (shared with the other ambient modules: Townsfolk, Birds, Breeze)
+SkyController.LowEnd = lowEnd
 
 local function setFlame(part: BasePart, on: boolean)
 	lamps[part] = on
@@ -174,7 +179,7 @@ function SkyController.Init()
 	local D = Config.DayNight
 	RunService.RenderStepped:Connect(function()
 		local clock = Lighting.ClockTime
-		local look = Sky.At(clock)
+		local look = Sky.WithWeather(Sky.At(clock), Weather.Kind(), Weather.Amount())
 		Lighting.Brightness = look.Brightness
 		Lighting.ExposureCompensation = look.Exposure
 		Lighting.Ambient = look.Ambient
