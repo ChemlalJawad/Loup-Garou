@@ -23,3 +23,10 @@ local Settings = require(script.Parent.Settings)
 local Juice = require(script.Parent.Juice)
 task.spawn(Settings.Init)
 task.spawn(Juice.Init, Grapple)
+
+-- The living world: weather, townsfolk, birds and the breeze (all client-side).
+local Weather = require(script.Parent.Weather)
+task.spawn(Weather.Init)
+task.spawn(require(script.Parent.Townsfolk).Init)
+task.spawn(require(script.Parent.Birds).Init)
+task.spawn(require(script.Parent.Breeze).Init)

@@ -210,8 +210,8 @@ types, mocks et rendus.
 ## État après correction
 
 Tout ce qui précède a été corrigé et fusionné dans `main` (gameplay
-12456aa/e3fd894, map 3fd985d, modèles 0938693, intégration 22766d0). Seules
-exceptions : les variantes anormales (tête penchée, long cou, langue).
+12456aa/e3fd894, map 3fd985d, modèles 0938693, intégration 22766d0). Les variantes anormales (tête
+penchée, long cou, langue, bras inégaux) ont été ajoutées au tour suivant.
 Vérifié hors Studio : types luau-lsp sans erreur, `rojo build` OK, la map
 complète se construit dans le mock, et les rigs de tous les titans sont sans
 dérive ni pièce détachée.

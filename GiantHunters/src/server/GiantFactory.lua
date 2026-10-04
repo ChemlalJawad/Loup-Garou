@@ -58,6 +58,7 @@ local HAIR = {
 }
 local LIPS = Color3.fromRGB(70, 25, 30)
 local TEETH = Color3.fromRGB(250, 248, 236)
+local TONGUE = Color3.fromRGB(226, 110, 120)
 local EYE_WHITE = Color3.fromRGB(246, 242, 232)
 local PUPIL = Color3.fromRGB(30, 25, 25) -- SkyController sets this back at dawn
 
@@ -199,6 +200,30 @@ local function pick<T>(rng: Random, list: { T }): T
 	return list[rng:NextInteger(1, #list)]
 end
 
+-- The abnormal variants: which oddities this giant gets. A Look can force
+-- each one on or off; otherwise Runner-style abnormals roll each one, and a
+-- plain giant (no fixed Look) now and then gets a single one. Signature
+-- giants, crawlers and the Sprinter (her guard hand) keep their look.
+local function rollOddities(kind: Config.GiantKind, look: Config.GiantLook, rng: Random): { [string]: boolean }
+	local odd: { [string]: boolean } = {}
+	local names = Config.GiantOddities.Names
+	local rolls = (kind.Abnormal == true and not look.Guard) or (kind.Look == nil)
+	if rolls and kind.Abnormal then
+		for _, name in names do
+			odd[name] = rng:NextNumber() < Config.GiantOddities.AbnormalChance
+		end
+	elseif rolls and rng:NextNumber() < Config.GiantOddities.NormalChance then
+		odd[pick(rng, names)] = true
+	end
+	local forced: { [string]: boolean? } = { Tilt = look.Tilt, LongNeck = look.LongNeck, Tongue = look.Tongue, OddArms = look.OddArms }
+	for name, value in forced do
+		if value ~= nil then
+			odd[name] = value
+		end
+	end
+	return odd
+end
+
 function GiantFactory.Build(kindName: string, position: Vector3, rng: Random): Rig
 	local kind = Config.GiantKinds[kindName]
 	assert(kind, `GiantFactory: unknown kind {kindName}`)
@@ -208,6 +233,7 @@ function GiantFactory.Build(kindName: string, position: Vector3, rng: Random): R
 	local h = kind.Height
 	local crawl = look.Pose == "Crawl"
 	local ape = look.Pose == "Ape"
+	local odd = rollOddities(kind, look, rng)
 
 	local thigh, shin = h * 0.21 * body.LimbLength, h * 0.2 * body.LimbLength
 	local legLength = thigh + shin
@@ -216,7 +242,7 @@ function GiantFactory.Build(kindName: string, position: Vector3, rng: Random): R
 	local torsoHeight, torsoWidth, torsoDepth = h * 0.26, h * 0.28 * body.Width, h * 0.15 * body.Width
 	local upperArm, foreArm = h * 0.17 * body.LimbLength * body.ArmLength, h * 0.16 * body.LimbLength * body.ArmLength
 	local armWidth = h * 0.085 * body.Width
-	local neckLength = h * 0.05
+	local neckLength = h * (if odd.LongNeck then 0.1 else 0.05)
 	local headSize = h * 0.17 * body.Head
 
 	-- On all fours: kneeling on its shins, the trunk tipped forward almost
@@ -264,7 +290,10 @@ function GiantFactory.Build(kindName: string, position: Vector3, rng: Random): R
 	local slouch = if crawl then crawlPitch else body.Hunch
 	motor("Waist", root, torso, base * CFrame.new(0, waistY, 0), CFrame.Angles(-slouch, 0, 0))
 	if body.Belly >= 0.9 then
-		weld(torso, part(model, "Belly", Vector3.one * torsoWidth * 0.62 * body.Belly, base * CFrame.new(0, waistY + torsoHeight * 0.3, -torsoDepth * 0.28), skin, Enum.PartType.Ball, skinMaterial))
+		-- On its own motor (no rest pose), so a heavy walk can bounce it.
+		local bellyAt = base * CFrame.new(0, waistY + torsoHeight * 0.3, -torsoDepth * 0.28)
+		local belly = part(model, "Belly", Vector3.one * torsoWidth * 0.62 * body.Belly, bellyAt, skin, Enum.PartType.Ball, skinMaterial)
+		motor("Belly", torso, belly, bellyAt)
 	end
 	if body.Ribs then
 		-- Skinny giants show their ribs: thin rolls across the chest.
@@ -286,14 +315,22 @@ function GiantFactory.Build(kindName: string, position: Vector3, rng: Random): R
 	-- Neck and head. The head juts forward and its motor leans back against
 	-- the slouch, so the face stays level and stares straight ahead.
 	local neckBaseY = waistY + torsoHeight
+	-- A tilted head hangs to one side, for good
+	-- (the whole face goes with it: everything below is built on headCentre).
 	local headForward = headSize * 0.12
-	local headCentre = base * CFrame.new(0, neckBaseY + neckLength + headSize * 0.45, -headForward)
+	local tilt = if odd.Tilt then (if rng:NextNumber() < 0.5 then -1 else 1) * rng:NextNumber(0.35, 0.5) else 0
+	-- (the whole neck leans over from its base, the head rolled with it)
+	local neckBase = base * CFrame.new(0, neckBaseY, 0)
+	local headCentre = neckBase * CFrame.Angles(0, 0, tilt) * CFrame.new(0, neckLength + headSize * 0.45, -headForward)
 	local neckFrom = base * Vector3.new(0, neckBaseY - headSize * 0.1, 0)
 	local neckTo = headCentre.Position
-	local neck = part(model, "Neck", Vector3.new((neckTo - neckFrom).Magnitude, headSize * 0.5, headSize * 0.5), CFrame.lookAt((neckFrom + neckTo) / 2, neckTo) * CFrame.Angles(0, math.rad(90), 0), skin, Enum.PartType.Cylinder, skinMaterial)
+	local neckWidth = headSize * (if odd.LongNeck then 0.44 else 0.5)
+	local neck = part(model, "Neck", Vector3.new((neckTo - neckFrom).Magnitude, neckWidth, neckWidth), CFrame.lookAt((neckFrom + neckTo) / 2, neckTo) * CFrame.Angles(0, math.rad(90), 0), skin, Enum.PartType.Cylinder, skinMaterial)
 	weld(torso, neck)
 	local head = part(model, "Head", Vector3.one * headSize, headCentre, skin, Enum.PartType.Ball, skinMaterial)
-	motor("Neck", torso, head, headCentre, CFrame.Angles(slouch, 0, 0))
+	-- (the joint itself stays level, so the stare and the slouch turn the
+	-- head the same way, tilted or not)
+	motor("Neck", torso, head, CFrame.new(headCentre.Position), CFrame.Angles(slouch, 0, 0))
 	-- Small face details cast no shadow (there are a lot of them).
 	local function face(name: string, size: Vector3, offset: CFrame, color: Color3, shape: Enum.PartType?, material: Enum.Material?): Part
 		local p = part(model, name, size, headCentre * offset, color, shape, material)
@@ -314,7 +351,7 @@ function GiantFactory.Build(kindName: string, position: Vector3, rng: Random): R
 		face("Jaw", Vector3.new(headSize * 0.74, headSize * 0.46, headSize * 0.46), CFrame.new(0, -headSize * 0.33, -headSize * 0.16), skin, Enum.PartType.Cylinder, skinMaterial)
 	end
 
-	local expression = look.Face or pick(rng, FACES)
+	local expression = if odd.Tongue then "Gape" else look.Face or pick(rng, FACES)
 
 	-- Mouths drawn as a line of lips wrapped round the muzzle. `u` runs from
 	-- -1 (the giant's right corner) to 1; `curve` lifts each point (in head
@@ -353,6 +390,13 @@ function GiantFactory.Build(kindName: string, position: Vector3, rng: Random): R
 			local turn = spot[1]
 			local at = mouthAt + onBall(mouthRadius, turn, spot[2] * mouthRadius, -headSize * 0.01)
 			face(`Tooth{t}`, Vector3.new(headSize * 0.06, headSize * 0.06, headSize * 0.04), CFrame.lookAt(at, at + Vector3.new(math.sin(turn), 0, -math.cos(turn))), TEETH)
+		end
+		if odd.Tongue then
+			-- A big pink tongue lolling out over the lower lip and down the chin.
+			local from = mouthAt + Vector3.new(0, -mouthRadius * 0.45, 0)
+			local to = from + Vector3.new(0, -headSize * 0.2, -headSize * 0.2)
+			face("Tongue", Vector3.new(headSize * 0.17, headSize * 0.06, (to - from).Magnitude), CFrame.lookAt((from + to) / 2, to), TONGUE)
+			face("TongueTip", Vector3.new(headSize * 0.06, headSize * 0.17, headSize * 0.17), CFrame.lookAt(to, to + (to - from)) * UPRIGHT, TONGUE, Enum.PartType.Cylinder)
 		end
 	elseif expression == "Oh" then
 		-- A small round "oh" of surprise.
@@ -466,9 +510,11 @@ function GiantFactory.Build(kindName: string, position: Vector3, rng: Random): R
 	-- bigger than the head, set high and back so the face and the back of
 	-- the neck both stay clear.
 	local style = look.Hair or pick(rng, HAIR_STYLES)
+	-- (a tilted head drops one side of the back of the skull: sit higher)
+	local lift = math.abs(tilt) * 0.32
 	local function cap(size: number)
 		-- (a deep slouch tips the nape up behind the head: sit higher then)
-		face("Hair", Vector3.one * headSize * size, CFrame.new(0, headSize * (0.2 + body.Hunch * 0.15), headSize * (0.12 - body.Hunch * 0.15)), hairColor, Enum.PartType.Ball)
+		face("Hair", Vector3.one * headSize * size, CFrame.new(0, headSize * (0.2 + body.Hunch * 0.15 + lift), headSize * (0.12 - body.Hunch * 0.15)), hairColor, Enum.PartType.Ball)
 	end
 	if style == "Cap" then
 		cap(1.1)
@@ -484,8 +530,8 @@ function GiantFactory.Build(kindName: string, position: Vector3, rng: Random): R
 		end
 	elseif style == "Bowl" then
 		-- A pudding-bowl cut: a cap down to the brows and a straight rim.
-		face("Hair", Vector3.one * headSize * 1.08, CFrame.new(0, headSize * 0.17, headSize * 0.03), hairColor, Enum.PartType.Ball)
-		face("BowlRim", Vector3.new(headSize * 0.1, headSize * 1.1, headSize * 1.1), CFrame.new(0, headSize * 0.21, headSize * 0.02) * UPRIGHT, hairColor, Enum.PartType.Cylinder)
+		face("Hair", Vector3.one * headSize * 1.08, CFrame.new(0, headSize * (0.17 + lift), headSize * 0.03), hairColor, Enum.PartType.Ball)
+		face("BowlRim", Vector3.new(headSize * 0.1, headSize * 1.1, headSize * 1.1), CFrame.new(0, headSize * (0.21 + lift), headSize * 0.02) * UPRIGHT, hairColor, Enum.PartType.Cylinder)
 	elseif style == "Mohawk" then
 		for s, a in { -0.55, -0.1, 0.35, 0.8 } do
 			local at = Vector3.new(0, math.cos(a) * skull, math.sin(a) * skull)
@@ -496,7 +542,7 @@ function GiantFactory.Build(kindName: string, position: Vector3, rng: Random): R
 		face("Bun", Vector3.one * headSize * 0.4, CFrame.new(0, headSize * 0.7, headSize * 0.1), hairColor, Enum.PartType.Ball)
 	elseif style == "Curly" then
 		for c, spot in { { 0, 0.42 }, { -0.7, 0.3 }, { 0.7, 0.3 }, { -1.7, 0.26 }, { 1.7, 0.26 }, { math.pi, 0.3 }, { 0, 0.3 } } do
-			local at = onBall(skull, spot[1], headSize * spot[2], -headSize * 0.02)
+			local at = onBall(skull, spot[1], headSize * spot[2], -headSize * 0.02) + Vector3.new(0, headSize * lift, 0)
 			face(`Curl{c}`, Vector3.one * headSize * (if c == 1 then 0.5 else 0.36), CFrame.new(if c == 1 then Vector3.new(0, headSize * 0.36, headSize * 0.06) else at), hairColor, Enum.PartType.Ball)
 		end
 	elseif style == "Ponytail" then
@@ -570,14 +616,18 @@ function GiantFactory.Build(kindName: string, position: Vector3, rng: Random): R
 	-- knuckles near the ground.
 	local shoulderRest = if crawl then CFrame.Angles(crawlPitch, 0, 0) elseif ape then CFrame.Angles(0.12, 0, 0) else CFrame.new()
 	local hands: { BasePart } = {}
+	-- Odd arms: one hangs long (past the knee), the other is short and stubby.
+	local longSide = if rng:NextNumber() < 0.5 then -1 else 1
 	for _, side in { -1, 1 } do
 		local prefix = if side < 0 then "Left" else "Right"
+		local stretch = if not odd.OddArms then 1 elseif side == longSide then 1.3 else 0.75
+		local upperLength, foreLength = upperArm * stretch, foreArm * stretch
 		local shoulder = base * CFrame.new(side * (torsoWidth / 2 + armWidth * 0.45), torsoCentreY + torsoHeight / 2 - armWidth * 0.5, 0)
-		local upper = segment(model, `{prefix}UpperArm`, armWidth, upperArm, shoulder * CFrame.new(0, -upperArm / 2, 0), skin, skinMaterial, false)
+		local upper = segment(model, `{prefix}UpperArm`, armWidth, upperLength, shoulder * CFrame.new(0, -upperLength / 2, 0), skin, skinMaterial, false)
 		motor(`{prefix}Shoulder`, torso, upper, shoulder, shoulderRest)
-		local fore = segment(model, `{prefix}ForeArm`, armWidth * 0.9, foreArm, shoulder * CFrame.new(0, -upperArm - foreArm / 2, 0), skin, skinMaterial)
-		motor(`{prefix}Elbow`, upper, fore, shoulder * CFrame.new(0, -upperArm, 0))
-		local hand = part(model, `{prefix}Hand`, Vector3.one * armWidth * 1.35, shoulder * CFrame.new(0, -upperArm - foreArm - armWidth * 0.55, 0), bare, Enum.PartType.Ball, faceMaterial)
+		local fore = segment(model, `{prefix}ForeArm`, armWidth * 0.9, foreLength, shoulder * CFrame.new(0, -upperLength - foreLength / 2, 0), skin, skinMaterial)
+		motor(`{prefix}Elbow`, upper, fore, shoulder * CFrame.new(0, -upperLength, 0))
+		local hand = part(model, `{prefix}Hand`, Vector3.one * armWidth * 1.35, shoulder * CFrame.new(0, -upperLength - foreLength - armWidth * 0.55, 0), bare, Enum.PartType.Ball, faceMaterial)
 		weld(fore, hand)
 		table.insert(forearms, fore)
 		table.insert(hands, hand)
@@ -730,6 +780,15 @@ function GiantFactory.Build(kindName: string, position: Vector3, rng: Random): R
 
 	model:SetAttribute("Kind", kindName)
 	model:SetAttribute("Body", bodyName)
+	local oddities: { string } = {}
+	for _, name in Config.GiantOddities.Names do
+		if odd[name] then
+			table.insert(oddities, name)
+		end
+	end
+	if #oddities > 0 then
+		model:SetAttribute("Oddities", table.concat(oddities, " "))
+	end
 	model:SetAttribute("Height", h)
 	model:SetAttribute("HeadSize", headSize)
 	if look.Pose then

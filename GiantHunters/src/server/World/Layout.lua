@@ -47,6 +47,16 @@ Layout.Roads = {
 	{ Layout.CastleRampFoot, polar(-120, 645), polar(-152, 650), polar(180, 650), polar(152, 650), polar(128, 690), polar(105, 740) },
 }
 
+-- Landmark set pieces out on the plains (World/Landmarks), placed to help
+-- find your way and to swing along:
+--   * the old mill tower, a broken ruin in the far north-west;
+--   * the aqueduct, a long line of tall arches striding north-east across
+--     the plains (and over the north road): a swinging line;
+--   * the watch-fort on the east road where it enters the Great Forest.
+Layout.MillRuin = polar(228, 1060)
+Layout.Aqueduct = { From = polar(134, 430), To = polar(158, 930), Height = 64 }
+Layout.WatchFortRoad = 0.3 -- how far along the east road's last leg (into the Great Forest)
+
 -- The road out of the south gate wobbles a little as it heads south.
 function Layout.RoadX(z: number): number
 	return 14 * math.sin(z / 90)

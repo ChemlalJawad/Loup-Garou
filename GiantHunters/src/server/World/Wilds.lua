@@ -11,6 +11,8 @@
 --   * Something to hook everywhere: groves, signal towers along the roads
 --     and in a ring round the outer plains, and a last pass that puts a
 --     lone giant tree in any stretch still too far from an anchor.
+--   * Landmarks (World/Landmarks): the old mill tower, the aqueduct and the
+--     watch-fort.
 --   * The edge of the world: an invisible wall inside the hill ring.
 
 local CollectionService = game:GetService("CollectionService")
@@ -19,6 +21,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Config = require(ReplicatedStorage.Shared.Config)
 local Geo = require(ReplicatedStorage.Shared.Geo)
 local Kit = require(script.Parent.Kit)
+local Landmarks = require(script.Parent.Landmarks)
 local Layout = require(script.Parent.Layout)
 
 local Wilds = {}
@@ -783,6 +786,16 @@ function Wilds.Build(parent: Instance, rng: Random)
 	folder.Name = "Wilds"
 	folder.Parent = parent
 	castle(folder)
+	-- The landmarks go down early so everything else keeps clear of them
+	-- (on their own seed, so the rest of the wilds doesn't reshuffle).
+	Landmarks.Build(folder, Random.new(1866), {
+		Occupy = occupy,
+		Free = free,
+		AddAnchor = addAnchor,
+		Supplies = supplies,
+		Grounded = grounded,
+		ClearSpot = clearSpot,
+	})
 	forest(folder, rng)
 	greatForest(folder, rng)
 	training(folder, rng)
