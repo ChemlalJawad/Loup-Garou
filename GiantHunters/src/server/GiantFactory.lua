@@ -10,7 +10,8 @@
 -- one), skin, hair style and colour, face, brows, nose and shorts, so a
 -- wave never looks like a copy-paste crowd. Signature giants fix their
 -- look in Config (GiantLook): the stone Wallbreaker, the ape-like Beast,
--- the Armored one, the titan Shifter, the Sprinter and the Crawler.
+-- the Armored one, the titan Shifter, the Sprinter and the Crawler. Titan
+-- shifters are built from their form (Config.TitanForms).
 --
 -- Rig: an invisible Root at hip height carries everything. Waist, hips,
 -- knees, shoulders, elbows and the neck are Motor6Ds, so clients animate
@@ -224,9 +225,18 @@ local function rollOddities(kind: Config.GiantKind, look: Config.GiantLook, rng:
 	return odd
 end
 
-function GiantFactory.Build(kindName: string, position: Vector3, rng: Random): Rig
+-- `form` (titan shifters only): build that titan form's look, height and
+-- nape health instead of the kind's own (see Config.TitanForms).
+function GiantFactory.Build(kindName: string, position: Vector3, rng: Random, form: Config.TitanForm?): Rig
 	local kind = Config.GiantKinds[kindName]
 	assert(kind, `GiantFactory: unknown kind {kindName}`)
+	if form then
+		kind = table.clone(kind)
+		kind.Height = form.Height
+		kind.WalkSpeed = form.WalkSpeed
+		kind.NapeHealth = form.NapeHealth
+		kind.Look = form.Look
+	end
 	local look: Config.GiantLook = kind.Look or {}
 	local bodyName = look.Body or pick(rng, BODY_TYPE_NAMES)
 	local body = BODY_TYPES[bodyName]
@@ -739,6 +749,46 @@ function GiantFactory.Build(kindName: string, position: Vector3, rng: Random): R
 		guardHand = guard
 	end
 
+	-- Crystal (Crystalcrown): a crown of crystal spikes on top of the head
+	-- (set forward, off the back of the skull) and crystal points on the
+	-- shoulders.
+	if look.Crystal then
+		local function shard(name: string, size: Vector3, at: CFrame, to: BasePart)
+			local p = part(model, name, size, at, CRYSTAL, nil, Enum.Material.Glass)
+			p.Transparency = 0.15
+			p.CastShadow = false
+			weld(to, p)
+		end
+		for c, turn in { -0.9, -0.45, 0, 0.45, 0.9 } do
+			local tall = if c == 3 then 0.75 elseif math.abs(turn) < 0.5 then 0.55 else 0.38
+			local at = onBall(skull, turn * 0.8, headSize * 0.36, -headSize * 0.04) + Vector3.new(0, headSize * tall * 0.38, 0)
+			shard(`Crown{c}`, Vector3.new(headSize * 0.16, headSize * tall, headSize * 0.16), headCentre * CFrame.new(at) * CFrame.Angles(-0.15, 0, -turn * 0.45) * CFrame.Angles(0, math.rad(45), 0), head)
+		end
+		face("CrownBand", Vector3.new(headSize * 0.1, headSize * 0.92, headSize * 0.92), CFrame.new(0, headSize * 0.3, -headSize * 0.02) * UPRIGHT, CRYSTAL:Lerp(Color3.new(0, 0, 0), 0.25), Enum.PartType.Cylinder, Enum.Material.Glass)
+		for i, side in { -1, 1 } do
+			local capAt = shoulderCaps[i].CFrame
+			for k = 1, 3 do
+				local lean = side * (0.15 + k * 0.3)
+				shard(`ShoulderCrystal{i}{k}`, Vector3.new(armWidth * 0.5, armWidth * (2.1 - k * 0.4), armWidth * 0.5), capAt * CFrame.new(side * armWidth * 0.18 * k, armWidth * 0.75, (k - 2) * armWidth * 0.45) * CFrame.Angles(0, 0, -lean), torso)
+			end
+			-- and a crystal fin along the outside of each forearm
+			local fore = forearms[i]
+			shard(`ArmCrystal{i}`, Vector3.new(foreArm * 0.7, armWidth * 0.5, armWidth * 0.3), fore.CFrame * CFrame.new(0, -side * armWidth * 0.45, 0), fore) -- (local -Y is the giant's right)
+		end
+	end
+
+	-- Spines (Swiftfang): a short row of horn-like spines down the upper
+	-- back, well below the nape.
+	if look.Spines then
+		for k = 1, 3 do
+			local y = torsoCentreY + torsoHeight * (0.12 - k * 0.14)
+			local size = armWidth * (0.75 - k * 0.12)
+			local spine = part(model, `Spine{k}`, Vector3.new(size * 0.5, size, size * 1.3), base * CFrame.new(0, y, torsoDepth / 2 + size * 0.15) * CFrame.Angles(0.6, 0, 0), hairColor, nil, Enum.Material.SmoothPlastic)
+			spine.CastShadow = false
+			weld(torso, spine)
+		end
+	end
+
 	-- Steam rising off the head: signature giants and every giant 46+ tall
 	-- (faintly). Default particle texture, no assets.
 	if look.Steam or h >= 46 then
@@ -788,6 +838,9 @@ function GiantFactory.Build(kindName: string, position: Vector3, rng: Random): R
 	end
 	if #oddities > 0 then
 		model:SetAttribute("Oddities", table.concat(oddities, " "))
+	end
+	if form then
+		model:SetAttribute("Form", form.Id)
 	end
 	model:SetAttribute("Height", h)
 	model:SetAttribute("HeadSize", headSize)

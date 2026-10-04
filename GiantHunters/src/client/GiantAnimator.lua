@@ -19,7 +19,11 @@
 --     its head, looks slowly round, or sniffs the air toward a hunter;
 --   * Guarding (Sprinter): the right hand goes back over the nape and the
 --     crystal GuardHand shows; Armor: the nape plate's cracks light up as
---     it takes hits; a titan shifter's eyes take its side's colour.
+--     it takes hits; a titan shifter's eyes take its side's colour;
+--   * titan powers (attributes set by ShifterService): Slam (both fists
+--     overhead, then down into the ground), Pounce (a forward lunge, arms
+--     out), Throw (a boulder wound up overhead, then thrown), Vent (arms
+--     flung wide, chest out) and Frenzy (a flailing sprint).
 -- Motor6D.Transform isn't replicated, so all of this is free network-wise.
 
 local CollectionService = game:GetService("CollectionService")
@@ -71,6 +75,17 @@ type Animated = {
 	IdleUntil: number,
 	NextIdle: number,
 	Scratch: number,
+	-- Titan powers.
+	Slam: number,
+	SlamHit: number,
+	SlamTimer: number,
+	Pounce: number,
+	Throw: number,
+	ThrowRelease: number,
+	ThrowTimer: number,
+	Vent: number,
+	WasSlam: boolean,
+	WasThrow: boolean,
 }
 
 type Arm = { X: number, Z: number, Elbow: number, Side: number }
@@ -155,6 +170,16 @@ local function add(instance: Instance)
 		IdleUntil = 0,
 		NextIdle = os.clock() + 3 + math.random() * 5,
 		Scratch = 0,
+		Slam = 0,
+		SlamHit = 0,
+		SlamTimer = 0,
+		Pounce = 0,
+		Throw = 0,
+		ThrowRelease = 0,
+		ThrowTimer = 0,
+		Vent = 0,
+		WasSlam = false,
+		WasThrow = false,
 	}
 end
 
@@ -233,6 +258,13 @@ export type PoseInput = {
 	LidShut: Vector3?, -- how far a lid moves to shut (model attribute "LidShut")
 	Heavy: boolean?, -- a waddling walk: wide sway, arms out, belly bounce
 	Scratch: number?, -- 0..1: the right hand up scratching its head (idle)
+	-- Titan powers (0..1 each):
+	Slam: number?, -- both fists raised overhead (the wind-up)...
+	SlamHit: number?, -- ...then down into the ground in front
+	Pounce: number?, -- lunging forward, arms out, legs tucked
+	Throw: number?, -- right arm wound up overhead with a boulder...
+	ThrowRelease: number?, -- ...then flung forward
+	Vent: number?, -- arms flung wide, chest out (steam)
 }
 
 -- The whole pose from a giant's state, as Motor6D transforms by motor name.
@@ -243,6 +275,10 @@ function GiantAnimator.Pose(p: PoseInput): { [string]: CFrame }
 	local stride, t = p.Stride, p.Time
 	local crawl = p.Crawl == true
 	local guard = p.Guard or 0
+	local slam, slamHit, pounce = p.Slam or 0, p.SlamHit or 0, p.Pounce or 0
+	local throw, release, vent = p.Throw or 0, p.ThrowRelease or 0, p.Vent or 0
+	-- A pounce tucks the legs like a leap.
+	leap = math.max(leap, pounce * 0.7)
 	local s = math.sin(p.Phase)
 	local swing = s * (if p.Abnormal then 0.75 elseif crawl then 0.35 else 0.5) * stride
 
@@ -260,6 +296,9 @@ function GiantAnimator.Pose(p: PoseInput): { [string]: CFrame }
 	if p.Abnormal then
 		lean -= 0.3 * stride
 	end
+	-- Titan powers: rear back for a slam or a throw, then pitch into it;
+	-- lunge into a pounce; chest out for the steam vent.
+	lean += -0.2 * slam + 0.5 * slamHit + 0.4 * pounce - 0.15 * throw + 0.25 * release - 0.15 * vent
 	local dazeSway = math.sin(t * 1.7) * 0.12 * daze
 	-- A heavy giant waddles: its weight rolls over onto each planted foot.
 	local roll = s * (if heavy then 0.1 else 0.05) * stride
@@ -283,6 +322,9 @@ function GiantAnimator.Pose(p: PoseInput): { [string]: CFrame }
 	rightHip += 0.6 * leap
 	leftKnee -= 1.0 * leap
 	rightKnee -= 1.0 * leap
+	-- Slamming: down into a crouch as the fists hit the ground.
+	leftHip, rightHip = leftHip + 0.4 * slamHit, rightHip + 0.4 * slamHit
+	leftKnee, rightKnee = leftKnee - 0.7 * slamHit, rightKnee - 0.7 * slamHit
 	rightHip = lerp(rightHip, 1.25, kick)
 	rightKnee = lerp(rightKnee, -0.15, kick)
 	leftKnee = lerp(leftKnee, -0.35, kick)
@@ -341,6 +383,34 @@ function GiantAnimator.Pose(p: PoseInput): { [string]: CFrame }
 	arms.Right.X = lerp(arms.Right.X, 2.5, scratch)
 	arms.Right.Z = lerp(arms.Right.Z, 0.55, scratch)
 	arms.Right.Elbow = lerp(arms.Right.Elbow, 2.15 + math.sin(t * 15) * 0.15, scratch)
+	-- Titan powers.
+	for _, arm in { arms.Left, arms.Right } do
+		local side = arm.Side
+		-- Slam: both fists high overhead, then down onto the ground in front.
+		arm.X = lerp(arm.X, 2.85, slam)
+		arm.Z = lerp(arm.Z, -side * 0.12, slam)
+		arm.Elbow = lerp(arm.Elbow, 0.5, slam)
+		arm.X = lerp(arm.X, 0.75, slamHit)
+		arm.Z = lerp(arm.Z, -side * 0.1, slamHit)
+		arm.Elbow = lerp(arm.Elbow, 0.05, slamHit)
+		-- Pounce: both arms reaching forward.
+		arm.X = lerp(arm.X, 1.5, pounce)
+		arm.Z = lerp(arm.Z, side * 0.15, pounce)
+		arm.Elbow = lerp(arm.Elbow, 0.15, pounce)
+		-- Vent: arms flung out wide, a little shaky.
+		arm.X = lerp(arm.X, 0.35, vent)
+		arm.Z = lerp(arm.Z, side * (1.35 + math.sin(t * 18) * 0.05), vent)
+		arm.Elbow = lerp(arm.Elbow, 0.3, vent)
+	end
+	-- Throw: the right arm winds a boulder up over the head (the left one
+	-- points the way), then flings it forward.
+	arms.Right.X = lerp(arms.Right.X, 2.95, throw)
+	arms.Right.Z = lerp(arms.Right.Z, 0.25, throw)
+	arms.Right.Elbow = lerp(arms.Right.Elbow, 1.3, throw)
+	arms.Left.X = lerp(arms.Left.X, 1.2, throw)
+	arms.Right.X = lerp(arms.Right.X, 1.1, release)
+	arms.Right.Z = lerp(arms.Right.Z, -0.1, release)
+	arms.Right.Elbow = lerp(arms.Right.Elbow, 0.1, release)
 	pose.LeftShoulder = CFrame.Angles(arms.Left.X, 0, arms.Left.Z)
 	pose.RightShoulder = CFrame.Angles(arms.Right.X, 0, arms.Right.Z)
 	pose.LeftElbow = CFrame.Angles(arms.Left.Elbow, 0, 0)
@@ -393,6 +463,26 @@ local function animate(giant: Animated, dt: number, t: number, herePosition: Vec
 	giant.SwingTimer = math.max(giant.SwingTimer - dt, 0)
 	giant.Swing = ease(giant.Swing, if giant.SwingTimer > 0 then 1 else 0, 14, dt)
 	updateStars(giant, dazed, t)
+	-- Titan powers: a wind-up while the attribute is on; when it goes off,
+	-- the blow follows through for a moment.
+	local slamming = model:GetAttribute("Slam") == true
+	if giant.WasSlam and not slamming then
+		giant.SlamTimer = 0.45
+	end
+	giant.WasSlam = slamming
+	giant.SlamTimer = math.max(giant.SlamTimer - dt, 0)
+	giant.Slam = ease(giant.Slam, if slamming then 1 else 0, 7, dt)
+	giant.SlamHit = ease(giant.SlamHit, if giant.SlamTimer > 0 then 1 else 0, 16, dt)
+	local throwing = model:GetAttribute("Throw") == true
+	if giant.WasThrow and not throwing then
+		giant.ThrowTimer = 0.4
+	end
+	giant.WasThrow = throwing
+	giant.ThrowTimer = math.max(giant.ThrowTimer - dt, 0)
+	giant.Throw = ease(giant.Throw, if throwing then 1 else 0, 7, dt)
+	giant.ThrowRelease = ease(giant.ThrowRelease, if giant.ThrowTimer > 0 then 1 else 0, 16, dt)
+	giant.Pounce = ease(giant.Pounce, if model:GetAttribute("Pounce") then 1 else 0, 10, dt)
+	giant.Vent = ease(giant.Vent, if model:GetAttribute("Vent") then 1 else 0, 6, dt)
 	-- The wind-up is the tell: the hand starts to rise before it covers.
 	local guardGoal = if model:GetAttribute("Guarding") then 1 elseif model:GetAttribute("GuardWindup") then 0.4 else 0
 	giant.Guard = ease(giant.Guard, guardGoal, 8, dt)
@@ -408,8 +498,9 @@ local function animate(giant: Animated, dt: number, t: number, herePosition: Vec
 		end
 	end
 
-	-- The walk.
-	giant.Phase += dt * speed / (height * (if giant.Abnormal then 0.08 else 0.11))
+	-- The walk (a titan in a Frenzy runs flailing, like an abnormal).
+	local abnormal = giant.Abnormal or model:GetAttribute("Frenzy") == true
+	giant.Phase += dt * speed / (height * (if abnormal then 0.08 else 0.11))
 	local stride = math.clamp(speed / 6, 0, 1)
 	local s = math.sin(giant.Phase)
 
@@ -505,7 +596,7 @@ local function animate(giant: Animated, dt: number, t: number, herePosition: Vec
 
 	local pose = GiantAnimator.Pose({
 		Height = height,
-		Abnormal = giant.Abnormal,
+		Abnormal = abnormal,
 		Phase = giant.Phase,
 		Stride = stride,
 		Breath = giant.Breath,
@@ -527,6 +618,12 @@ local function animate(giant: Animated, dt: number, t: number, herePosition: Vec
 		LidShut = giant.LidShut,
 		Heavy = giant.Heavy,
 		Scratch = giant.Scratch,
+		Slam = giant.Slam,
+		SlamHit = giant.SlamHit,
+		Pounce = giant.Pounce,
+		Throw = giant.Throw,
+		ThrowRelease = giant.ThrowRelease,
+		Vent = giant.Vent,
 	})
 	for name, transform in pose do
 		set(giant.Motors, name, transform)
