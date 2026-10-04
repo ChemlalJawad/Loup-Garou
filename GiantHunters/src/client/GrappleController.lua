@@ -29,7 +29,9 @@
 -- kicks wider as you reel, boost or dash). A marker on the surface shows
 -- where each hook would bite; aim assist (a setting) snaps a hook onto a
 -- nape within a few degrees of the crosshair. Cables twang when they bite,
--- sway while they fly, and pull thin and bright while you reel.
+-- sway while they fly, and pull thin and bright while you reel. Cosmetic
+-- items ("Cos_Gas", "Cos_Cable"; CosmeticsClient) tint the jets and every
+-- hunter's cables, and change live.
 --
 -- Movement is simulated here on the client (it owns its character's
 -- physics), so it feels instant; the server relays your cables to other
@@ -50,6 +52,7 @@ local Stats = require(ReplicatedStorage.Shared.Stats)
 local Effects = require(script.Parent.Effects)
 local Settings = require(script.Parent.Settings)
 local TouchButtons = require(script.Parent.TouchButtons)
+local CosmeticsClient = require(script.Parent.CosmeticsClient)
 
 local GrappleController = {}
 
@@ -90,6 +93,7 @@ local lastDash = 0
 local spinUntil = 0
 local spinStartYaw = 0
 local fxFolder: Folder
+local cableStyle = CosmeticsClient.CableStyle(player) -- your own cables' cosmetic (refreshed when it changes)
 local hookRemote: RemoteEvent? = nil
 local gasPuff: ParticleEmitter? = nil -- white jets behind you while gas flows
 local gasCore: ParticleEmitter? = nil -- the fast bright streak inside them
@@ -245,17 +249,19 @@ local function cableOrigin(character: Model?, side: number, fallback: Attachment
 	return if origin and origin:IsA("Attachment") then origin else fallback
 end
 
-local function makeBeam(from: Attachment, to: Attachment): Beam
+-- A cable in `owner`'s cosmetic colours.
+local function makeBeam(from: Attachment, to: Attachment, owner: Player): Beam
+	local style = CosmeticsClient.CableStyle(owner)
 	local beam = Instance.new("Beam")
 	beam.Name = "Cable"
 	beam.Attachment0 = from
 	beam.Attachment1 = to
-	beam.Width0 = 0.16
-	beam.Width1 = 0.16
+	beam.Width0 = 0.16 * style.Width
+	beam.Width1 = 0.16 * style.Width
 	beam.FaceCamera = true
 	beam.Segments = 10
-	beam.Color = ColorSequence.new(Color3.fromRGB(200, 205, 215))
-	beam.LightEmission = 0.25
+	beam.Color = style.Color
+	beam.LightEmission = math.min(0.25 + style.Glow, 1)
 	beam.Parent = fxFolder
 	return beam
 end
@@ -313,7 +319,7 @@ local function fire(hook: Hook)
 	tip.Parent = Workspace.Terrain
 	tip.WorldPosition = origin.WorldPosition
 	hook.Tip = tip
-	hook.Beam = makeBeam(origin, tip)
+	hook.Beam = makeBeam(origin, tip, player)
 	hook.State = "Flying"
 	Effects.Play("Hook", nil, 1, if hook.Side < 0 then 1 else 1.12)
 end
@@ -618,6 +624,29 @@ local function step(dt: number)
 	end
 end
 
+-- The jets' cosmetic colours ("Cos_Gas"), now and whenever they change.
+local function applyGasStyle()
+	local style = CosmeticsClient.GasStyle(player)
+	if gasPuff then
+		gasPuff.Color = style.Puff
+		gasPuff.LightEmission = style.Glow
+	end
+	if gasCore then
+		gasCore.Color = style.Core
+		gasCore.LightEmission = math.min(0.6 + style.Glow, 1)
+	end
+end
+
+-- Your cables' cosmetic ("Cos_Cable"): recolour the ones out now too.
+local function applyCableStyle()
+	cableStyle = CosmeticsClient.CableStyle(player)
+	for _, hook in hooks do
+		if hook.Beam then
+			hook.Beam.Color = cableStyle.Color
+		end
+	end
+end
+
 local function onCharacter(newCharacter: Model)
 	releaseAll()
 	held = false -- a fresh body is never in a giant's hand
@@ -673,6 +702,7 @@ local function onCharacter(newCharacter: Model)
 		puff.Enabled = false
 		puff.Parent = jet
 		gasPuff = puff
+		applyGasStyle()
 	end
 end
 
@@ -707,7 +737,7 @@ local function onRemoteHook(other: Player, side: string, part: BasePart?, localP
 	anchor.Parent = part
 	remoteCables[other] = remoteCables[other] or {}
 	local origin = cableOrigin(other.Character, if side == "Left" then -1 else 1, hip)
-	remoteCables[other][side] = { Beam = makeBeam(origin, anchor), Anchor = anchor, Hip = hip }
+	remoteCables[other][side] = { Beam = makeBeam(origin, anchor, other), Anchor = anchor, Hip = hip }
 end
 
 function GrappleController.Gas(): number
@@ -793,16 +823,16 @@ local function renderHooks(dt: number)
 			if hook.State == "Flying" then
 				local sway = math.sin(clock * 26 + hook.Side) * 1.4
 				beam.CurveSize0, beam.CurveSize1 = sway, -sway * 0.6
-				beam.Width0, beam.Width1 = 0.14, 0.14
+				beam.Width0, beam.Width1 = 0.14 * cableStyle.Width, 0.14 * cableStyle.Width
 			else
 				hook.Twang = math.max(hook.Twang - dt * 3, 0)
 				local shiver = math.sin(clock * 55) * 2.2 * hook.Twang * hook.Twang
 				beam.CurveSize0, beam.CurveSize1 = shiver, -shiver
 				-- Reeling pulls the cable thin and bright.
 				local tense = gasHeld and gas > 0
-				local width = if tense then 0.11 else 0.16
+				local width = (if tense then 0.11 else 0.16) * cableStyle.Width
 				beam.Width0, beam.Width1 = width, width
-				beam.LightEmission = if tense then 0.6 else 0.25
+				beam.LightEmission = math.min((if tense then 0.6 else 0.25) + cableStyle.Glow, 1)
 			end
 		end
 	end
@@ -823,6 +853,8 @@ function GrappleController.Init()
 	fxFolder.Name = "GrappleFx"
 	fxFolder.Parent = Workspace
 	refreshFilter()
+	player:GetAttributeChangedSignal("Cos_Gas"):Connect(applyGasStyle)
+	player:GetAttributeChangedSignal("Cos_Cable"):Connect(applyCableStyle)
 
 	-- A level-up, an upgrade or new gear: the rig's numbers change at once
 	-- (a bigger tank fills by the difference, a smaller one is topped off).

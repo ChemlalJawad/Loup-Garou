@@ -33,3 +33,6 @@ task.spawn(require(script.Parent.Breeze).Init)
 
 -- The shop technique: its key (V / R2), SKILL button and cooldown ring.
 task.spawn(require(script.Parent.TechniqueController).Init, Grapple)
+
+-- Cosmetic items: defeat effects (other hunters' too); gas and cable colours.
+task.spawn(require(script.Parent.CosmeticsClient).Init)

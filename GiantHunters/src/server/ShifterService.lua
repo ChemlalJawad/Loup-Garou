@@ -161,6 +161,29 @@ local function formOf(player: Player): Config.TitanForm
 	return Config.TitanFormFor(player:GetAttribute("Equip_Titan"), player:GetAttribute("Level"))
 end
 
+-- The form as it's built: the player's titan skin ("Cos_TitanSkin", a
+-- Config.CosmeticItems id set by the shop) recolours any form - skin, hair,
+-- eyes, shorts, material - and keeps its shape, size and powers.
+local function skinned(player: Player, form: Config.TitanForm): Config.TitanForm
+	local item = Config.CosmeticFor("TitanSkin", player:GetAttribute("Cos_TitanSkin"))
+	local skin = item and item.TitanSkin
+	if not skin then
+		return form
+	end
+	local look = table.clone(form.Look)
+	look.Skin = skin.Skin
+	look.HairColor = skin.HairColor or look.HairColor
+	look.EyeColor = skin.EyeColor or look.EyeColor
+	look.Shorts = skin.Shorts or look.Shorts
+	look.SkinMaterial = skin.Material
+	if skin.Crystal then
+		look.Crystal = true
+	end
+	local copy = table.clone(form)
+	copy.Look = look
+	return copy
+end
+
 -- === Becoming a titan, and back ================================================
 
 local function clearPowerAttributes(player: Player)
@@ -217,7 +240,7 @@ local function transform(shifter: Shifter): boolean
 	local form = formOf(player)
 	shifter.Form = form
 	local ground = root.Position - Vector3.new(0, humanoid.HipHeight + root.Size.Y / 2, 0)
-	local rig = GiantFactory.Build("Shifter", ground, rng, form)
+	local rig = GiantFactory.Build("Shifter", ground, rng, skinned(player, form))
 	-- No AI mover: the player walks this one.
 	for _, name in { "Move", "Face", "Drive" } do
 		local mover = rig.Root:FindFirstChild(name)

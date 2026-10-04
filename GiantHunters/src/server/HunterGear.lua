@@ -13,6 +13,12 @@
 --     blade box with a gas tank on top.
 --   * shop gear (the "Equip_Gear" attribute, Config.Catalog Look) recolours
 --     the rig and the swords and resizes the tanks (ApplyGearLook).
+--   * cosmetic items (Config.CosmeticItems, the "Cos_Cape", "Cos_Blade" and
+--     "Cos_Trail" attributes the shop sets) restyle the cape (colours and a
+--     pattern: stripes, star dots, a trim, a two-tone split or a glowing
+--     hem), the blades and their slash trail. They win over the gear set's
+--     colours and the rank cape ("CapeColor"); WatchCosmetics re-dresses
+--     live when they change.
 --
 -- The avatar itself is re-dressed first through its HumanoidDescription
 -- (no asset ids needed): classic shirt and pants off, layered clothing and
@@ -235,14 +241,67 @@ end
 
 -- `rigTop`: the height (in the torso's frame) of the top of the reel box on
 -- R6, where the torso is also the hips; the cape stops above it there.
--- The cape's colours: the player's "CapeColor" and "EmblemColor"
--- attributes (ProgressService sets them from the chosen cape), else the
--- corps' green and blue.
+-- The cosmetic item a player wears in `slot` (nil: the default look).
+local function cosmetic(character: Model, slot: string): Config.CosmeticItem?
+	local player = Players:GetPlayerFromCharacter(character)
+	return if player then Config.CosmeticFor(slot, player:GetAttribute(`Cos_{slot}`)) else nil
+end
+
+-- The cape's colours: a cosmetic cape ("Cos_Cape") first, else the
+-- player's "CapeColor" and "EmblemColor" attributes (ProgressService sets
+-- them from the rank / Marks cape), else the corps' green and blue.
 local function capeColors(character: Model): (Color3, Color3)
+	local item = cosmetic(character, "Cape")
+	local look = item and item.Cape
+	if look then
+		return look.Color, look.Emblem or EMBLEM_BLUE
+	end
 	local player = Players:GetPlayerFromCharacter(character)
 	local color = player and player:GetAttribute("CapeColor")
 	local emblem = player and player:GetAttribute("EmblemColor")
 	return if typeof(color) == "Color3" then color else CAPE, if typeof(emblem) == "Color3" then emblem else EMBLEM_BLUE
+end
+
+-- A cosmetic cape's pattern, laid flat on the outside of the cloth (thin
+-- parts welded to it, all named "CapeDeco" so a new cape clears them).
+local function decorate(gear: Model, cloth: BasePart, look: Config.CosmeticCape?)
+	for _, item in gear:GetChildren() do
+		if item.Name == "CapeDeco" then
+			item:Destroy()
+		end
+	end
+	if not look or not look.Pattern then
+		return
+	end
+	local w, l = cloth.Size.X, cloth.Size.Y
+	local color = look.PatternColor or Color3.new(1, 1, 1)
+	local function piece(size: Vector2, x: number, y: number, round: boolean?, material: Enum.Material?)
+		local p = if round
+			then gearPart(gear, "CapeDeco", Vector3.new(0.02, size.Y, size.X), color, material or Enum.Material.Fabric, Enum.PartType.Cylinder)
+			else gearPart(gear, "CapeDeco", Vector3.new(size.X, size.Y, 0.02), color, material or Enum.Material.Fabric)
+		attach(cloth, p, CFrame.new(x, y, 0.05) * (if round then CFrame.Angles(0, math.rad(90), 0) else CFrame.identity))
+	end
+	local pattern = look.Pattern
+	if pattern == "Stripes" then
+		for _, side in { -1, 1 } do
+			piece(Vector2.new(w * 0.09, l), side * w * 0.36, 0)
+		end
+	elseif pattern == "Stars" then
+		-- Dots round the emblem: a row at the bottom, two each side above.
+		local dot = math.min(w, l) * 0.1
+		for _, at in { Vector2.new(-0.36, 0.36), Vector2.new(0.36, 0.36), Vector2.new(-0.38, 0), Vector2.new(0.38, 0), Vector2.new(-0.25, -0.38), Vector2.new(0, -0.4), Vector2.new(0.25, -0.38) } do
+			piece(Vector2.new(dot, dot), at.X * w, at.Y * l, true)
+		end
+	elseif pattern == "Split" then
+		piece(Vector2.new(w, l * 0.3), 0, -l * 0.35)
+	elseif pattern == "Trim" or pattern == "Glow" then
+		local material = if pattern == "Glow" then Enum.Material.Neon else nil
+		local edge = math.min(w, l) * 0.07
+		piece(Vector2.new(w, edge), 0, -l / 2 + edge / 2, false, material)
+		for _, side in { -1, 1 } do
+			piece(Vector2.new(edge, l - edge), side * (w / 2 - edge / 2), edge / 2, false, material)
+		end
+	end
 end
 
 local function cape(gear: Model, torso: BasePart, rigTop: number?, color: Color3, emblemColor: Color3)
@@ -256,6 +315,11 @@ local function cape(gear: Model, torso: BasePart, rigTop: number?, color: Color3
 	local hang = CFrame.new(0, top, back) * CFrame.Angles(math.rad(if rigTop then -14 else -8), 0, 0)
 	local cloth = gearPart(gear, "Cape", Vector3.new(width, length, 0.08), color, Enum.Material.Fabric)
 	attach(torso, cloth, hang * CFrame.new(0, -length / 2, 0))
+	local character = torso.Parent
+	if character and character:IsA("Model") then
+		local item = cosmetic(character, "Cape")
+		decorate(gear, cloth, item and item.Cape)
+	end
 	-- The hood, rolled up round the back of the neck.
 	local hood = gearPart(gear, "CapeHood", Vector3.new(s.X * 0.95, 0.38, 0.38), color:Lerp(Color3.new(0, 0, 0), 0.12), Enum.Material.Fabric, Enum.PartType.Cylinder)
 	attach(torso, hood, CFrame.new(0, top, back - 0.12))
@@ -428,6 +492,32 @@ local SWORD_TRAIL = Color3.fromRGB(200, 235, 255)
 local RIG_PARTS = { ReelBox = true, BladeBox1 = true, BladeBox2 = true, GasValve1 = true, GasValve2 = true }
 local STEEL_PARTS = { ReelDrum = true, HookLauncher1 = true, HookLauncher2 = true, GasTank1 = true, GasTank2 = true, BladeBoxTrim1 = true, BladeBoxTrim2 = true }
 
+local BLADE_SHARP = Color3.fromRGB(215, 225, 235)
+local BLADE_DULL = Color3.fromRGB(120, 115, 110)
+local DEFAULT_TRAIL_FADE = NumberSequence.new(0.2, 1)
+local FULL_WIDTH = NumberSequence.new(1)
+
+-- Trail colour sequences, built once per item.
+local trailColors: { [string]: ColorSequence } = {}
+local function sequenceOf(id: string, colors: { Color3 }): ColorSequence
+	local cached = trailColors[id]
+	if cached then
+		return cached
+	end
+	local sequence
+	if #colors < 2 then
+		sequence = ColorSequence.new(colors[1] or SWORD_TRAIL)
+	else
+		local points = {}
+		for i, color in colors do
+			table.insert(points, ColorSequenceKeypoint.new((i - 1) / (#colors - 1), color))
+		end
+		sequence = ColorSequence.new(points)
+	end
+	trailColors[id] = sequence
+	return sequence
+end
+
 local function gearLook(character: Model): Config.GearLook
 	local player = Players:GetPlayerFromCharacter(character)
 	local id = player and player:GetAttribute("Equip_Gear")
@@ -436,8 +526,16 @@ local function gearLook(character: Model): Config.GearLook
 end
 
 -- Safe to call any time (the swords may not be on yet: call again after).
+-- The swords: a cosmetic blade ("Cos_Blade") wins over the gear set's
+-- Hilt/Edge; the trail is the cosmetic trail ("Cos_Trail"), else the
+-- blade's edge colour (cosmetic, then gear), else the corps' pale blue.
+-- Dull swords (the "Dull" attribute HunterService sets) stay grey steel.
 function HunterGear.ApplyGearLook(character: Model)
 	local look = gearLook(character)
+	local bladeItem = cosmetic(character, "Blade")
+	local blade = bladeItem and bladeItem.Blade
+	local trailItem = cosmetic(character, "Trail")
+	local trailLook = trailItem and trailItem.Trail
 	local gear = character:FindFirstChild("HunterGear")
 	if gear then
 		for _, item in gear:GetChildren() do
@@ -459,31 +557,58 @@ function HunterGear.ApplyGearLook(character: Model)
 			for _, item in sword:GetChildren() do
 				if item:IsA("BasePart") then
 					if item.Name == "Hilt" then
-						item.Color = look.Hilt or SWORD_HILT
+						item.Color = (blade and blade.Hilt) or look.Hilt or SWORD_HILT
 					elseif item.Name == "Collar" then
-						item.Color = look.Hilt or SWORD_COLLAR
+						item.Color = (blade and blade.Hilt) or look.Hilt or SWORD_COLLAR
 					elseif item.Name == "Edge" then
-						item.Color = look.Edge or SWORD_EDGE
+						item.Color = (blade and blade.Edge) or look.Edge or SWORD_EDGE
+					elseif item.Name == "Blade" or item.Name == "BladeTip" then
+						local dull = sword:GetAttribute("Dull") == true
+						item.Color = if dull then BLADE_DULL elseif blade then blade.Color else BLADE_SHARP
+						item.Material = if not dull and blade and blade.Material then blade.Material else Enum.Material.Metal
+						item.Reflectance = if dull then 0 elseif blade and blade.Reflectance then blade.Reflectance else 0.35
+						-- (Hidden inside a titan: stays hidden.)
+						if item.Transparency < 1 then
+							item.Transparency = if not dull and blade and blade.Transparency then blade.Transparency else 0
+						end
 					end
 				end
 			end
-			local blade = sword:FindFirstChild("Blade")
-			local trail = blade and blade:FindFirstChild("BladeTrail")
+			local bladePart = sword:FindFirstChild("Blade")
+			local trail = bladePart and bladePart:FindFirstChild("BladeTrail")
 			if trail and trail:IsA("Trail") then
-				trail.Color = ColorSequence.new(look.Edge or SWORD_TRAIL)
+				if trailItem and trailLook then
+					trail.Color = sequenceOf(trailItem.Id, trailLook.Colors)
+					trail.Lifetime = trailLook.Lifetime or 0.18
+					trail.LightEmission = trailLook.LightEmission or 1
+					trail.WidthScale = if trailLook.Width then NumberSequence.new(trailLook.Width, 0.3) else FULL_WIDTH
+					trail.Transparency = if trailLook.Transparency then NumberSequence.new(trailLook.Transparency, 1) else DEFAULT_TRAIL_FADE
+				else
+					trail.Color = if bladeItem and blade then sequenceOf(bladeItem.Id, { blade.Edge }) else ColorSequence.new(look.Edge or SWORD_TRAIL)
+					trail.Lifetime = 0.18
+					trail.LightEmission = 1
+					trail.WidthScale = FULL_WIDTH
+					trail.Transparency = DEFAULT_TRAIL_FADE
+				end
 			end
 		end
 	end
 end
 
 -- Re-colours a dressed hunter's cape and emblem from the player's
--- attributes (after they pick another cape), without re-dressing.
+-- attributes (after they pick another cape) and redoes a cosmetic cape's
+-- pattern, without re-dressing.
 function HunterGear.RecolorCape(character: Model)
 	local gear = character:FindFirstChild("HunterGear")
-	if not gear then
+	if not gear or not gear:IsA("Model") then
 		return
 	end
 	local color, emblem = capeColors(character)
+	local cloth = gear:FindFirstChild("Cape")
+	if cloth and cloth:IsA("BasePart") then
+		local item = cosmetic(character, "Cape")
+		decorate(gear, cloth, item and item.Cape)
+	end
 	for _, item in gear:GetChildren() do
 		if item:IsA("BasePart") then
 			if item.Name == "Cape" then
@@ -494,6 +619,25 @@ function HunterGear.RecolorCape(character: Model)
 				item.Color = emblem
 			end
 		end
+	end
+end
+
+-- Re-dresses live when the shop changes a worn cosmetic (the cape, the
+-- blades or their trail). Call once per player.
+function HunterGear.WatchCosmetics(player: Player)
+	player:GetAttributeChangedSignal("Cos_Cape"):Connect(function()
+		local character = player.Character
+		if character then
+			HunterGear.RecolorCape(character)
+		end
+	end)
+	for _, attribute in { "Cos_Blade", "Cos_Trail" } do
+		player:GetAttributeChangedSignal(attribute):Connect(function()
+			local character = player.Character
+			if character then
+				HunterGear.ApplyGearLook(character)
+			end
+		end)
 	end
 end
 
