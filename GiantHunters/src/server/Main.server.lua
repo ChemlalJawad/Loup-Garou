@@ -49,3 +49,6 @@ require(script.Parent.ShopService).Init()
 require(script.Parent.TechniqueService).Init()
 
 print(`[{Config.GAME_NAME}] server ready`)
+
+-- In Studio only: a PASS / WARN / FAIL checklist in the Output window.
+task.spawn(require(script.Parent.StudioCheck).Run, world)

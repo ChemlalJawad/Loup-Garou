@@ -37,6 +37,12 @@ Connect** and press **Play**.
 The district, the giants and the HUD all build themselves. You can also
 `rojo build -o GiantHunters.rbxlx` and open the file.
 
+On Play in Studio, a self-check (`StudioCheck.lua`) prints a PASS / WARN /
+FAIL list to the Output window: the map (spawn, crates, dummies, cannons,
+boundary, part count), the remotes, streaming, whether saving works (turn on
+**Game Settings > Security > Enable Studio Access to API Services**), the
+shop's items, and that every giant kind and titan form builds.
+
 ## The world
 
 - **The Great Wall**: a ring of stone 110 studs high round the whole town,
