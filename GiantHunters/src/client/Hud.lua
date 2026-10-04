@@ -4,7 +4,8 @@
 --     marks either side (yellow flying, green hooked);
 --   * the gear panel: two gas tanks, two boxes of blades, your speed, your
 --     points and rank;
---   * "SLASH!" / "TRIP" / "DAZE" hints when a cut is in reach;
+--   * "SLASH!" / "TRIP" / "DAZE" hints when a cut is in reach (gold for the
+--     nape, sky blue for the rest: apart for every kind of colour vision);
 --   * the round and wave banner with the district's health under it, big
 --     announcements, a kill feed, a combo counter, feedback toasts;
 --   * the radar (Radar.lua);
@@ -13,7 +14,10 @@
 --
 -- Everything is laid out in offsets and scaled as a whole to the screen
 -- (a UIScale on each piece), so it all fits on a phone; on touch screens
--- the radar and the kill feed move to the top, clear of the buttons.
+-- the radar and the kill feed move to the top, clear of the buttons. Text
+-- gets an extra boost with the "Bigger text" setting (on by default on
+-- phones). The combo is a big counter in a ring of dots that empties as
+-- the combo window runs out, its colour climbing with the multiplier.
 
 local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
@@ -26,6 +30,7 @@ local Workspace = game:GetService("Workspace")
 local Config = require(ReplicatedStorage.Shared.Config)
 local Radar = require(script.Parent.Radar)
 local Effects = require(script.Parent.Effects)
+local Settings = require(script.Parent.Settings)
 local Tutorial = require(script.Parent.Tutorial)
 
 local Hud = {}
@@ -37,7 +42,16 @@ local TONES = {
 	Good = Color3.fromRGB(140, 235, 160),
 	Danger = Color3.fromRGB(255, 120, 100),
 	Gold = Color3.fromRGB(255, 215, 110),
+	Sky = Color3.fromRGB(86, 180, 233),
 }
+-- Combo tiers, x2 to x5 (Okabe-Ito colours: apart for every colour vision).
+local COMBO_TIERS = {
+	Color3.fromRGB(86, 180, 233),
+	Color3.fromRGB(240, 228, 66),
+	Color3.fromRGB(230, 159, 0),
+	Color3.fromRGB(204, 121, 167),
+}
+local COMBO_DOTS = 20
 local INK = Color3.fromRGB(22, 24, 32)
 local PANEL = Color3.fromRGB(28, 30, 40)
 local BRASS = Color3.fromRGB(190, 170, 120)
@@ -70,6 +84,8 @@ local crosshair: Frame
 local hookMarks: { [string]: TextLabel } = {}
 local gasFills: { Frame } = {}
 local bladeIcons: { Frame } = {}
+local gearPanel: Frame
+local maxBlades = 0 -- the pips built so far (upgrades can raise it)
 local speedLabel: TextLabel
 local rankLabel: TextLabel
 local hintLabel: TextLabel
@@ -77,8 +93,12 @@ local waveLabel: TextLabel
 local announceTitle: TextLabel
 local announceSub: TextLabel
 local toastLabel: TextLabel
+local comboFrame: Frame
 local comboLabel: TextLabel
-local comboBar: Frame
+local comboWord: TextLabel
+local comboPunch: UIScale
+local comboDots: { Frame } = {}
+local lastCombo = 0
 local feedList: Frame
 local caughtFrame: Frame
 local grabFrame: Frame
@@ -88,7 +108,7 @@ local flash: Frame
 local districtBack: Frame
 local districtFill: Frame
 local districtLabel: TextLabel
-local scales: { UIScale } = {}
+local scales: { { Scale: UIScale, Text: boolean } } = {}
 
 local toastToken = 0
 local announceToken = 0
@@ -113,18 +133,20 @@ local function screenScale(): number
 	return math.clamp(math.min(viewport.X / 1280, viewport.Y / 720), 0.55, 1)
 end
 
--- Gives a piece of the HUD a UIScale that follows the screen size.
-local function scaled(element: GuiObject)
+-- Gives a piece of the HUD a UIScale that follows the screen size (and,
+-- for text, the "Bigger text" setting).
+local function scaled(element: GuiObject, text: boolean?)
 	local scale = Instance.new("UIScale")
-	scale.Scale = screenScale()
+	scale.Scale = screenScale() * (if text then Settings.TextBoost() else 1)
 	scale.Parent = element
-	table.insert(scales, scale)
+	table.insert(scales, { Scale = scale, Text = text == true })
 end
 
 local function rescale()
 	local s = screenScale()
-	for _, scale in scales do
-		scale.Scale = s
+	local boost = Settings.TextBoost()
+	for _, entry in scales do
+		entry.Scale.Scale = s * (if entry.Text then boost else 1)
 	end
 end
 
@@ -200,6 +222,30 @@ function Hud.Feed(text: string, tone: string)
 	end)
 end
 
+-- Two boxes of blades either side of the speed readout; rebuilt when the
+-- maximum changes (upgrades raise it from 8 up to 12).
+local function buildBlades(max: number)
+	max = math.max(math.floor(max), 1)
+	if max == maxBlades then
+		return
+	end
+	maxBlades = max
+	for _, icon in bladeIcons do
+		icon:Destroy()
+	end
+	table.clear(bladeIcons)
+	local perBox = math.ceil(max / 2)
+	local step = math.min(16, 64 / perBox)
+	for index = 1, max do
+		local box = if index <= perBox then 0 else 1
+		local slot = if box == 0 then index else index - perBox
+		local x = if box == 0 then 58 + (slot - 1) * step else 420 - 58 - step * perBox + (slot - 1) * step + 4
+		local icon = new("Frame", { Position = UDim2.fromOffset(x, 20), Size = UDim2.fromOffset(7, 52), BackgroundColor3 = Color3.fromRGB(215, 230, 245), Rotation = 14, Parent = gearPanel })
+		corner(icon, 2)
+		bladeIcons[index] = icon
+	end
+end
+
 local function setBlades(count: number)
 	blades = count
 	for i, icon in bladeIcons do
@@ -225,7 +271,8 @@ local function build()
 			Parent = crosshair,
 		})
 	end
-	hintLabel = label({ AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 1, 14), Size = UDim2.fromOffset(220, 24), Text = "", TextSize = 20, Parent = crosshair })
+	hintLabel = label({ AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 1, 14), Size = UDim2.fromOffset(220, 24), Text = "", TextSize = 20, TextStrokeTransparency = 0.2, Parent = crosshair })
+	scaled(hintLabel, true)
 
 	-- The gear panel, bottom centre: tank | blades | speed | blades | tank.
 	local panel = new("Frame", { Name = "Gear", AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, -18), Size = UDim2.fromOffset(420, 92), BackgroundColor3 = PANEL, BackgroundTransparency = 0.2, Parent = gui })
@@ -240,16 +287,9 @@ local function build()
 		gasFills[i] = fill
 		label({ Position = UDim2.fromOffset(0, 26), Size = UDim2.fromOffset(30, 16), Text = "GAS", TextSize = 10, Parent = tank })
 	end
-	-- Blade boxes: four blades each side of the speed readout.
-	for box = 0, 1 do
-		for slot = 1, 4 do
-			local index = box * 4 + slot
-			local x = if box == 0 then 58 + (slot - 1) * 16 else 420 - 58 - 16 * 4 + (slot - 1) * 16 + 4
-			local icon = new("Frame", { Position = UDim2.fromOffset(x, 20), Size = UDim2.fromOffset(7, 52), BackgroundColor3 = Color3.fromRGB(215, 230, 245), Rotation = 14, Parent = panel })
-			corner(icon, 2)
-			bladeIcons[index] = icon
-		end
-	end
+	-- Blade boxes: half the blades each side of the speed readout.
+	gearPanel = panel
+	buildBlades(Config.Blades.Max)
 	scaled(panel)
 	speedLabel = label({ AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 8), Size = UDim2.fromOffset(110, 40), Text = "0", TextSize = 38, Parent = panel })
 	label({ AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 46), Size = UDim2.fromOffset(110, 14), Text = "SPEED", TextSize = 12, TextColor3 = BRASS, Parent = panel })
@@ -271,7 +311,7 @@ local function build()
 	announceSub = label({ AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0.2, 48), Size = UDim2.fromOffset(900, 28), Text = "", TextSize = 22, Font = Enum.Font.GothamBold, TextWrapped = true, TextTransparency = 1, TextStrokeTransparency = 1, Parent = gui })
 	toastLabel = label({ AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0.36, 0), Size = UDim2.fromOffset(520, 56), Text = "", TextScaled = true, TextTransparency = 1, TextStrokeTransparency = 1, Parent = gui })
 	for _, l in { announceTitle, announceSub, toastLabel } do
-		scaled(l)
+		scaled(l, true)
 	end
 
 	-- Kill feed, top right (top left on touch screens, where the radar
@@ -284,21 +324,35 @@ local function build()
 		Parent = gui,
 	})
 	new("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 2), Parent = feedList })
-	scaled(feedList)
+	scaled(feedList, true)
 
-	-- Combo, right of centre.
-	comboLabel = label({ AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0.5, 150, 0.5, -40), Size = UDim2.fromOffset(220, 48), Text = "", TextSize = 40, TextColor3 = TONES.Gold, TextXAlignment = Enum.TextXAlignment.Left, Parent = gui })
-	scaled(comboLabel)
-	local comboBack = new("Frame", { Position = UDim2.new(0, 0, 1, 2), Size = UDim2.fromOffset(150, 6), BackgroundColor3 = Color3.fromRGB(60, 60, 70), Parent = comboLabel })
-	corner(comboBack, 3)
-	comboBar = new("Frame", { Size = UDim2.fromScale(0, 1), BackgroundColor3 = TONES.Gold, Parent = comboBack })
-	corner(comboBar, 3)
+	-- Combo, right of centre: the multiplier in a ring of dots (the time
+	-- left to chain the next takedown).
+	comboFrame = new("Frame", { Name = "Combo", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 210, 0.5, -40), Size = UDim2.fromOffset(110, 110), BackgroundTransparency = 1, Visible = false, Parent = gui })
+	scaled(comboFrame, true)
+	comboPunch = new("UIScale", { Parent = new("Frame", { Name = "Punch", Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Parent = comboFrame }) })
+	local punchFrame = comboPunch.Parent :: Frame
+	for i = 1, COMBO_DOTS do
+		local angle = (i - 1) / COMBO_DOTS * math.pi * 2
+		local dot = new("Frame", {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.new(0.5, math.sin(angle) * 48, 0.5, -math.cos(angle) * 48),
+			Size = UDim2.fromOffset(8, 8),
+			BackgroundColor3 = TONES.Gold,
+			Parent = punchFrame,
+		})
+		corner(dot, 4)
+		new("UIStroke", { Color = INK, Thickness = 1, Parent = dot })
+		comboDots[i] = dot
+	end
+	comboLabel = label({ AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.45), Size = UDim2.fromOffset(90, 50), Text = "", TextScaled = true, TextColor3 = TONES.Gold, TextStrokeTransparency = 0, Parent = punchFrame })
+	comboWord = label({ AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.fromScale(0.5, 0.68), Size = UDim2.fromOffset(80, 16), Text = "COMBO", TextSize = 14, Font = Enum.Font.GothamBold, TextStrokeTransparency = 0.2, Parent = punchFrame })
 
 	-- Grabbed: red edges, mash prompt, wriggle and time bars.
 	grabFrame = new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.fromRGB(120, 20, 20), BackgroundTransparency = 0.7, Visible = false, Parent = gui })
 	-- (The prompt and bars sit in one box, scaled together.)
 	local grabBox = new("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.45), Size = UDim2.fromOffset(700, 170), BackgroundTransparency = 1, Parent = grabFrame })
-	scaled(grabBox)
+	scaled(grabBox, true)
 	label({ AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 0), Size = UDim2.fromOffset(700, 70), Text = "GRABBED!", TextScaled = true, TextColor3 = TONES.Danger, Parent = grabBox })
 	label({
 		AnchorPoint = Vector2.new(0.5, 0),
@@ -326,7 +380,7 @@ local function build()
 		TextColor3 = TONES.Gold,
 		Parent = caughtFrame,
 	})
-	scaled(caughtLabel)
+	scaled(caughtLabel, true)
 	flash = new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.fromRGB(255, 255, 255), BackgroundTransparency = 1, Parent = gui })
 
 	-- Controls card (hidden on touch, where the buttons speak for themselves).
@@ -431,6 +485,11 @@ function Hud.Init(grapple: any)
 	if camera then
 		camera:GetPropertyChangedSignal("ViewportSize"):Connect(rescale)
 	end
+	Settings.Changed.Event:Connect(function(key: string)
+		if key == "BigText" then
+			rescale()
+		end
+	end)
 	task.spawn(Tutorial.Init, gui, grapple, scaled)
 	local remotes = ReplicatedStorage:WaitForChild("Remotes")
 	local function remote(name: string): RemoteEvent
@@ -442,13 +501,29 @@ function Hud.Init(grapple: any)
 		if type(state) ~= "table" then
 			return
 		end
+		if type(state.MaxBlades) == "number" then
+			buildBlades(state.MaxBlades)
+		end
 		setBlades(state.Blades or blades)
 		rankLabel.Text = `{string.upper(state.Rank or "Recruit")}  -  {state.Points or 0} PTS`
-		if (state.Combo or 0) >= 2 and (state.ComboLeft or 0) > 0 then
+		local combo = state.Combo or 0
+		if combo >= 2 and (state.ComboLeft or 0) > 0 then
 			comboUntil = os.clock() + state.ComboLeft
-			comboLabel.Text = `x{state.Combo} COMBO`
-			comboLabel.Size = UDim2.fromOffset(200, 40)
-			TweenService:Create(comboLabel, TweenInfo.new(0.2, Enum.EasingStyle.Back), { Size = UDim2.fromOffset(220, 48) }):Play()
+			comboLabel.Text = `x{combo}`
+			-- The counter grows and changes colour as the combo climbs.
+			local tier = COMBO_TIERS[math.clamp(combo - 1, 1, #COMBO_TIERS)]
+			comboLabel.TextColor3 = tier
+			comboWord.TextColor3 = tier
+			for _, dot in comboDots do
+				dot.BackgroundColor3 = tier
+			end
+			if combo ~= lastCombo then
+				comboPunch.Scale = 1.6 + 0.1 * combo
+				TweenService:Create(comboPunch, TweenInfo.new(0.35, Enum.EasingStyle.Back), { Scale = 0.85 + 0.1 * combo }):Play()
+			end
+			lastCombo = combo
+		else
+			lastCombo = 0
 		end
 	end)
 
@@ -460,10 +535,7 @@ function Hud.Init(grapple: any)
 		elseif result == "Dull" then
 			Hud.Toast("Blades dull - find a supply crate!", Color3.fromRGB(255, 140, 120))
 		end
-		if typeof(info.Position) == "Vector3" then
-			local color = if result == "Armor" or result == "ArmorBroken" then Color3.fromRGB(200, 195, 180) else Color3.fromRGB(245, 245, 250)
-			Effects.Burst(info.Position, color, if result == "Defeated" then 4 else 2.5, if result == "Defeated" then 40 else 18)
-		end
+		-- (The steam and sparks where the cut landed are Juice's.)
 		if info.Rescued then
 			Hud.Toast(`You cut {info.Rescued} loose!`, TONES.Good)
 		end
@@ -557,14 +629,19 @@ function Hud.Init(grapple: any)
 	end)
 
 	-- Every frame: crosshair, hook marks, gas, speed, hints, combo, grab bars.
-	local hookColors = { Idle = Color3.fromRGB(150, 155, 165), Flying = Color3.fromRGB(255, 220, 90), Attached = Color3.fromRGB(120, 255, 150) }
+	-- (Gold flying, sky blue hooked: apart for every kind of colour vision.)
+	local hookColors = { Idle = Color3.fromRGB(150, 155, 165), Flying = Color3.fromRGB(255, 215, 90), Attached = TONES.Sky }
 	local hintTimer = 0
 	RunService.RenderStepped:Connect(function(dt: number)
 		-- (The screen centre with shift-lock, touch or a gamepad.)
 		local location: Vector2 = grapple.AimPoint()
 		crosshair.Position = UDim2.fromOffset(location.X, location.Y)
 		local inRange = grapple.AimTarget(0) ~= nil
-		crosshair.BackgroundColor3 = if inRange then Color3.fromRGB(120, 255, 150) else Color3.fromRGB(255, 255, 255)
+		-- Sky blue when a hook would land, gold and bigger when aim assist
+		-- has a giant.
+		local locked = inRange and grapple.Assisted()
+		crosshair.BackgroundColor3 = if locked then TONES.Gold elseif inRange then TONES.Sky else Color3.fromRGB(255, 255, 255)
+		crosshair.Size = if locked then UDim2.fromOffset(14, 14) else UDim2.fromOffset(10, 10)
 		local left, right = grapple.HookStates()
 		hookMarks.Left.TextColor3 = (hookColors :: any)[left] or hookColors.Idle
 		hookMarks.Right.TextColor3 = (hookColors :: any)[right] or hookColors.Idle
@@ -585,12 +662,17 @@ function Hud.Init(grapple: any)
 			local root = character and character:FindFirstChild("HumanoidRootPart")
 			local hint = if root and root:IsA("BasePart") and not grabbed then cutInReach(root.Position) else nil
 			hintLabel.Text = hint or ""
-			hintLabel.TextColor3 = if hint and string.find(hint, "NAPE") then TONES.Danger elseif hint then TONES.Good else TONES.Info
+			hintLabel.TextColor3 = if hint and (string.find(hint, "NAPE") or string.find(hint, "ARMOR")) then TONES.Gold elseif hint then TONES.Sky else TONES.Info
 		end
 
 		local comboLeft = comboUntil - os.clock()
-		comboLabel.Visible = comboLeft > 0
-		comboBar.Size = UDim2.fromScale(math.clamp(comboLeft / comboWindow, 0, 1), 1)
+		comboFrame.Visible = comboLeft > 0
+		if comboLeft > 0 then
+			local lit = math.ceil(math.clamp(comboLeft / comboWindow, 0, 1) * COMBO_DOTS)
+			for i, dot in comboDots do
+				dot.BackgroundTransparency = if i <= lit then 0 else 0.85
+			end
+		end
 
 		if grabbed then
 			grabBar.Size = UDim2.fromScale(math.clamp(wriggles / grabNeeded, 0, 1), 1)

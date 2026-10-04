@@ -25,7 +25,11 @@
 -- free); the server counts them. Swatted: you go flying and your hooks let
 -- go.
 --
--- Gas shows as white jets behind you, and the view widens with speed.
+-- Gas shows as white jets behind you, and the view widens with speed (and
+-- kicks wider as you reel, boost or dash). A marker on the surface shows
+-- where each hook would bite; aim assist (a setting) snaps a hook onto a
+-- nape within a few degrees of the crosshair. Cables twang when they bite,
+-- sway while they fly, and pull thin and bright while you reel.
 --
 -- Movement is simulated here on the client (it owns its character's
 -- physics), so it feels instant; the server relays your cables to other
@@ -43,6 +47,7 @@ local CollectionService = game:GetService("CollectionService")
 
 local Config = require(ReplicatedStorage.Shared.Config)
 local Effects = require(script.Parent.Effects)
+local Settings = require(script.Parent.Settings)
 local TouchButtons = require(script.Parent.TouchButtons)
 
 local GrappleController = {}
@@ -62,6 +67,8 @@ type Hook = {
 	Anchor: Attachment?,
 	Length: number,
 	Beam: Beam?,
+	Twang: number, -- 1 when the hook bites, fading: the cable shivers
+	Marker: Part?, -- where this hook would bite now (shown on the surface)
 }
 
 local player = Players.LocalPlayer
@@ -72,10 +79,10 @@ local character: Model? = nil
 local root: BasePart? = nil
 local humanoid: Humanoid? = nil
 local hooks: { [string]: Hook } = {
-	Left = { Name = "Left", Side = -1, Held = false, State = "Idle", OnGiant = false, Length = 0 },
-	Right = { Name = "Right", Side = 1, Held = false, State = "Idle", OnGiant = false, Length = 0 },
+	Left = { Name = "Left", Side = -1, Held = false, State = "Idle", OnGiant = false, Length = 0, Twang = 0 },
+	Right = { Name = "Right", Side = 1, Held = false, State = "Idle", OnGiant = false, Length = 0, Twang = 0 },
 }
-local gas = settings.GasMax
+local gas = Config.Grapple.GasMax
 local gasHeld = false
 local lastSlash = 0
 local lastDash = 0
@@ -84,6 +91,12 @@ local spinStartYaw = 0
 local fxFolder: Folder
 local hookRemote: RemoteEvent? = nil
 local gasPuff: ParticleEmitter? = nil -- white jets behind you while gas flows
+local gasCore: ParticleEmitter? = nil -- the fast bright streak inside them
+local fovKick = 0 -- extra FOV from reeling, boosting and dashing (decays)
+local wasReeling = false
+local wasBoosting = false
+local assisted = false -- the last centre aim was pulled onto a giant
+local clock = 0
 local BASE_FOV = 70
 local held = false -- in a giant's hand: inputs wriggle instead
 local wind: Sound? = nil
@@ -137,16 +150,77 @@ local function refreshFilter()
 	rayParams.FilterDescendantsInstances = ignore
 end
 
+-- Part of a giant (or a titan)?
+local function isGiantPart(part: Instance): boolean
+	local model = part:FindFirstAncestorWhichIsA("Model")
+	while model do
+		if CollectionService:HasTag(model, Config.Tags.Giant) then
+			return true
+		end
+		model = model:FindFirstAncestorWhichIsA("Model")
+	end
+	return false
+end
+
+-- Aim assist: the giant part (a nape, or with `body` a head or torso) the
+-- crosshair is within `cone` degrees of, reachable from here, as a raycast
+-- result from the hunter onto it.
+local function assist(ray: Ray, cone: number, body: boolean): RaycastResult?
+	if not root or not Settings.Get("AimAssist") then
+		return nil
+	end
+	local here = (root :: BasePart).Position
+	local direction = ray.Direction.Unit
+	local best: BasePart? = nil
+	local bestAngle = math.rad(cone)
+	for _, giant in CollectionService:GetTagged(Config.Tags.Giant) do
+		local friendly = giant:GetAttribute("Shifter") ~= nil and (giant:GetAttribute("Side") ~= "Giants" or giant:GetAttribute("Shifter") == player.UserId)
+		if giant:GetAttribute("Defeated") or giant:GetAttribute("Event") or friendly then
+			continue
+		end
+		local names: { string } = if body then { "Head", "Torso" } else { "Nape" }
+		for _, name in names do
+			local part = giant:FindFirstChild(name)
+			if part and part:IsA("BasePart") and (part.Position - here).Magnitude <= settings.Range then
+				local toPart = part.Position - ray.Origin
+				local angle = math.acos(math.clamp(direction:Dot(toPart.Unit), -1, 1))
+				if angle < bestAngle then
+					best, bestAngle = part, angle
+				end
+			end
+		end
+	end
+	if not best then
+		return nil
+	end
+	local toBest = best.Position - here
+	local hit = Workspace:Raycast(here, toBest.Unit * (toBest.Magnitude + 4), rayParams)
+	return if hit and isGiantPart(hit.Instance) then hit else nil
+end
+
 -- Where a hook fired now would land, or nil if nothing is in range.
 function GrappleController.AimTarget(sideOffset: number?): RaycastResult?
 	if not root then
 		return nil
 	end
 	local ray = aimRay()
+	-- A nape near the crosshair wins (both hooks go for it).
+	local napeHit = assist(ray, Config.Feel.AimAssistCone, false)
+	if sideOffset == 0 or sideOffset == nil then
+		assisted = napeHit ~= nil
+	end
+	if napeHit then
+		return napeHit
+	end
 	local reach = settings.Range + (camera.CFrame.Position - root.Position).Magnitude
 	local first = Workspace:Raycast(ray.Origin, ray.Direction * reach, rayParams)
 	if not first then
-		return nil
+		-- A clean miss next to a giant: hook its head or back instead.
+		local bodyHit = assist(ray, Config.Feel.AimAssistBodyCone, true)
+		if bodyHit and (sideOffset == 0 or sideOffset == nil) then
+			assisted = true
+		end
+		return bodyHit
 	end
 	local target = first.Position
 	if sideOffset and sideOffset ~= 0 then
@@ -216,18 +290,6 @@ local function isTitan(): boolean
 	return character ~= nil and (character :: Model):GetAttribute("Shifted") == true
 end
 
--- Part of a giant (or a titan)?
-local function isGiantPart(part: Instance): boolean
-	local model = part:FindFirstAncestorWhichIsA("Model")
-	while model do
-		if CollectionService:HasTag(model, Config.Tags.Giant) then
-			return true
-		end
-		model = model:FindFirstAncestorWhichIsA("Model")
-	end
-	return false
-end
-
 local function fire(hook: Hook)
 	-- (No gas needed to fire: an empty tank must never leave you stranded.)
 	if not root or not humanoid or humanoid.Health <= 0 or held or not hook.Hip or isTitan() then
@@ -275,6 +337,8 @@ local function bite(hook: Hook)
 	end
 	hook.Length = (anchor.WorldPosition - root.Position).Magnitude
 	hook.State = "Attached"
+	hook.Twang = 1
+	Effects.Play("Hook", anchor.WorldPosition, 0.6, 2.1)
 	if hookRemote then
 		hookRemote:FireServer(hook.Name, part, localPos)
 	end
@@ -349,6 +413,11 @@ local function dash()
 	if gasPuff then
 		gasPuff:Emit(16)
 	end
+	if gasCore then
+		gasCore:Emit(12)
+	end
+	Effects.Play("Whoosh")
+	fovKick = math.max(fovKick, Config.Feel.FovKickDash)
 	local direction = humanoid.MoveDirection
 	if direction.Magnitude < 0.1 then
 		direction = camera.CFrame.LookVector
@@ -386,6 +455,9 @@ local function step(dt: number)
 		releaseAll()
 		if gasPuff then
 			gasPuff.Enabled = false
+		end
+		if gasCore then
+			gasCore.Enabled = false
 		end
 		if wind then
 			wind.Volume = 0
@@ -475,18 +547,32 @@ local function step(dt: number)
 			gas -= settings.GasPerSecondBoost * dt
 		end
 	elseif not hooked then
-		gas = math.min(settings.GasMax, gas + settings.GasRegenPerSecondGrounded * dt)
+		gas = math.min(Config.Grapple.GasMax, gas + settings.GasRegenPerSecondGrounded * dt)
 	end
 	if hooked and not reeling then
 		-- A trickle while you hang on a cable.
-		gas = math.min(settings.GasMax, gas + settings.GasRegenPerSecondSwinging * dt)
+		gas = math.min(Config.Grapple.GasMax, gas + settings.GasRegenPerSecondSwinging * dt)
 	end
 	if gas <= 0 then
 		gas = 0
 	end
 	if gasPuff then
 		gasPuff.Enabled = reeling or boosting
+		gasPuff.Rate = if boosting then 80 else 60
 	end
+	if gasCore then
+		gasCore.Enabled = reeling or boosting
+	end
+	-- The view kicks wider as the gas cuts in.
+	local Feel = Config.Feel
+	if reeling and not wasReeling then
+		fovKick = math.max(fovKick, Feel.FovKickReel)
+	end
+	if boosting and not wasBoosting then
+		fovKick = math.max(fovKick, Feel.FovKickBoost)
+	end
+	wasReeling, wasBoosting = reeling, boosting
+	fovKick *= math.exp(-dt * Feel.FovKickDecay)
 
 	if velocity.Magnitude > settings.MaxSpeed then
 		velocity = velocity.Unit * settings.MaxSpeed
@@ -494,9 +580,12 @@ local function step(dt: number)
 	-- Speed widens the view a little and the wind picks up: swinging
 	-- should feel fast.
 	local rush = math.clamp((velocity.Magnitude - 40) / (settings.MaxSpeed - 40), 0, 1)
-	camera.FieldOfView += (BASE_FOV + rush * 18 - camera.FieldOfView) * math.min(dt * 4, 1)
+	local fovScale = (Settings.Get("Fov") :: number?) or 1
+	camera.FieldOfView += (BASE_FOV + (rush * Feel.FovSpeed + fovKick) * fovScale - camera.FieldOfView) * math.min(dt * 6, 1)
 	if wind then
-		wind.Volume = Config.Sounds.Wind.Volume * rush
+		-- Louder and higher the faster you go.
+		wind.Volume = Config.Sounds.Wind.Volume * rush * (0.7 + 0.3 * rush)
+		wind.PlaybackSpeed = Config.Sounds.Wind.Pitch * (0.85 + rush * 0.45)
 	end
 	if velocity ~= root.AssemblyLinearVelocity then
 		root.AssemblyLinearVelocity = velocity
@@ -535,7 +624,7 @@ local function onCharacter(newCharacter: Model)
 	character = newCharacter
 	root = newCharacter:WaitForChild("HumanoidRootPart", 10) :: BasePart?
 	humanoid = newCharacter:WaitForChild("Humanoid", 10) :: Humanoid?
-	gas = settings.GasMax
+	gas = Config.Grapple.GasMax
 	refreshFilter()
 	if humanoid then
 		-- Hunters flip and tumble through the air all the time: never let
@@ -551,6 +640,25 @@ local function onCharacter(newCharacter: Model)
 			hip.Parent = root
 			hook.Hip = hip
 		end
+		-- The jets leave from the small of the back.
+		local jet = Instance.new("Attachment")
+		jet.Name = "GasJet"
+		jet.Position = Vector3.new(0, -0.4, 0.7)
+		jet.Parent = root
+		local core = Instance.new("ParticleEmitter")
+		core.Name = "GasCore"
+		core.Color = ColorSequence.new(Color3.fromRGB(255, 255, 255), Color3.fromRGB(200, 225, 255))
+		core.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.35), NumberSequenceKeypoint.new(1, 0.05) })
+		core.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.1), NumberSequenceKeypoint.new(1, 1) })
+		core.Lifetime = NumberRange.new(0.1, 0.2)
+		core.Speed = NumberRange.new(30, 45)
+		core.SpreadAngle = Vector2.new(6, 6)
+		core.LightEmission = 0.6
+		core.EmissionDirection = Enum.NormalId.Back
+		core.Rate = 90
+		core.Enabled = false
+		core.Parent = jet
+		gasCore = core
 		local puff = Instance.new("ParticleEmitter")
 		puff.Name = "GasPuff"
 		puff.Color = ColorSequence.new(Color3.fromRGB(240, 242, 248))
@@ -562,7 +670,7 @@ local function onCharacter(newCharacter: Model)
 		puff.EmissionDirection = Enum.NormalId.Back
 		puff.Rate = 60
 		puff.Enabled = false
-		puff.Parent = root
+		puff.Parent = jet
 		gasPuff = puff
 	end
 end
@@ -618,6 +726,11 @@ function GrappleController.Speed(): number
 	return if root then root.AssemblyLinearVelocity.Magnitude else 0
 end
 
+-- Is the crosshair being pulled onto a giant by aim assist?
+function GrappleController.Assisted(): boolean
+	return assisted
+end
+
 function GrappleController.IsHeld(): boolean
 	return held
 end
@@ -625,6 +738,63 @@ end
 -- Seconds you've been reeling in without a break (0 if you aren't).
 function GrappleController.ReelTime(): number
 	return if reelingSince then os.clock() - reelingSince else 0
+end
+
+-- Every frame: the hook markers, and the cables' twang, sway and tension.
+local MARKER_COLORS = { Left = Color3.fromRGB(86, 180, 233), Right = Color3.fromRGB(240, 160, 40) } -- blue / orange: apart for every kind of colour vision
+local function makeMarker(name: string): Part
+	local marker = Instance.new("Part")
+	marker.Name = `{name}HookMarker`
+	marker.Shape = Enum.PartType.Cylinder
+	marker.Material = Enum.Material.Neon
+	marker.Color = (MARKER_COLORS :: any)[name]
+	marker.Anchored = true
+	marker.CanCollide = false
+	marker.CanQuery = false
+	marker.CanTouch = false
+	marker.CastShadow = false
+	marker.Transparency = 1
+	marker.Parent = fxFolder
+	return marker
+end
+
+local function renderHooks(dt: number)
+	clock += dt
+	local alive = root ~= nil and humanoid ~= nil and (humanoid :: Humanoid).Health > 0 and not held and not isTitan()
+	local showMarkers = alive and Settings.Get("HookMarker") == true
+	for name, hook in hooks do
+		-- Where this hook would bite: a disc flat on the surface.
+		local marker: Part = hook.Marker or makeMarker(name)
+		hook.Marker = marker
+		local hit = if showMarkers and hook.State ~= "Attached" then GrappleController.AimTarget(hook.Side * settings.HookSideOffset) else nil
+		if hit then
+			local distance = (hit.Position - camera.CFrame.Position).Magnitude
+			local size = math.clamp(distance * 0.018, 0.8, 4) * (1 + 0.12 * math.sin(clock * 8))
+			marker.Size = Vector3.new(0.08, size, size)
+			marker.CFrame = CFrame.lookAt(hit.Position + hit.Normal * 0.06, hit.Position + hit.Normal * 2) * CFrame.Angles(0, math.pi / 2, 0)
+			marker.Transparency = if isGiantPart(hit.Instance) then 0.1 else 0.35
+		elseif marker.Transparency < 1 then
+			marker.Transparency = 1
+		end
+		-- The cable.
+		local beam = hook.Beam
+		if beam then
+			if hook.State == "Flying" then
+				local sway = math.sin(clock * 26 + hook.Side) * 1.4
+				beam.CurveSize0, beam.CurveSize1 = sway, -sway * 0.6
+				beam.Width0, beam.Width1 = 0.14, 0.14
+			else
+				hook.Twang = math.max(hook.Twang - dt * 3, 0)
+				local shiver = math.sin(clock * 55) * 2.2 * hook.Twang * hook.Twang
+				beam.CurveSize0, beam.CurveSize1 = shiver, -shiver
+				-- Reeling pulls the cable thin and bright.
+				local tense = gasHeld and gas > 0
+				local width = if tense then 0.11 else 0.16
+				beam.Width0, beam.Width1 = width, width
+				beam.LightEmission = if tense then 0.6 else 0.25
+			end
+		end
+	end
 end
 
 -- Held: any key, click, tap or gamepad button is a wriggle. The server
@@ -798,7 +968,7 @@ function GrappleController.Init()
 		hookRemote = hookEvent
 		hookEvent.OnClientEvent:Connect(onRemoteHook)
 		remote(Config.Remotes.Resupplied).OnClientEvent:Connect(function()
-			gas = settings.GasMax
+			gas = Config.Grapple.GasMax
 			Effects.Play("Resupply")
 		end)
 		struggleRemote = remote(Config.Remotes.Struggle)
@@ -838,6 +1008,7 @@ function GrappleController.Init()
 	wind = windSound
 
 	RunService.Heartbeat:Connect(step)
+	RunService.RenderStepped:Connect(renderHooks)
 
 	-- Zoomed all the way in, the camera fades the whole character out; keep
 	-- the two swords in view (after the camera has had its say each frame).

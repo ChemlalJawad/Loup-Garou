@@ -4,6 +4,9 @@
 -- red dots sized by height (runners orange, armoured grey), other hunters
 -- blue, supply crates cyan, the gate a yellow mark, the Great Wall a ring.
 -- Giants beyond its range show as arrows round the edge, pointing at them.
+-- Shapes say it too, for every kind of colour vision: hunters and crates
+-- are round, giants square, abnormals (runners, sprinters) diamonds, and a
+-- giant reaching to grab flashes white.
 
 local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
@@ -151,7 +154,7 @@ function Radar.Init(gui: ScreenGui): Frame
 
 		local count = 0
 		local arrowCount = 0
-		local function place(p: Vector3, size: number, color: Color3, edge: boolean?)
+		local function place(p: Vector3, size: number, color: Color3, edge: boolean?, shape: string?)
 			local x, y, visible = toRadar(p)
 			if visible then
 				count += 1
@@ -159,6 +162,11 @@ function Radar.Init(gui: ScreenGui): Frame
 				d.Position = UDim2.fromOffset(x, y)
 				d.Size = UDim2.fromOffset(size, size)
 				d.BackgroundColor3 = color
+				local corner = d:FindFirstChildOfClass("UICorner")
+				if corner then
+					corner.CornerRadius = if shape then UDim.new(0, 2) else UDim.new(1, 0)
+				end
+				d.Rotation = if shape == "Diamond" then 45 else 0
 			elseif edge then
 				-- Off the radar: an arrow on the rim, pointing its way.
 				local dx, dy = x - SIZE / 2, y - SIZE / 2
@@ -189,7 +197,8 @@ function Radar.Init(gui: ScreenGui): Frame
 					local height = (giant:GetAttribute("Height") :: number?) or 20
 					local kind = giant:GetAttribute("Kind")
 					local side = giant:GetAttribute("Side")
-					local color = if side == "Humans" then Color3.fromRGB(90, 160, 255)
+					local color = if giant:GetAttribute("Grabbing") and os.clock() % 0.3 < 0.15 then Color3.new(1, 1, 1)
+						elseif side == "Humans" then Color3.fromRGB(90, 160, 255)
 						elseif side == "Giants" then Color3.fromRGB(255, 60, 140)
 						elseif kind == "Runner" then Color3.fromRGB(255, 160, 40)
 						elseif kind == "Beast" then Color3.fromRGB(150, 90, 60)
@@ -197,7 +206,7 @@ function Radar.Init(gui: ScreenGui): Frame
 						elseif kind == "Sprinter" then Color3.fromRGB(200, 120, 255)
 						elseif kind == "Crawler" then Color3.fromRGB(150, 170, 70)
 						else Color3.fromRGB(240, 70, 60)
-					place(giantRoot.Position, math.clamp(height / 4, 6, 14), color, true)
+					place(giantRoot.Position, math.clamp(height / 4, 6, 14), color, true, if giant:GetAttribute("Abnormal") then "Diamond" else "Square")
 				end
 			end
 		end
