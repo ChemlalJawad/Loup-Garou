@@ -52,6 +52,7 @@ type Hunter = {
 local hunters: { [Player]: Hunter } = {}
 local remotes: Folder
 local spawnPart: BasePart? = nil
+local cosmeticFx: RemoteEvent? = nil -- defeat effects for everyone else (Config.CosmeticFx)
 
 -- Alive, not in a giant's hand, not a titan: free to use the gear.
 local function ready(player: Player): BasePart?
@@ -138,12 +139,12 @@ end
 -- squared hilt, and a blade scored with the snap lines between its
 -- segments, cut off at an angle at the tip. Each carries a (disabled)
 -- Trail the owner's client flashes on during a slash. Dull blades (none
--- left) turn grey.
+-- left) turn grey. Colours, finish and trail: HunterGear.ApplyGearLook
+-- (gear set, then the "Cos_Blade" / "Cos_Trail" cosmetics on top).
 
 local BLADE_LENGTH = 5.2
 local TIP_LENGTH = 0.55
 local SHARP = Color3.fromRGB(215, 225, 235)
-local DULL = Color3.fromRGB(120, 115, 110)
 
 local function bladePart(name: string, size: Vector3, color: Color3, material: Enum.Material, parent: Instance): Part
 	local p = Instance.new("Part")
@@ -251,17 +252,16 @@ local function setBladesSharp(player: Player, sharp: boolean)
 	for _, name in { "LeftSword", "RightSword" } do
 		local sword = character:FindFirstChild(name)
 		local edge = sword and sword:FindFirstChild("Edge")
-		for _, partName in { "Blade", "BladeTip" } do
-			local blade = sword and sword:FindFirstChild(partName)
-			if blade and blade:IsA("BasePart") then
-				blade.Color = if sharp then SHARP else DULL
-				blade.Reflectance = if sharp then 0.35 else 0
-			end
+		if sword then
+			sword:SetAttribute("Dull", not sharp)
 		end
 		if edge and edge:IsA("BasePart") then
 			edge.Transparency = if sharp then 0 else 1
 		end
 	end
+	-- (The blade's colour and finish: grey when dull, else the corps' steel
+	-- or the cosmetic blade.)
+	HunterGear.ApplyGearLook(character)
 end
 
 local function equipSwords(character: Model)
@@ -345,6 +345,7 @@ local function onPlayerAdded(player: Player)
 	rank.Value = Config.RankFor(0)
 	rank.Parent = leaderstats
 	leaderstats.Parent = player
+	HunterGear.WatchCosmetics(player)
 	player.CharacterAdded:Connect(function(character)
 		-- A fresh set of blades every life.
 		local hunter = hunters[player]
@@ -435,6 +436,16 @@ local function onSlash(player: Player)
 	end
 	remote(Config.Remotes.SlashResult):FireClient(player, result, info)
 	HunterService.Slashed:Fire(player, result, info)
+	-- A takedown with a defeat effect on: everyone else sees it too (the
+	-- hunter's own client plays it from the SlashResult).
+	local defeatFx = if result == "Defeated" then player:GetAttribute("Cos_Defeat") else nil
+	if cosmeticFx and type(defeatFx) == "string" and Config.CosmeticFor("Defeat", defeatFx) and type(info) == "table" and typeof(info.Position) == "Vector3" then
+		for _, other in Players:GetPlayers() do
+			if other ~= player then
+				cosmeticFx:FireClient(other, player, defeatFx, info.Position)
+			end
+		end
+	end
 end
 
 local function onDefeated(player: Player, kindName: string, _clean: boolean, speed: number)
@@ -606,6 +617,10 @@ function HunterService.Init(spawn: BasePart?)
 	remotes = ReplicatedStorage:WaitForChild("Remotes") :: Folder
 	spawnPart = spawn
 	Players.CharacterAutoLoads = false
+	local fx = Instance.new("RemoteEvent")
+	fx.Name = Config.CosmeticFx.Remote
+	fx.Parent = remotes
+	cosmeticFx = fx
 
 	for _, player in Players:GetPlayers() do
 		task.spawn(onPlayerAdded, player)

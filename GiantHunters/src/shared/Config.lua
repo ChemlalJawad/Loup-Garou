@@ -110,6 +110,7 @@ export type GiantLook = {
 	Nose: string?, -- "Ball", "Button", "Long" or "Wide"
 	Ears: string?, -- "Round", "Big" or "None"
 	Stone: boolean?, -- rocky skin with glowing seams (the Wallbreaker)
+	SkinMaterial: Enum.Material?, -- the skin's material (titan skins, Config.CosmeticItems)
 	Fur: boolean?, -- tufts of fur on the shoulders, back, chest and forearms
 	Cheeks: boolean?, -- ridge lines under the eyes (titan shifters)
 	Pose: string?, -- "Crawl" (on all fours) or "Ape" (knuckles near the ground)
@@ -947,6 +948,221 @@ Config.Cosmetics = {
 		{ Id = "Legend", Display = "Living Legend", Unlock = { Stat = "Giants", At = 500 } },
 	} :: { Title },
 	TitleDistance = 70, -- studs: the title over a hunter's head fades out past this
+}
+
+-- === Cosmetic items (looks only: no stats, no asset ids) =====================
+-- One item worn per slot. The shop (MonetizationService / SeasonService /
+-- ShopService) owns buying, owning and equipping, and sets the player
+-- attributes "Cos_Cape", "Cos_Blade", "Cos_Trail", "Cos_Gas", "Cos_Cable",
+-- "Cos_Defeat" and "Cos_TitanSkin" to an item Id ("" = the default look).
+-- The look code (HunterGear, HunterService, GrappleController,
+-- CosmeticsClient, ShifterService) only reads them.
+--
+-- Source: "Free" (everyone has it), "Marks" (Price), "Robux" (ProductKey,
+-- mapped by Config.Monetization.Products.Cosmetics), "Season" (a season
+-- reward) or "Pass" (PassKey: "CommanderPack" | "ShifterPack").
+-- Preview: one or two colours for a swatch in the shop.
+--
+-- Precedence: Cos_Cape wins over the rank/Marks cape (Config.Cosmetics,
+-- the "CapeColor" attribute); Cos_Blade wins over the gear set's Hilt/Edge
+-- colours (Config.Catalog Look) and Cos_Trail over its Edge for the trail.
+export type CosmeticCape = {
+	Color: Color3,
+	Emblem: Color3?, -- the shield on the back (default: the corps' blue)
+	Pattern: string?, -- "Stripes" | "Stars" | "Trim" | "Split" | "Glow" (a Neon trim)
+	PatternColor: Color3?,
+}
+export type CosmeticBlade = {
+	Color: Color3, -- the blade (sharp)
+	Edge: Color3, -- the glowing cutting edge
+	Material: Enum.Material?, -- default Metal (Glass, Foil, Ice...)
+	Reflectance: number?, -- default 0.35
+	Transparency: number?, -- (Glass blades)
+	Hilt: Color3?,
+}
+export type CosmeticTrail = {
+	Colors: { Color3 }, -- spread evenly along the trail
+	Lifetime: number?, -- seconds (default 0.18)
+	LightEmission: number?,
+	Transparency: number?, -- at the blade (fades to 1)
+	Width: number?, -- x the trail's width at the base (WidthScale)
+}
+export type CosmeticGas = {
+	Color: Color3, -- the puff
+	Core: Color3, -- the fast streak inside it
+	Color2: Color3?, -- the puff fades to this
+	LightEmission: number?,
+}
+export type CosmeticCable = {
+	Color: Color3,
+	Color2: Color3?, -- at the hook end
+	LightEmission: number?, -- added to the cable's own glow
+	Width: number?, -- x the cable's width
+}
+export type CosmeticDefeat = {
+	Shape: string, -- "Confetti" | "Stars" | "Hearts" | "Bubbles" | "Mist"
+	Colors: { Color3 },
+	Count: number, -- particles (halved on phones and low graphics)
+}
+export type CosmeticTitanSkin = {
+	Skin: Color3,
+	HairColor: Color3?,
+	EyeColor: Color3?, -- softly glowing eyes
+	Shorts: Color3?,
+	Material: Enum.Material?, -- the skin's material (Glass for crystal)
+	Crystal: boolean?, -- adds the crown of crystal points
+}
+export type CosmeticItem = {
+	Id: string,
+	Slot: string, -- "Cape" | "Blade" | "Trail" | "Gas" | "Cable" | "Defeat" | "TitanSkin"
+	Display: string,
+	Description: string,
+	Source: string, -- "Free" | "Marks" | "Robux" | "Season" | "Pass"
+	Price: number?, -- Marks (Source "Marks")
+	ProductKey: string?, -- (Source "Robux")
+	PassKey: string?, -- (Source "Pass")
+	Order: number,
+	Preview: { Color: Color3, Color2: Color3? },
+	Cape: CosmeticCape?,
+	Blade: CosmeticBlade?,
+	Trail: CosmeticTrail?,
+	Gas: CosmeticGas?,
+	Cable: CosmeticCable?,
+	Defeat: CosmeticDefeat?,
+	TitanSkin: CosmeticTitanSkin?,
+}
+
+Config.CosmeticSlots = { "Cape", "Blade", "Trail", "Gas", "Cable", "Defeat", "TitanSkin" }
+
+local rgb = Color3.fromRGB
+local MIST, MIST_TEAL, MIST_DEEP = rgb(196, 210, 214), rgb(110, 196, 190), rgb(70, 104, 112) -- Season of Mist
+local GOLD, GOLD_LIGHT = rgb(214, 170, 64), rgb(255, 226, 140)
+local RAINBOW = { rgb(255, 110, 110), rgb(255, 190, 90), rgb(255, 240, 110), rgb(120, 220, 130), rgb(110, 180, 255), rgb(190, 130, 255) }
+
+local cosmeticList: { CosmeticItem } = {
+	-- Capes
+	{ Id = "SkyStripeCape", Slot = "Cape", Display = "Sky Stripe Cape", Description = "Sky blue with two white stripes.", Source = "Free", Order = 1,
+		Preview = { Color = rgb(96, 160, 220), Color2 = rgb(240, 244, 250) }, Cape = { Color = rgb(96, 160, 220), Emblem = rgb(240, 244, 250), Pattern = "Stripes", PatternColor = rgb(240, 244, 250) } },
+	{ Id = "MeadowCape", Slot = "Cape", Display = "Meadow Cape", Description = "Leaf green with a sunny yellow trim.", Source = "Free", Order = 2,
+		Preview = { Color = rgb(92, 160, 80), Color2 = rgb(250, 214, 90) }, Cape = { Color = rgb(92, 160, 80), Emblem = rgb(250, 214, 90), Pattern = "Trim", PatternColor = rgb(250, 214, 90) } },
+	{ Id = "BerryCape", Slot = "Cape", Display = "Berry Cape", Description = "Berry pink on top, cream below.", Source = "Marks", Price = 300, Order = 3,
+		Preview = { Color = rgb(200, 70, 120), Color2 = rgb(248, 232, 210) }, Cape = { Color = rgb(200, 70, 120), Emblem = rgb(248, 232, 210), Pattern = "Split", PatternColor = rgb(248, 232, 210) } },
+	{ Id = "StarDotCape", Slot = "Cape", Display = "Star Dot Cape", Description = "Deep navy sprinkled with golden dots.", Source = "Marks", Price = 400, Order = 4,
+		Preview = { Color = rgb(36, 46, 96), Color2 = rgb(250, 210, 100) }, Cape = { Color = rgb(36, 46, 96), Emblem = rgb(250, 210, 100), Pattern = "Stars", PatternColor = rgb(250, 210, 100) } },
+	{ Id = "NightGlowCape", Slot = "Cape", Display = "Night Glow Cape", Description = "Midnight blue with a softly glowing teal hem.", Source = "Robux", ProductKey = "NightGlowCape", Order = 5,
+		Preview = { Color = rgb(26, 30, 56), Color2 = rgb(90, 240, 220) }, Cape = { Color = rgb(26, 30, 56), Emblem = rgb(90, 240, 220), Pattern = "Glow", PatternColor = rgb(90, 240, 220) } },
+	{ Id = "SunsetSplitCape", Slot = "Cape", Display = "Sunset Cape", Description = "Warm orange fading into evening purple.", Source = "Robux", ProductKey = "SunsetSplitCape", Order = 6,
+		Preview = { Color = rgb(240, 140, 60), Color2 = rgb(120, 70, 160) }, Cape = { Color = rgb(240, 140, 60), Emblem = rgb(255, 230, 170), Pattern = "Split", PatternColor = rgb(120, 70, 160) } },
+	{ Id = "CommanderCape", Slot = "Cape", Display = "Commander's Cape", Description = "Gold with a white hem. Part of the Commander Pack.", Source = "Pass", PassKey = "CommanderPack", Order = 7,
+		Preview = { Color = GOLD, Color2 = rgb(250, 248, 240) }, Cape = { Color = GOLD, Emblem = rgb(250, 248, 240), Pattern = "Trim", PatternColor = rgb(250, 248, 240) } },
+	{ Id = "Season1_Cape", Slot = "Cape", Display = "Mistwalker Cape", Description = "Season of Mist: misty silver with teal stars.", Source = "Season", Order = 8,
+		Preview = { Color = MIST, Color2 = MIST_TEAL }, Cape = { Color = MIST, Emblem = MIST_DEEP, Pattern = "Stars", PatternColor = MIST_TEAL } },
+
+	-- Blades
+	{ Id = "MintBlade", Slot = "Blade", Display = "Mint Blades", Description = "Bright steel with a cool mint edge.", Source = "Free", Order = 11,
+		Preview = { Color = rgb(225, 235, 232), Color2 = rgb(150, 255, 210) }, Blade = { Color = rgb(225, 235, 232), Edge = rgb(150, 255, 210) } },
+	{ Id = "RoseBlade", Slot = "Blade", Display = "Rose Blades", Description = "Rose-tinted shiny foil with a pink edge.", Source = "Marks", Price = 350, Order = 12,
+		Preview = { Color = rgb(240, 180, 200), Color2 = rgb(255, 130, 190) }, Blade = { Color = rgb(240, 180, 200), Edge = rgb(255, 130, 190), Material = Enum.Material.Foil, Reflectance = 0.2 } },
+	{ Id = "FrostGlassBlade", Slot = "Blade", Display = "Frost Glass Blades", Description = "Clear ice-blue glass blades.", Source = "Marks", Price = 800, Order = 13,
+		Preview = { Color = rgb(180, 225, 255), Color2 = rgb(230, 250, 255) }, Blade = { Color = rgb(180, 225, 255), Edge = rgb(230, 250, 255), Material = Enum.Material.Glass, Reflectance = 0.1, Transparency = 0.3 } },
+	{ Id = "LilacFoilBlade", Slot = "Blade", Display = "Lilac Foil Blades", Description = "Shimmering lilac foil, lavender edge.", Source = "Robux", ProductKey = "LilacFoilBlade", Order = 14,
+		Preview = { Color = rgb(190, 160, 240), Color2 = rgb(220, 200, 255) }, Blade = { Color = rgb(190, 160, 240), Edge = rgb(220, 200, 255), Material = Enum.Material.Foil, Reflectance = 0.25, Hilt = rgb(80, 60, 120) } },
+	{ Id = "LimeSparkBlade", Slot = "Blade", Display = "Lime Spark Blades", Description = "Dark steel with a zesty lime glow.", Source = "Robux", ProductKey = "LimeSparkBlade", Order = 15,
+		Preview = { Color = rgb(70, 74, 82), Color2 = rgb(180, 255, 60) }, Blade = { Color = rgb(70, 74, 82), Edge = rgb(180, 255, 60), Reflectance = 0.2 } },
+	{ Id = "CommanderBlade", Slot = "Blade", Display = "Commander's Blades", Description = "Golden blades for the corps' leaders. Part of the Commander Pack.", Source = "Pass", PassKey = "CommanderPack", Order = 16,
+		Preview = { Color = GOLD, Color2 = GOLD_LIGHT }, Blade = { Color = GOLD, Edge = GOLD_LIGHT, Material = Enum.Material.Foil, Reflectance = 0.3, Hilt = rgb(120, 90, 40) } },
+	{ Id = "Season1_Blade", Slot = "Blade", Display = "Mistglass Blades", Description = "Season of Mist: pale teal glass.", Source = "Season", Order = 17,
+		Preview = { Color = MIST_TEAL, Color2 = MIST }, Blade = { Color = rgb(170, 220, 215), Edge = MIST, Material = Enum.Material.Glass, Reflectance = 0.15, Transparency = 0.25, Hilt = MIST_DEEP } },
+
+	-- Trails
+	{ Id = "BreezeTrail", Slot = "Trail", Display = "Breeze Trail", Description = "A soft mint swish.", Source = "Free", Order = 21,
+		Preview = { Color = rgb(180, 255, 220) }, Trail = { Colors = { rgb(180, 255, 220), rgb(240, 255, 250) } } },
+	{ Id = "FrostTrail", Slot = "Trail", Display = "Frost Trail", Description = "Icy blue fading to white.", Source = "Marks", Price = 300, Order = 22,
+		Preview = { Color = rgb(120, 200, 255), Color2 = rgb(240, 250, 255) }, Trail = { Colors = { rgb(120, 200, 255), rgb(240, 250, 255) }, Lifetime = 0.24 } },
+	{ Id = "EmberTrail", Slot = "Trail", Display = "Ember Trail", Description = "Cosy campfire orange and yellow.", Source = "Marks", Price = 500, Order = 23,
+		Preview = { Color = rgb(255, 150, 60), Color2 = rgb(255, 230, 110) }, Trail = { Colors = { rgb(255, 230, 110), rgb(255, 150, 60), rgb(240, 90, 50) }, Lifetime = 0.22 } },
+	{ Id = "RainbowTrail", Slot = "Trail", Display = "Rainbow Trail", Description = "Every colour, every swing.", Source = "Robux", ProductKey = "RainbowTrail", Order = 24,
+		Preview = { Color = RAINBOW[1], Color2 = RAINBOW[5] }, Trail = { Colors = RAINBOW, Lifetime = 0.3, Width = 1.3 } },
+	{ Id = "CandyTrail", Slot = "Trail", Display = "Candy Trail", Description = "Pink and white, like a sweet.", Source = "Robux", ProductKey = "CandyTrail", Order = 25,
+		Preview = { Color = rgb(255, 140, 200), Color2 = rgb(255, 255, 255) }, Trail = { Colors = { rgb(255, 140, 200), rgb(255, 255, 255), rgb(255, 140, 200), rgb(255, 255, 255) }, Lifetime = 0.26 } },
+	{ Id = "CommanderTrail", Slot = "Trail", Display = "Commander's Trail", Description = "A wide golden arc. Part of the Commander Pack.", Source = "Pass", PassKey = "CommanderPack", Order = 26,
+		Preview = { Color = GOLD_LIGHT, Color2 = GOLD }, Trail = { Colors = { GOLD_LIGHT, GOLD }, Lifetime = 0.28, Width = 1.2 } },
+	{ Id = "Season1_Trail", Slot = "Trail", Display = "Mist Trail", Description = "Season of Mist: a slow silver-teal haze.", Source = "Season", Order = 27,
+		Preview = { Color = MIST, Color2 = MIST_TEAL }, Trail = { Colors = { MIST, MIST_TEAL, MIST }, Lifetime = 0.38, LightEmission = 0.5, Transparency = 0.35, Width = 1.4 } },
+
+	-- Gas jets
+	{ Id = "SkyGas", Slot = "Gas", Display = "Sky Gas", Description = "Light sky-blue puffs.", Source = "Free", Order = 31,
+		Preview = { Color = rgb(190, 225, 255) }, Gas = { Color = rgb(200, 228, 255), Core = rgb(150, 205, 255) } },
+	{ Id = "PeachGas", Slot = "Gas", Display = "Peach Gas", Description = "Soft peach clouds.", Source = "Marks", Price = 250, Order = 32,
+		Preview = { Color = rgb(255, 200, 170) }, Gas = { Color = rgb(255, 210, 180), Core = rgb(255, 170, 130) } },
+	{ Id = "LilacGas", Slot = "Gas", Display = "Lilac Gas", Description = "Lavender puffs with a violet streak.", Source = "Marks", Price = 450, Order = 33,
+		Preview = { Color = rgb(210, 190, 255), Color2 = rgb(160, 120, 255) }, Gas = { Color = rgb(215, 200, 255), Core = rgb(160, 120, 255) } },
+	{ Id = "BubblegumGas", Slot = "Gas", Display = "Bubblegum Gas", Description = "Bright pink puffs.", Source = "Robux", ProductKey = "BubblegumGas", Order = 34,
+		Preview = { Color = rgb(255, 160, 210) }, Gas = { Color = rgb(255, 170, 215), Core = rgb(255, 110, 190), LightEmission = 0.3 } },
+	{ Id = "RainbowGas", Slot = "Gas", Display = "Rainbow Gas", Description = "Puffs that run through the rainbow.", Source = "Robux", ProductKey = "RainbowGas", Order = 35,
+		Preview = { Color = RAINBOW[2], Color2 = RAINBOW[5] }, Gas = { Color = RAINBOW[1], Color2 = RAINBOW[5], Core = rgb(255, 255, 255), LightEmission = 0.3 } },
+	{ Id = "Season1_Gas", Slot = "Gas", Display = "Mist Gas", Description = "Season of Mist: silver puffs with a teal core.", Source = "Season", Order = 36,
+		Preview = { Color = MIST, Color2 = MIST_TEAL }, Gas = { Color = MIST, Color2 = MIST_TEAL, Core = MIST_TEAL } },
+
+	-- Cables
+	{ Id = "BrassCable", Slot = "Cable", Display = "Brass Cable", Description = "Polished brass wire.", Source = "Free", Order = 41,
+		Preview = { Color = rgb(214, 186, 120) }, Cable = { Color = rgb(214, 186, 120) } },
+	{ Id = "SignalCable", Slot = "Cable", Display = "Signal Red Cable", Description = "Easy-to-spot bright red.", Source = "Marks", Price = 200, Order = 42,
+		Preview = { Color = rgb(230, 70, 70) }, Cable = { Color = rgb(230, 70, 70) } },
+	{ Id = "GlowCable", Slot = "Cable", Display = "Glow Wire", Description = "A cable that glows cyan.", Source = "Marks", Price = 600, Order = 43,
+		Preview = { Color = rgb(100, 240, 255) }, Cable = { Color = rgb(100, 240, 255), LightEmission = 0.6 } },
+	{ Id = "SunbeamCable", Slot = "Cable", Display = "Sunbeam Cable", Description = "A thick, warm, sunny beam.", Source = "Robux", ProductKey = "SunbeamCable", Order = 44,
+		Preview = { Color = rgb(255, 220, 90), Color2 = rgb(255, 170, 60) }, Cable = { Color = rgb(255, 230, 110), Color2 = rgb(255, 170, 60), LightEmission = 0.5, Width = 1.3 } },
+	{ Id = "RainbowCable", Slot = "Cable", Display = "Rainbow Cable", Description = "A rainbow from your hip to the hook.", Source = "Robux", ProductKey = "RainbowCable", Order = 45,
+		Preview = { Color = RAINBOW[1], Color2 = RAINBOW[6] }, Cable = { Color = RAINBOW[1], Color2 = RAINBOW[6], LightEmission = 0.4 } },
+
+	-- Defeat effects (when you take a giant down)
+	{ Id = "ConfettiPop", Slot = "Defeat", Display = "Confetti Pop", Description = "A party of confetti.", Source = "Free", Order = 51,
+		Preview = { Color = rgb(255, 200, 80), Color2 = rgb(110, 180, 255) }, Defeat = { Shape = "Confetti", Colors = { rgb(255, 110, 110), rgb(255, 210, 80), rgb(110, 200, 255), rgb(140, 230, 130) }, Count = 40 } },
+	{ Id = "StarBurst", Slot = "Defeat", Display = "Star Burst", Description = "Twinkling golden stars.", Source = "Marks", Price = 1000, Order = 52,
+		Preview = { Color = rgb(255, 230, 120) }, Defeat = { Shape = "Stars", Colors = { rgb(255, 240, 160), rgb(255, 200, 80) }, Count = 30 } },
+	{ Id = "HeartBurst", Slot = "Defeat", Display = "Heart Burst", Description = "Pop! A bunch of floating hearts.", Source = "Robux", ProductKey = "HeartBurst", Order = 53,
+		Preview = { Color = rgb(255, 110, 150), Color2 = rgb(255, 190, 210) }, Defeat = { Shape = "Hearts", Colors = { rgb(255, 100, 140), rgb(255, 170, 200) }, Count = 24 } },
+	{ Id = "BubblePop", Slot = "Defeat", Display = "Bubble Pop", Description = "Big shiny bubbles float up.", Source = "Robux", ProductKey = "BubblePop", Order = 54,
+		Preview = { Color = rgb(170, 230, 255), Color2 = rgb(230, 200, 255) }, Defeat = { Shape = "Bubbles", Colors = { rgb(170, 230, 255), rgb(230, 200, 255), rgb(200, 255, 230) }, Count = 22 } },
+	{ Id = "Season1_Defeat", Slot = "Defeat", Display = "Mist Swirl", Description = "Season of Mist: a swirl of silver and teal mist.", Source = "Season", Order = 55,
+		Preview = { Color = MIST, Color2 = MIST_TEAL }, Defeat = { Shape = "Mist", Colors = { MIST, MIST_TEAL }, Count = 26 } },
+
+	-- Titan skins (worn by any titan form you transform into)
+	{ Id = "SandSkin", Slot = "TitanSkin", Display = "Sandstone Titan", Description = "Warm sandy skin and dark hair.", Source = "Free", Order = 61,
+		Preview = { Color = rgb(214, 180, 130), Color2 = rgb(70, 50, 40) }, TitanSkin = { Skin = rgb(214, 180, 130), HairColor = rgb(70, 50, 40) } },
+	{ Id = "MossSkin", Slot = "TitanSkin", Display = "Mossback Titan", Description = "Mossy green with leafy hair.", Source = "Marks", Price = 1500, Order = 62,
+		Preview = { Color = rgb(120, 150, 100), Color2 = rgb(70, 120, 60) }, TitanSkin = { Skin = rgb(130, 160, 110), HairColor = rgb(70, 120, 60), Shorts = rgb(90, 70, 50), Material = Enum.Material.Grass } },
+	{ Id = "SnowSkin", Slot = "TitanSkin", Display = "Snowdrift Titan", Description = "Snowy white with icy blue eyes.", Source = "Robux", ProductKey = "SnowSkin", Order = 63,
+		Preview = { Color = rgb(235, 240, 248), Color2 = rgb(140, 200, 255) }, TitanSkin = { Skin = rgb(235, 240, 248), HairColor = rgb(200, 220, 240), EyeColor = rgb(140, 200, 255), Shorts = rgb(90, 130, 180), Material = Enum.Material.Snow } },
+	{ Id = "CrystalSkin", Slot = "TitanSkin", Display = "Crystal Titan", Description = "Sparkling blue crystal from head to toe. Part of the Shifter Pack.", Source = "Pass", PassKey = "ShifterPack", Order = 64,
+		Preview = { Color = rgb(120, 180, 255), Color2 = rgb(200, 235, 255) }, TitanSkin = { Skin = rgb(120, 180, 255), HairColor = rgb(200, 235, 255), EyeColor = rgb(220, 245, 255), Shorts = rgb(50, 80, 140), Material = Enum.Material.Glass, Crystal = true } },
+	{ Id = "EmberSkin", Slot = "TitanSkin", Display = "Ember Titan", Description = "Cosy as a campfire: warm orange with golden hair. Part of the Shifter Pack.", Source = "Pass", PassKey = "ShifterPack", Order = 65,
+		Preview = { Color = rgb(230, 130, 70), Color2 = rgb(255, 210, 110) }, TitanSkin = { Skin = rgb(230, 140, 80), HairColor = rgb(255, 210, 110), EyeColor = rgb(255, 220, 140), Shorts = rgb(120, 60, 40), Material = Enum.Material.SmoothPlastic } },
+	{ Id = "Season1_TitanSkin", Slot = "TitanSkin", Display = "Mist Titan", Description = "Season of Mist: misty silver with teal hair.", Source = "Season", Order = 66,
+		Preview = { Color = MIST, Color2 = MIST_TEAL }, TitanSkin = { Skin = MIST, HairColor = MIST_TEAL, EyeColor = MIST_TEAL, Shorts = MIST_DEEP } },
+}
+
+Config.CosmeticItems = {} :: { [string]: CosmeticItem }
+for _, item in cosmeticList do
+	Config.CosmeticItems[item.Id] = item
+end
+
+-- The item an attribute value names, if it's an item for that slot.
+function Config.CosmeticFor(slot: string, id: unknown): CosmeticItem?
+	local item = if type(id) == "string" and id ~= "" then Config.CosmeticItems[id] else nil
+	return if item and item.Slot == slot then item else nil
+end
+
+-- Defeat effects (CosmeticsClient): one RemoteEvent the server creates,
+-- server -> all but the hunter (hunter, itemId, position); the hunter's own
+-- burst plays from their SlashResult.
+Config.CosmeticFx = {
+	Remote = "GH_CosmeticFx",
+	Range = 450, -- studs from the camera: other hunters' defeat effects past this are skipped
+	Rigs = 4, -- pooled defeat-effect emitters
+	Hearts = 8, -- pooled heart shapes (Hearts), at most...
+	HeartsLowEnd = 4, -- ...on phones and low graphics
 }
 
 -- Sounds: built-in Roblox client sound files (rbxasset://...), shipped with

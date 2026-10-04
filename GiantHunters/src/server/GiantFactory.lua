@@ -269,8 +269,8 @@ function GiantFactory.Build(kindName: string, position: Vector3, rng: Random, fo
 	local skin = look.Skin or pick(rng, SKIN)
 	-- Stone giants are rock all over; furry ones are fur all over, with a
 	-- bare, paler face and hands (that reads "ape" from far away).
-	local faceMaterial = if look.Stone then Enum.Material.Basalt else nil
-	local skinMaterial = if look.Fur then Enum.Material.Fabric else faceMaterial
+	local faceMaterial = look.SkinMaterial or (if look.Stone then Enum.Material.Basalt else nil)
+	local skinMaterial = look.SkinMaterial or (if look.Fur then Enum.Material.Fabric else faceMaterial)
 	local bare = if look.Fur then skin:Lerp(Color3.fromRGB(205, 165, 132), 0.7) else skin
 	local darker = skin:Lerp(Color3.new(0, 0, 0), 0.12)
 	local shortsColor = look.Shorts or pick(rng, SHORTS)

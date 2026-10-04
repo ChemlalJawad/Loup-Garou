@@ -493,6 +493,39 @@ guarding hands, points, Marks and challenges work as for any slash.
 **Titans**: the forms in `Config.TitanForms` (the titan shifters), bought
 and worn the same way; the tab says "coming soon" while there are none.
 
+### Cosmetics
+
+Looks only - no stats, no asset ids (parts, colours, materials, Trails,
+Beams and default-texture particles). `Config.CosmeticItems` lists 44
+items in seven slots; one item is worn per slot. The shop sets the player
+attributes `Cos_Cape`, `Cos_Blade`, `Cos_Trail`, `Cos_Gas`, `Cos_Cable`,
+`Cos_Defeat` and `Cos_TitanSkin` to an item id (`""` = the default look);
+everything below only reads them, and changes live (no respawn).
+
+| Slot | What it changes | Where |
+|---|---|---|
+| Cape | the cape, hood and emblem colours, plus a pattern laid on the cloth: two stripes, star dots, a trim, a two-tone split, or a glowing (Neon) hem | `HunterGear` |
+| Blade | both blades: colour, material (Glass, Foil...), shine, the glowing edge and the hilt | `HunterGear.ApplyGearLook` |
+| Trail | the slash trail: a colour sequence (rainbow, frost, ember, mist...), how long it lingers, its width and glow | `HunterGear.ApplyGearLook` |
+| Gas | your gas jets' puff and core colours | `GrappleController` |
+| Cable | your cables' colour, glow and thickness - other players see them too | `GrappleController` |
+| Defeat | when you take a giant down: confetti, twinkling stars, floating hearts, bubbles or a mist swirl at the nape, seen by everyone nearby | `CosmeticsClient` |
+| TitanSkin | any titan form you turn into: skin, hair, eyes, shorts and the skin's material (crystal glass, snow, moss) | `ShifterService` / `GiantFactory` |
+
+Sources (`Source`): **Free** (everyone), **Marks** (`Price`, 200-1500),
+**Robux** (`ProductKey`, mapped in `Config.Monetization`), **Season**
+(the Season of Mist rewards, `Season1_*`, misty silver and teal) and
+**Pass** (`PassKey`: the Commander Pack's gold cape, blades and trail; the
+Shifter Pack's Crystal and Ember titan skins).
+
+What wins: a cosmetic cape over the rank / Marks cape above (`CapeColor`);
+a cosmetic blade over the gear set's hilt and edge colours; the trail is
+the cosmetic trail, else the blade's edge colour (cosmetic, then gear).
+Dull blades still turn grey. A titan skin applies at the next transform.
+Other hunters' gas jets aren't drawn on your screen (only your own are),
+so `Cos_Gas` shows only to you. Defeat effects are pooled, skipped past
+`Config.CosmeticFx.Range` studs, and halved on phones and low graphics.
+
 ## The HUD
 
 Crosshair with left/right hook marks (gold flying, sky blue hooked); the
@@ -598,6 +631,7 @@ sound you've uploaded (`rbxassetid://...`).
 | `src/server/TechniqueService.lua` | the six techniques, checked and carried out on the server |
 | `src/client/TechniqueController.lua` | the technique key / button, its cooldown ring, the dashes and the gas refill |
 | `src/server/Respawn.lua` | respawning on the wall, retried if it fails |
+| `src/client/CosmeticsClient.lua` | cosmetic gas and cable colours, defeat effects (yours and other hunters') |
 
 Movement runs on each player's own client, so the grapple feels instant.
 Damage is always validated by the server (cooldown, blades left, real

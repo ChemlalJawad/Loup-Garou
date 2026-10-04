@@ -24,6 +24,7 @@ local Workspace = game:GetService("Workspace")
 local Config = require(ReplicatedStorage.Shared.Config)
 local Effects = require(script.Parent.Effects)
 local Settings = require(script.Parent.Settings)
+local CosmeticsClient = require(script.Parent.CosmeticsClient)
 
 local Juice = {}
 
@@ -191,6 +192,11 @@ local function onSlashResult(result: string, info: any)
 		Effects.Play("Cut", nil, 1.2, 1 + (combo - 1) * 0.08)
 		if position then
 			Effects.NapeBurst(position, if clean then 2.4 else 1.8)
+			-- Your defeat effect (confetti, stars...), if you wear one.
+			local fx = Players.LocalPlayer:GetAttribute("Cos_Defeat")
+			if type(fx) == "string" and fx ~= "" then
+				CosmeticsClient.DefeatBurst(fx, position)
+			end
 		end
 	elseif result == "Hit" or result == "Training" then
 		Juice.HitStop(Feel.HitStop)
