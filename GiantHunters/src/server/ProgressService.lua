@@ -17,6 +17,12 @@
 --   * XP for rounds and challenges (the rest of the XP, levels and their
 --     Marks rewards are LevelService's; level-up Marks are paid here).
 --
+-- Hooks for the Robux shop (MonetizationService): the "MarksMult" player
+-- attribute (Double Marks pass) multiplies Marks from play;
+-- ProgressService.GrantMarks pays a bag of Marks, ProgressService.Reroll
+-- swaps one daily challenge, ProgressService.Refresh re-checks the look
+-- (titles unlocked by a pass).
+--
 -- Every shop request goes through Config.Remotes.Progress and is checked
 -- here: data loaded, a known track, the level cap, the price, and a short
 -- cooldown between requests. The client only ever asks.
@@ -106,6 +112,29 @@ local function challengesFor(day: number): { Config.Challenge }
 	return chosen
 end
 
+-- This hunter's challenges today: the day's, with any rerolls swapped in.
+local function listFor(profile: DataService.Profile): { Config.Challenge }
+	local day = challengesFor(profile.Challenges.Day)
+	local swaps = profile.Challenges.Swaps
+	if not swaps or next(swaps) == nil then
+		return day
+	end
+	local list = {}
+	for _, c in day do
+		local swapped = swaps[c.Id]
+		local found = c
+		if swapped then
+			for _, other in Config.Challenges.Pool do
+				if other.Id == swapped then
+					found = other
+				end
+			end
+		end
+		table.insert(list, found)
+	end
+	return list
+end
+
 -- A new day: a fresh set, from zero.
 local function rollDay(player: Player, profile: DataService.Profile)
 	local day = today()
@@ -120,7 +149,9 @@ end
 
 local function addMarks(player: Player, amount: number)
 	local state = states[player]
-	amount = math.floor(amount)
+	-- (The Double Marks pass: MonetizationService sets "MarksMult".)
+	local mult = player:GetAttribute("MarksMult")
+	amount = math.floor(amount * (if type(mult) == "number" then math.clamp(mult, 1, 3) else 1))
 	if not state or amount <= 0 then
 		return
 	end
@@ -156,6 +187,9 @@ end
 local function unlocked(player: Player, profile: DataService.Profile, unlock: Config.Unlock?): boolean
 	if not unlock then
 		return true
+	end
+	if unlock.Pass and player:GetAttribute(`Pass_{unlock.Pass}`) ~= true then
+		return false
 	end
 	if unlock.Rank and rankIndex(playerRank(player)) < rankIndex(unlock.Rank) then
 		return false
@@ -264,7 +298,7 @@ local function snapshot(player: Player): { [string]: any }?
 	end
 	rollDay(player, profile)
 	local challenges = {}
-	for _, c in challengesFor(profile.Challenges.Day) do
+	for _, c in listFor(profile) do
 		table.insert(challenges, {
 			Id = c.Id,
 			Text = c.Text,
@@ -322,7 +356,7 @@ local function progress(player: Player, event: string, amount: number, filter: {
 	end
 	rollDay(player, profile)
 	local daily = profile.Challenges
-	for _, c in challengesFor(daily.Day) do
+	for _, c in listFor(profile) do
 		local matches = c.Event == event
 			and (c.Kind == nil or (filter ~= nil and filter.Kind == c.Kind))
 			and (c.Reason == nil or (filter ~= nil and filter.Reason == c.Reason))
@@ -516,6 +550,87 @@ local function onPlayerAdded(player: Player)
 			end)
 		end
 	end)
+end
+
+-- === Robux shop hooks (MonetizationService) =================================
+
+-- Pays Marks straight into the saved balance (no multiplier, not part of
+-- the round's tally). False if the profile isn't loaded yet.
+function ProgressService.GrantMarks(player: Player, amount: number): boolean
+	local profile = profileOf(player)
+	amount = math.floor(amount)
+	if not profile or amount <= 0 then
+		return false
+	end
+	profile.Marks += amount
+	DataService.Touch(player)
+	player:SetAttribute("Marks", profile.Marks)
+	dirty[player] = true
+	return true
+end
+
+-- Swaps one of today's challenges (`id`, else the first one not done, else
+-- the first) for one from the pool that isn't on the list. False if the
+-- profile isn't loaded or there's nothing to swap in.
+function ProgressService.Reroll(player: Player, id: string?): boolean
+	local profile = profileOf(player)
+	if not profile then
+		return false
+	end
+	rollDay(player, profile)
+	local daily = profile.Challenges
+	local day = challengesFor(daily.Day)
+	local current = listFor(profile)
+	local slot: number? = nil
+	for i, c in current do
+		if c.Id == id and not daily.Done[c.Id] then
+			slot = i
+		end
+	end
+	if not slot then
+		for i, c in current do
+			if not slot and not daily.Done[c.Id] then
+				slot = i
+			end
+		end
+	end
+	local index = slot or 1
+	if not day[index] then
+		return false
+	end
+	local taken: { [string]: boolean } = {}
+	for _, c in current do
+		taken[c.Id] = true
+	end
+	for _, c in day do
+		taken[c.Id] = true
+	end
+	local choices = {}
+	for _, c in Config.Challenges.Pool do
+		if not taken[c.Id] and not daily.Done[c.Id] then
+			table.insert(choices, c)
+		end
+	end
+	if #choices == 0 then
+		return false
+	end
+	local pick = choices[math.random(1, #choices)]
+	local swaps = daily.Swaps or {}
+	daily.Swaps = swaps
+	swaps[day[index].Id] = pick.Id
+	daily.Progress[pick.Id] = nil
+	DataService.Touch(player)
+	remote:FireClient(player, "Result", true, `New challenge: {pick.Text}`)
+	send(player)
+	return true
+end
+
+-- Re-checks the cape and title (a pass bought or found on join).
+function ProgressService.Refresh(player: Player)
+	if profileOf(player) then
+		applyLook(player)
+		dirty[player] = true
+	end
 end
 
 -- === Upgrade boards ==========================================================

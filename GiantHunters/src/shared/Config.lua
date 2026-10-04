@@ -419,7 +419,11 @@ Config.Remotes = {
 	XP = "GH_XP", -- server -> client ("XP", amount) | ("LevelUp", level, marks) (Level, XP, XPNext are player attributes)
 	-- Shop: gear, techniques, titans (ShopService / TechniqueService):
 	Shop = "GH_Shop", -- client -> server ("Sync") | ("Buy", category, id) | ("Equip", category, id); category "Gear" | "Technique" | "Titan"; server -> client ("State", { Owned, Equip }) | ("Result", ok, message)
-	Technique = "GH_Technique", -- client -> server (aimPoint: Vector3?, the world point under the crosshair); server -> client ("Go", id, cooldown) | ("Denied", id, reason, wait) | ("Hits", id, count)
+	Technique = "GH_Technique", -- client -> server (aimPoint: Vector3?, the world point under the crosshair, slot: 2? for the second technique); server -> client ("Go", id, cooldown) | ("Denied", id, reason, wait) | ("Hits", id, count)
+	-- Robux shop, styles and the season (MonetizationService / ShopService / SeasonService / UpgradeShop):
+	Monetization = "GH_Monetization", -- client -> server ("Sync") | ("Buy", key, arg?) | ("BuyCosmetic", itemId); server -> client ("State", { Passes, Season }) | ("Result", ok, message); server -> all ("Fireworks", position, buyerName)
+	Style = "GH_Style", -- client -> server ("Sync") | ("Buy", itemId) (Marks) | ("Equip", slot, itemId); server -> client ("State", { Owned, Equip }) | ("Result", ok, message)
+	Season = "GH_Season", -- client -> server ("Sync") | ("Claim", "Free" | "Premium", tier); server -> client ("State", { Id, Name, XP, Tier, ClaimedFree, ClaimedPremium, Premium, EndsIn? }) | ("Result", ok, message)
 }
 -- (Held also sends ("Wriggle", { Count, Needed }): the server's own count of
 -- a held hunter's wriggles, which drives the wriggle bar. Wave also carries
@@ -922,7 +926,8 @@ Config.Challenges = {
 -- by finishing daily challenges. Unlock: Rank (a rank name), or Stat (a
 -- saved total: "Giants", "CleanCuts", "Rescues", "ChallengesDone",
 -- "BestRound") with At (how many).
-export type Unlock = { Rank: string?, Stat: string?, At: number? }
+-- Pass: owned while the player owns that game pass (Config.Monetization.GamePasses key).
+export type Unlock = { Rank: string?, Stat: string?, At: number?, Pass: string? }
 export type Cape = { Id: string, Display: string, Color: Color3, Emblem: Color3, Unlock: Unlock? }
 export type Title = { Id: string, Display: string, Unlock: Unlock }
 
@@ -945,6 +950,7 @@ Config.Cosmetics = {
 		{ Id = "WallKeeper", Display = "Wall Keeper", Unlock = { Stat = "BestRound", At = 3 } },
 		{ Id = "DailyHero", Display = "Daily Hero", Unlock = { Stat = "ChallengesDone", At = 10 } },
 		{ Id = "Legend", Display = "Living Legend", Unlock = { Stat = "Giants", At = 500 } },
+		{ Id = "EliteCommander", Display = "Elite Commander", Unlock = { Pass = "CommanderPack" } },
 	} :: { Title },
 	TitleDistance = 70, -- studs: the title over a hunter's head fades out past this
 }
@@ -1210,6 +1216,115 @@ Config.Shop = {
 	TechniqueKey = Enum.KeyCode.V,
 	TechniqueGamepad = Enum.KeyCode.ButtonR2,
 	TechniqueSlack = 0.3, -- seconds a technique may arrive early (network jitter)
+	-- The second technique slot (the SecondTechnique game pass: a convenience
+	-- slot, the techniques themselves are still bought with Marks).
+	Technique2Key = Enum.KeyCode.B,
+	Technique2Gamepad = Enum.KeyCode.ButtonL2,
+}
+
+-- === Robux shop (MonetizationService) ========================================
+-- Kid-friendly rules: no stat boosts sold for Robux, no paid random loot,
+-- no timers or pop-ups: a purchase prompt only ever opens on a button press
+-- in the shop's ROBUX / STYLE / SEASON tabs.
+--
+-- Paste your ids from the Creator Dashboard (create.roblox.com > your
+-- experience > Monetization > Passes / Developer Products). An id of 0 means
+-- "not set up": the item is hidden in the shop and refused by the server.
+-- Never use someone else's ids.
+Config.Monetization = {
+	-- Game passes (bought once, kept forever).
+	GamePasses = {
+		DoubleMarks = 0, -- x2 Marks from play
+		CommanderPack = 0, -- the cosmetics with PassKey "CommanderPack" + the "Elite Commander" title
+		SecondTechnique = 0, -- a second technique slot (B / L2 / a second SKILL button)
+		ShifterPack = 0, -- the TitanSkin cosmetics with PassKey "ShifterPack"
+		SeasonPremium = 0, -- the premium track of the season (Config.Season)
+	} :: { [string]: number },
+	-- Developer products (bought as often as you like).
+	Products = {
+		MarksSmall = 0, -- MarksBags.MarksSmall Marks
+		MarksMedium = 0,
+		MarksLarge = 0,
+		ServerXPBoost = 0, -- x2 XP for the whole server for XPBoost.Duration (stacks)
+		ChallengeReroll = 0, -- swap one of your daily challenges for another
+		Fireworks = 0, -- a firework show over you, for everyone to see
+		-- Single Robux cosmetics: add `<ProductKey> = <id>` here for a
+		-- Config.CosmeticItems entry with Source = "Robux" and that ProductKey.
+	} :: { [string]: number },
+	-- ...or by cosmetic id (Config.CosmeticItems[id], Source = "Robux"),
+	-- for items without a ProductKey: { [itemId] = productId }.
+	CosmeticProducts = {} :: { [string]: number },
+	MarksBags = { MarksSmall = 500, MarksMedium = 1500, MarksLarge = 5000 } :: { [string]: number },
+	DoubleMarksMultiplier = 2, -- (Marks from play only: not bags, not season rewards)
+	XPBoost = { Multiplier = 2, Duration = 30 * 60 }, -- seconds; Workspace attribute "XPBoostUntil"
+	Fireworks = { Height = 55, Bursts = 7 },
+	-- The STYLE tab's slots, in order (Config.CosmeticItems[id].Slot).
+	StyleSlots = { "Cape", "Blade", "Trail", "Gas", "Cable", "Defeat", "TitanSkin" },
+	PromptCooldown = 1, -- seconds between purchase prompts the server opens for one player
+	-- What the ROBUX tab shows (Key: a GamePasses or Products key).
+	Cards = {
+		{ Key = "DoubleMarks", Kind = "Pass", Display = "Double Marks", Description = "Earn twice the Marks from play, forever. Items still unlock by level." },
+		{ Key = "SecondTechnique", Kind = "Pass", Display = "Second Technique Slot", Description = "Wear two of your techniques at once (B, L2, or a second SKILL button)." },
+		{ Key = "CommanderPack", Kind = "Pass", Display = "Commander Pack", Description = "Commander styles and the Elite Commander title." },
+		{ Key = "ShifterPack", Kind = "Pass", Display = "Shifter Pack", Description = "Special titan looks for when you transform." },
+		{ Key = "SeasonPremium", Kind = "Pass", Display = "Season Premium", Description = "Unlocks the premium season track (styles and Marks)." },
+		{ Key = "MarksSmall", Kind = "Product", Display = "Bag of Marks", Description = "500 Marks. Items still unlock by level." },
+		{ Key = "MarksMedium", Kind = "Product", Display = "Chest of Marks", Description = "1,500 Marks. Items still unlock by level." },
+		{ Key = "MarksLarge", Kind = "Product", Display = "Vault of Marks", Description = "5,000 Marks. Items still unlock by level." },
+		{ Key = "ServerXPBoost", Kind = "Product", Display = "Server XP Boost", Description = "Double XP for EVERYONE in the server for 30 minutes." },
+		{ Key = "ChallengeReroll", Kind = "Product", Display = "Challenge Reroll", Description = "Swap one of today's daily challenges for a new one." },
+		{ Key = "Fireworks", Kind = "Product", Display = "Fireworks Show", Description = "A firework show over you that everyone can see!" },
+	},
+	-- (Premium Payouts: Roblox also pays you for the time Premium members
+	-- spend in your experience; nothing to set up here.)
+	PremiumPayoutNote = "Premium Payouts are automatic: no code needed.",
+}
+
+-- === The season pass (SeasonService) =========================================
+-- Season XP is a share of the normal XP earned. Tiers: cumulative season XP,
+-- each with an optional Free and Premium reward ({ Marks } or { Cosmetic =
+-- a Config.CosmeticItems id with Source = "Season" }), claimed with a button.
+-- Saved in the profile's "Season" (it starts over when Id changes).
+export type SeasonReward = { Marks: number?, Cosmetic: string? }
+export type SeasonTier = { XP: number, Free: SeasonReward?, Premium: SeasonReward? }
+
+Config.Season = {
+	Id = "S1",
+	Name = "Season of Mist",
+	EndsUtc = nil :: number?, -- os.time() when it ends (nil: no end shown)
+	XPShare = 0.5, -- season XP per XP earned
+	Tiers = {
+		{ XP = 200, Free = { Marks = 25 }, Premium = { Cosmetic = "Season1_Cape" } }, -- 1
+		{ XP = 450, Premium = { Marks = 50 } },
+		{ XP = 700, Free = { Marks = 25 }, Premium = { Marks = 50 } },
+		{ XP = 1000, Premium = { Marks = 50 } },
+		{ XP = 1300, Free = { Marks = 75 }, Premium = { Marks = 150 } }, -- 5
+		{ XP = 1650, Premium = { Marks = 50 } },
+		{ XP = 2000, Free = { Marks = 25 }, Premium = { Marks = 50 } },
+		{ XP = 2350, Premium = { Cosmetic = "Season1_Gas" } },
+		{ XP = 2750, Free = { Marks = 25 }, Premium = { Marks = 50 } },
+		{ XP = 3200, Free = { Marks = 75 }, Premium = { Marks = 150 } }, -- 10
+		{ XP = 3650, Free = { Marks = 25 }, Premium = { Marks = 50 } },
+		{ XP = 4150, Free = { Cosmetic = "Season1_Trail" }, Premium = { Marks = 50 } },
+		{ XP = 4650, Free = { Marks = 25 }, Premium = { Marks = 50 } },
+		{ XP = 5150, Premium = { Marks = 50 } },
+		{ XP = 5700, Free = { Marks = 75 }, Premium = { Cosmetic = "Season1_Blade" } }, -- 15
+		{ XP = 6250, Premium = { Marks = 50 } },
+		{ XP = 6850, Free = { Marks = 25 }, Premium = { Marks = 50 } },
+		{ XP = 7500, Premium = { Marks = 50 } },
+		{ XP = 8150, Free = { Marks = 25 }, Premium = { Marks = 50 } },
+		{ XP = 8800, Free = { Marks = 75 }, Premium = { Marks = 150 } }, -- 20
+		{ XP = 9500, Free = { Marks = 25 }, Premium = { Marks = 50 } },
+		{ XP = 10200, Premium = { Cosmetic = "Season1_Defeat" } },
+		{ XP = 10950, Free = { Marks = 25 }, Premium = { Marks = 50 } },
+		{ XP = 11700, Premium = { Marks = 50 } },
+		{ XP = 12500, Free = { Marks = 75 }, Premium = { Marks = 150 } }, -- 25
+		{ XP = 13300, Premium = { Marks = 50 } },
+		{ XP = 14150, Free = { Marks = 25 }, Premium = { Marks = 50 } },
+		{ XP = 15000, Premium = { Marks = 50 } },
+		{ XP = 15900, Free = { Marks = 25 }, Premium = { Marks = 50 } },
+		{ XP = 16800, Free = { Marks = 75 }, Premium = { Cosmetic = "Season1_TitanSkin" } }, -- 30
+	} :: { SeasonTier },
 }
 
 return Config

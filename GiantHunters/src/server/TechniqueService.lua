@@ -1,7 +1,10 @@
 --!strict
 -- Techniques: the one active ability a hunter wears (the player's
 -- "Equip_Technique" attribute, bought in the shop; Config.Catalog), used
--- with V, R2 or the "SKILL" button.
+-- with V, R2 or the "SKILL" button. With the SecondTechnique game pass
+-- ("Pass_SecondTechnique", MonetizationService) a second one
+-- ("Equip_Technique2") on B, L2 or a second SKILL button, with its own
+-- cooldown.
 --
 -- The client only asks (Config.Remotes.Technique, with where it aims); the
 -- server checks everything: a known technique the hunter owns and wears,
@@ -37,7 +40,7 @@ local ShopService = require(script.Parent.ShopService)
 
 local TechniqueService = {}
 
-type Hunter = { NextUse: number, Busy: boolean }
+type Hunter = { NextUse: number, NextUse2: number, Busy: boolean }
 
 local hunters: { [Player]: Hunter } = {}
 local remote: RemoteEvent
@@ -394,12 +397,19 @@ local HANDLERS: { [string]: Handler } = {
 
 -- === Requests ================================================================
 
-local function onRequest(player: Player, aim: unknown)
+local function onRequest(player: Player, aim: unknown, slot: unknown)
 	local hunter = hunters[player]
 	if not hunter or hunter.Busy then
 		return
 	end
-	local id = ShopService.Equipped(player, "Technique")
+	local second = slot == 2
+	if second and player:GetAttribute("Pass_SecondTechnique") ~= true then
+		return
+	end
+	local id = ShopService.Equipped(player, if second then "Technique2" else "Technique")
+	if second and id == ShopService.Equipped(player, "Technique") then
+		return -- (never one technique on two cooldowns)
+	end
 	local item = Config.Catalog[id]
 	local spec = item and item.Technique
 	local handler = HANDLERS[id]
@@ -407,8 +417,9 @@ local function onRequest(player: Player, aim: unknown)
 		return
 	end
 	local now = os.clock()
-	if now < hunter.NextUse - Config.Shop.TechniqueSlack then
-		remote:FireClient(player, "Denied", id, "Not ready yet", hunter.NextUse - now)
+	local nextUse = if second then hunter.NextUse2 else hunter.NextUse
+	if now < nextUse - Config.Shop.TechniqueSlack then
+		remote:FireClient(player, "Denied", id, "Not ready yet", nextUse - now)
 		return
 	end
 	local root = readyRoot(player)
@@ -421,7 +432,11 @@ local function onRequest(player: Player, aim: unknown)
 	local ok, reason = handler(player, root, spec, point)
 	hunter.Busy = false
 	if ok then
-		hunter.NextUse = os.clock() + spec.Cooldown
+		if second then
+			hunter.NextUse2 = os.clock() + spec.Cooldown
+		else
+			hunter.NextUse = os.clock() + spec.Cooldown
+		end
 		remote:FireClient(player, "Go", id, spec.Cooldown)
 	else
 		remote:FireClient(player, "Denied", id, reason or "Can't do that now", 0)
@@ -437,7 +452,7 @@ function TechniqueService.Init()
 	effects.Parent = Workspace
 
 	local function add(player: Player)
-		hunters[player] = { NextUse = 0, Busy = false }
+		hunters[player] = { NextUse = 0, NextUse2 = 0, Busy = false }
 	end
 	for _, player in Players:GetPlayers() do
 		add(player)

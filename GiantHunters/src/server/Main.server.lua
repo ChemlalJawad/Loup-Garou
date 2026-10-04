@@ -48,6 +48,11 @@ WaveService.DistrictFallen.Event:Connect(ShifterService.ClearPowers)
 require(script.Parent.ShopService).Init()
 require(script.Parent.TechniqueService).Init()
 
+-- The Robux shop (passes, products, receipts) and the season pass (season
+-- XP from LevelService, tier rewards): after the shop, Marks and levels.
+require(script.Parent.MonetizationService).Init()
+require(script.Parent.SeasonService).Init()
+
 print(`[{Config.GAME_NAME}] server ready`)
 
 -- In Studio only: a PASS / WARN / FAIL checklist in the Output window.

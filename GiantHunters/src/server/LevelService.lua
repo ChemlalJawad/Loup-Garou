@@ -17,6 +17,7 @@
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
 
 local Config = require(ReplicatedStorage.Shared.Config)
 local Stats = require(ReplicatedStorage.Shared.Stats)
@@ -29,6 +30,8 @@ local Broadcast = require(script.Parent.Broadcast)
 local LevelService = {}
 
 LevelService.LeveledUp = Instance.new("BindableEvent") -- (player, level, marks)
+-- Every gain, boosts included, even at the top level (SeasonService's season XP).
+LevelService.Gained = Instance.new("BindableEvent") -- (player, amount)
 
 type State = {
 	Ready: boolean, -- the saved profile is loaded
@@ -106,10 +109,16 @@ end
 -- Gives `player` some XP (whole numbers; `reason` is just for the client).
 function LevelService.Add(player: Player, amount: number, _reason: string?)
 	local state = states[player]
+	-- A Server XP Boost (MonetizationService): the Workspace's "XPBoostUntil".
+	local boostUntil = Workspace:GetAttribute("XPBoostUntil")
+	if type(boostUntil) == "number" and boostUntil > Workspace:GetServerTimeNow() then
+		amount *= Config.Monetization.XPBoost.Multiplier
+	end
 	amount = math.floor(amount)
 	if not state or amount <= 0 or not player.Parent then
 		return
 	end
+	LevelService.Gained:Fire(player, amount)
 	if state.Ready and (player:GetAttribute("Level") or 1) :: number >= L.MaxLevel then
 		return -- (the top: nothing more to fill)
 	end

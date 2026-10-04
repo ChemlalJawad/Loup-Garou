@@ -14,9 +14,22 @@
 --     paid in one go, without yielding, so two requests can never both spend
 --     the same Marks.
 --
+--   * The second technique slot ("Technique2", "Equip_Technique2"): only with
+--     the SecondTechnique game pass (the "Pass_SecondTechnique" attribute,
+--     MonetizationService), never the same technique as the first slot.
+--
 -- Every request goes through Config.Remotes.Shop and is checked here: data
 -- loaded, a known item, not already owned, the hunter's level, the price,
 -- and a short cooldown between requests.
+--
+-- Styles (cosmetics only, no stats; Config.CosmeticItems, defined with the
+-- looks): owned and worn here, through Config.Remotes.Style. Saved in the
+-- profile's "Cosmetics" ({ Owned, Equip = { [Slot] = id } }) and published
+-- as the player attributes "Cos_<Slot>" (an id, "" for the default look),
+-- which the looks read. Free items are everyone's; Pass items are owned
+-- while the player owns their game pass ("Pass_<PassKey>" attributes);
+-- Marks items are bought here; Robux and Season items are granted by
+-- MonetizationService / SeasonService (ShopService.GrantStyle).
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -33,8 +46,12 @@ export type Category = string -- "Gear" | "Technique" | "Titan"
 type Item = { Id: string, Display: string, Price: number, LevelRequired: number }
 
 local CATEGORIES: { Category } = { "Gear", "Technique", "Titan" }
+-- What can be worn: the categories, plus the second technique slot.
+local EQUIP_SLOTS: { string } = { "Gear", "Technique", "Technique2", "Titan" }
 
 local remote: RemoteEvent
+local styleRemote: RemoteEvent
+local nextStyle: { [Player]: number } = {}
 local nextAction: { [Player]: number } = {}
 local ready: { [Player]: boolean } = {}
 
@@ -122,7 +139,7 @@ local function send(player: Player)
 	local equip = equipOf(profile)
 	remote:FireClient(player, "State", {
 		Owned = table.clone(ownedOf(profile)),
-		Equip = { Gear = equip.Gear or "", Technique = equip.Technique or "", Titan = equip.Titan or "" },
+		Equip = { Gear = equip.Gear or "", Technique = equip.Technique or "", Technique2 = equip.Technique2 or "", Titan = equip.Titan or "" },
 	})
 end
 
@@ -134,7 +151,7 @@ local function applyGear(player: Player)
 	end
 end
 
-local function setEquip(player: Player, profile: any, category: Category, id: string)
+local function setEquip(player: Player, profile: any, category: string, id: string)
 	equipOf(profile)[category] = id
 	DataService.Touch(player)
 	player:SetAttribute(`Equip_{category}`, id)
@@ -176,9 +193,32 @@ local function buy(player: Player, profile: any, category: string, id: string)
 	result(player, true, `{item.Display} is yours!`)
 end
 
+local function hasSecondSlot(player: Player): boolean
+	return player:GetAttribute("Pass_SecondTechnique") == true
+end
+
 local function equip(player: Player, profile: any, category: string, id: string)
+	if category == "Technique2" then
+		if id ~= "" and not hasSecondSlot(player) then
+			result(player, false, "The second technique slot comes with its game pass")
+			return
+		end
+		if id ~= "" and not ShopService.Owns(player, "Technique", id) then
+			return
+		end
+		if id ~= "" and id == ShopService.Equipped(player, "Technique") then
+			setEquip(player, profile, "Technique", "") -- (moved to the second slot)
+		end
+		setEquip(player, profile, "Technique2", id)
+		local item = if id ~= "" then findItem("Technique", id) else nil
+		result(player, true, if item then `{item.Display} in slot 2` else "Slot 2 emptied")
+		return
+	end
 	if not table.find(CATEGORIES, category :: Category) then
 		return
+	end
+	if category == "Technique" and id ~= "" and id == ShopService.Equipped(player, "Technique2") then
+		setEquip(player, profile, "Technique2", "") -- (moved to the first slot)
 	end
 	local slot = category :: Category
 	if id ~= "" and not ShopService.Owns(player, slot, id) then
@@ -212,6 +252,186 @@ local function onRequest(player: Player, action: unknown, a: unknown, b: unknown
 	send(player)
 end
 
+-- === Styles (cosmetics) =====================================================
+
+-- Config.CosmeticItems comes with the looks; read defensively.
+local function styleItem(id: string): { [string]: any }?
+	local items = (Config :: any).CosmeticItems
+	local item = if type(items) == "table" then items[id] else nil
+	return if type(item) == "table" then item else nil
+end
+
+local function cosmeticsOf(profile: any): { Owned: { [string]: boolean }, Equip: { [string]: string } }
+	if type(profile.Cosmetics) ~= "table" then
+		profile.Cosmetics = { Owned = {}, Equip = {} }
+	end
+	local c = profile.Cosmetics
+	if type(c.Owned) ~= "table" then
+		c.Owned = {}
+	end
+	if type(c.Equip) ~= "table" then
+		c.Equip = {}
+	end
+	return c
+end
+
+-- Free items are everyone's, pass items are while the pass is owned.
+function ShopService.OwnsStyle(player: Player, id: string): boolean
+	local item = styleItem(id)
+	if not item then
+		return false
+	end
+	if item.Source == "Free" then
+		return true
+	end
+	if type(item.PassKey) == "string" and player:GetAttribute(`Pass_{item.PassKey}`) == true then
+		return true
+	end
+	local profile = profileOf(player)
+	return profile ~= nil and cosmeticsOf(profile).Owned[id] == true
+end
+
+local function styleResult(player: Player, ok: boolean, message: string)
+	styleRemote:FireClient(player, "Result", ok, message)
+end
+
+local function sendStyles(player: Player)
+	local profile = profileOf(player)
+	if not profile or not player.Parent then
+		return
+	end
+	local owned: { [string]: boolean } = {}
+	local items = (Config :: any).CosmeticItems
+	if type(items) == "table" then
+		for id in items do
+			if type(id) == "string" and ShopService.OwnsStyle(player, id) then
+				owned[id] = true
+			end
+		end
+	end
+	local equip: { [string]: string } = {}
+	for _, slot in Config.Monetization.StyleSlots do
+		local worn = player:GetAttribute(`Cos_{slot}`)
+		equip[slot] = if type(worn) == "string" then worn else ""
+	end
+	styleRemote:FireClient(player, "State", { Owned = owned, Equip = equip })
+end
+
+-- The worn styles onto the "Cos_<Slot>" attributes (a saved choice that
+-- isn't owned right now, a pass not checked yet, shows as the default).
+local function publishStyles(player: Player)
+	local profile = profileOf(player)
+	if not profile then
+		return
+	end
+	local saved = cosmeticsOf(profile).Equip
+	for _, slot in Config.Monetization.StyleSlots do
+		local id = saved[slot]
+		local item = if type(id) == "string" and id ~= "" then styleItem(id) else nil
+		local ok = item ~= nil and item.Slot == slot and ShopService.OwnsStyle(player, id)
+		player:SetAttribute(`Cos_{slot}`, if ok then id else "")
+	end
+end
+
+-- Re-publishes everything owned and worn (after a pass or a grant).
+function ShopService.Refresh(player: Player)
+	publishStyles(player)
+	sendStyles(player)
+	send(player)
+end
+
+-- Gives a style for good (a Robux product, a season reward). False if the
+-- profile isn't loaded or the item is unknown. A first item in a slot is
+-- worn straight away.
+function ShopService.GrantStyle(player: Player, id: string): boolean
+	local profile = profileOf(player)
+	local item = styleItem(id)
+	if not profile or not item then
+		return false
+	end
+	local c = cosmeticsOf(profile)
+	c.Owned[id] = true
+	if type(item.Slot) == "string" and (c.Equip[item.Slot] or "") == "" then
+		c.Equip[item.Slot] = id
+	end
+	DataService.Touch(player)
+	ShopService.Refresh(player)
+	return true
+end
+
+local function buyStyle(player: Player, profile: any, id: string)
+	local item = styleItem(id)
+	if not item then
+		return
+	end
+	local display = tostring(item.Display or id)
+	if ShopService.OwnsStyle(player, id) then
+		styleResult(player, false, `You already have {display}`)
+		return
+	end
+	if item.Source ~= "Marks" or type(item.Price) ~= "number" or item.Price <= 0 then
+		return -- (Robux, Season and Pass items aren't sold for Marks)
+	end
+	local levelRequired = if type(item.LevelRequired) == "number" then item.LevelRequired else 1
+	if ShopService.Level(player) < levelRequired then
+		styleResult(player, false, `{display} unlocks at level {levelRequired}`)
+		return
+	end
+	local marks = if type(profile.Marks) == "number" then profile.Marks else 0
+	if marks < item.Price then
+		styleResult(player, false, `You need {item.Price - marks} more Marks`)
+		return
+	end
+	-- (No yield between the check and the payment.)
+	profile.Marks = marks - item.Price
+	cosmeticsOf(profile).Owned[id] = true
+	player:SetAttribute("Marks", profile.Marks)
+	DataService.Touch(player)
+	local slot = item.Slot
+	if type(slot) == "string" and player:GetAttribute(`Cos_{slot}`) == "" then
+		cosmeticsOf(profile).Equip[slot] = id
+		publishStyles(player)
+	end
+	styleResult(player, true, `{display} is yours!`)
+end
+
+local function equipStyle(player: Player, profile: any, slot: string, id: string)
+	if not table.find(Config.Monetization.StyleSlots, slot) then
+		return
+	end
+	local item = if id ~= "" then styleItem(id) else nil
+	if id ~= "" and (not item or item.Slot ~= slot or not ShopService.OwnsStyle(player, id)) then
+		return
+	end
+	cosmeticsOf(profile).Equip[slot] = id
+	DataService.Touch(player)
+	publishStyles(player)
+	styleResult(player, true, if item then `Wearing {tostring(item.Display or id)}` else "Back to the corps' issue")
+end
+
+local function onStyleRequest(player: Player, action: unknown, a: unknown, b: unknown)
+	local now = os.clock()
+	if now < (nextStyle[player] or 0) then
+		return
+	end
+	nextStyle[player] = now + Config.Shop.ActionCooldown
+	local profile = profileOf(player)
+	if not profile then
+		if action ~= "Sync" then
+			styleResult(player, false, "Still loading your progress...")
+		end
+		return
+	end
+	if action == "Buy" and type(a) == "string" and #a <= 60 then
+		buyStyle(player, profile, a)
+	elseif action == "Equip" and type(a) == "string" and type(b) == "string" and #b <= 60 then
+		equipStyle(player, profile, a, b)
+	elseif action ~= "Sync" then
+		return
+	end
+	sendStyles(player)
+end
+
 -- === Players =================================================================
 
 -- Once the saved profile is in: drop unknown or unowned items, publish
@@ -230,25 +450,33 @@ local function onLoaded(player: Player)
 	end
 	local saved = equipOf(profile)
 	local hasForms = next(titanForms()) ~= nil
-	for _, category in CATEGORIES do
-		local id = saved[category]
+	for _, slot in EQUIP_SLOTS do
+		local id = saved[slot]
 		if type(id) ~= "string" then
 			id = ""
 		end
+		local category = if slot == "Technique2" then "Technique" else slot
 		-- (Titan forms only checked once they exist in this build.)
 		if id ~= "" and (category ~= "Titan" or hasForms) and not ShopService.Owns(player, category, id) then
 			id = ""
 		end
-		saved[category] = id
-		player:SetAttribute(`Equip_{category}`, id)
+		if slot == "Technique2" and id == saved.Technique then
+			id = ""
+		end
+		saved[slot] = id
+		player:SetAttribute(`Equip_{slot}`, id)
 	end
 	applyGear(player)
 	send(player)
+	ShopService.Refresh(player)
 end
 
 local function onPlayerAdded(player: Player)
-	for _, category in CATEGORIES do
-		player:SetAttribute(`Equip_{category}`, "")
+	for _, slot in EQUIP_SLOTS do
+		player:SetAttribute(`Equip_{slot}`, "")
+	end
+	for _, slot in Config.Monetization.StyleSlots do
+		player:SetAttribute(`Cos_{slot}`, "")
 	end
 	player:GetAttributeChangedSignal("DataLoaded"):Connect(function()
 		if player:GetAttribute("DataLoaded") then
@@ -270,15 +498,18 @@ end
 
 function ShopService.Init()
 	remote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild(Config.Remotes.Shop) :: RemoteEvent
+	styleRemote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild(Config.Remotes.Style) :: RemoteEvent
 	for _, player in Players:GetPlayers() do
 		task.spawn(onPlayerAdded, player)
 	end
 	Players.PlayerAdded:Connect(onPlayerAdded)
 	Players.PlayerRemoving:Connect(function(player)
 		nextAction[player] = nil
+		nextStyle[player] = nil
 		ready[player] = nil
 	end)
 	remote.OnServerEvent:Connect(onRequest)
+	styleRemote.OnServerEvent:Connect(onStyleRequest)
 end
 
 return ShopService

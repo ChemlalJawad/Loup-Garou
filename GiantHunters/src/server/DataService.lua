@@ -3,7 +3,9 @@
 -- down, the best round reached, and whether they've done the tutorial; and
 -- the progression (ProgressService): Marks, upgrade levels, today's
 -- challenges, lifetime totals, the chosen cape and title; and the level and
--- XP (LevelService).
+-- XP (LevelService); the styles owned and worn (ShopService), the season
+-- pass (SeasonService) and the Robux purchases already granted
+-- (MonetizationService).
 --
 -- Older saves simply lack the newer keys: every missing or bad key loads as
 -- its default.
@@ -42,7 +44,21 @@ export type Profile = {
 	XP: number, -- progress within the level
 	-- The shop (ShopService):
 	Owned: { [string]: boolean }, -- gear, technique and titan form ids bought
-	Equip: { [string]: string }, -- "Gear" / "Technique" / "Titan" -> id ("" for none)
+	Equip: { [string]: string }, -- "Gear" / "Technique" / "Technique2" / "Titan" -> id ("" for none)
+	-- Styles (ShopService; Config.CosmeticItems): owned ids, and slot -> id.
+	Cosmetics: { Owned: { [string]: boolean }, Equip: { [string]: string } },
+	-- The season pass (SeasonService); starts over when Config.Season.Id changes.
+	Season: Season,
+	-- Robux purchases already granted (MonetizationService): the latest
+	-- PurchaseIds, oldest first, so a receipt is never granted twice.
+	Receipts: { string },
+}
+
+export type Season = {
+	Id: string,
+	XP: number,
+	ClaimedFree: { [string]: boolean }, -- tostring(tier) -> true
+	ClaimedPremium: { [string]: boolean },
 }
 
 -- Today's challenges: the UTC day they're for, progress and which are done.
@@ -50,7 +66,10 @@ export type Challenges = {
 	Day: number,
 	Progress: { [string]: number },
 	Done: { [string]: boolean },
+	Swaps: { [string]: string }?, -- rerolled: the day's challenge id -> its replacement
 }
+
+local MAX_RECEIPTS = 60
 
 type Session = {
 	Profile: Profile,
@@ -79,6 +98,9 @@ local function blank(): Profile
 		XP = 0,
 		Owned = {},
 		Equip = {},
+		Cosmetics = { Owned = {}, Equip = {} },
+		Season = { Id = Config.Season.Id, XP = 0, ClaimedFree = {}, ClaimedPremium = {} },
+		Receipts = {},
 	}
 end
 
@@ -169,6 +191,7 @@ local function clean(stored: unknown): Profile
 				Day = count(c.Day) or 0,
 				Progress = cleanMap(c.Progress, count),
 				Done = cleanMap(c.Done, isTrue),
+				Swaps = cleanMap(c.Swaps, isText),
 			}
 		end
 		if type(data.Cape) == "string" then
@@ -179,6 +202,30 @@ local function clean(stored: unknown): Profile
 		end
 		profile.Owned = cleanMap(data.Owned, isTrue)
 		profile.Equip = cleanMap(data.Equip, isText)
+		local cosmetics = data.Cosmetics
+		if type(cosmetics) == "table" then
+			local c = cosmetics :: { [string]: unknown }
+			profile.Cosmetics = { Owned = cleanMap(c.Owned, isTrue), Equip = cleanMap(c.Equip, isText) }
+		end
+		local season = data.Season
+		if type(season) == "table" then
+			local s = season :: { [string]: unknown }
+			if type(s.Id) == "string" and s.Id == Config.Season.Id then -- (another season: start over)
+				profile.Season = {
+					Id = s.Id,
+					XP = count(s.XP) or 0,
+					ClaimedFree = cleanMap(s.ClaimedFree, isTrue),
+					ClaimedPremium = cleanMap(s.ClaimedPremium, isTrue),
+				}
+			end
+		end
+		if type(data.Receipts) == "table" then
+			for _, id in data.Receipts :: { unknown } do
+				if type(id) == "string" and #id <= 100 and #profile.Receipts < MAX_RECEIPTS then
+					table.insert(profile.Receipts, id)
+				end
+			end
+		end
 	end
 	return profile
 end
@@ -226,12 +273,8 @@ function DataService.Touch(player: Player)
 	end
 end
 
-function DataService.Save(player: Player)
-	local session = sessions[player]
-	local dataStore = store
-	if not session or not dataStore or not session.Loaded or not session.Dirty then
-		return
-	end
+-- Writes the profile now (yields). True if the stored copy has it.
+local function write(player: Player, session: Session, dataStore: DataStore): boolean
 	session.Dirty = false
 	-- (A deep enough copy: the nested tables can change while this yields.)
 	local profile = table.clone(session.Profile)
@@ -240,7 +283,18 @@ function DataService.Save(player: Player)
 		Day = profile.Challenges.Day,
 		Progress = table.clone(profile.Challenges.Progress),
 		Done = table.clone(profile.Challenges.Done),
+		Swaps = table.clone(profile.Challenges.Swaps or {}),
 	}
+	profile.Owned = table.clone(profile.Owned)
+	profile.Equip = table.clone(profile.Equip)
+	profile.Cosmetics = { Owned = table.clone(profile.Cosmetics.Owned), Equip = table.clone(profile.Cosmetics.Equip) }
+	profile.Season = {
+		Id = profile.Season.Id,
+		XP = profile.Season.XP,
+		ClaimedFree = table.clone(profile.Season.ClaimedFree),
+		ClaimedPremium = table.clone(profile.Season.ClaimedPremium),
+	}
+	profile.Receipts = table.clone(profile.Receipts)
 	local ok = retry(`save {player.Name}`, function()
 		return dataStore:UpdateAsync(keyFor(player), function(stored: unknown)
 			-- Keep the best of both for the things that only ever go up.
@@ -250,12 +304,74 @@ function DataService.Save(player: Player)
 			if old.Level > profile.Level then -- (a level is never lost)
 				profile.Level, profile.XP = old.Level, old.XP
 			end
+			-- Robux purchases are never lost: owned styles and granted
+			-- receipts are merged with the stored copy's.
+			for id in old.Cosmetics.Owned do
+				profile.Cosmetics.Owned[id] = true
+			end
+			for _, id in old.Receipts do
+				if not table.find(profile.Receipts, id) then
+					table.insert(profile.Receipts, 1, id)
+				end
+			end
+			while #profile.Receipts > MAX_RECEIPTS do
+				table.remove(profile.Receipts, 1)
+			end
 			return profile
 		end)
 	end)
 	if not ok then
 		session.Dirty = true -- try again at the next autosave
 	end
+	return ok
+end
+
+function DataService.Save(player: Player)
+	local session = sessions[player]
+	local dataStore = store
+	if not session or not dataStore or not session.Loaded or not session.Dirty then
+		return
+	end
+	write(player, session, dataStore)
+end
+
+-- Saves straight away, dirty or not (yields): after a Robux purchase. True
+-- only if the stored copy now has everything.
+function DataService.SaveNow(player: Player): boolean
+	local session = sessions[player]
+	local dataStore = store
+	if not session or not dataStore or not session.Loaded then
+		return false
+	end
+	return write(player, session, dataStore)
+end
+
+-- Whether this server saves at all (false: no DataStore, e.g. Studio
+-- without API access).
+function DataService.Saving(): boolean
+	return store ~= nil
+end
+
+-- Whether a Robux purchase (its PurchaseId) was already granted.
+function DataService.HasReceipt(player: Player, purchaseId: string): boolean
+	local session = sessions[player]
+	return session ~= nil and table.find(session.Profile.Receipts, purchaseId) ~= nil
+end
+
+-- Notes a granted purchase (saved with the profile).
+function DataService.RecordReceipt(player: Player, purchaseId: string)
+	local session = sessions[player]
+	if not session then
+		return
+	end
+	local receipts = session.Profile.Receipts
+	if not table.find(receipts, purchaseId) then
+		table.insert(receipts, purchaseId)
+		while #receipts > MAX_RECEIPTS do
+			table.remove(receipts, 1)
+		end
+	end
+	session.Dirty = true
 end
 
 function DataService.Init()
