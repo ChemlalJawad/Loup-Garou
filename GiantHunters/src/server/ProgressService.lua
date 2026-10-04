@@ -14,6 +14,8 @@
 --     head ("Veteran • Giant Slayer"), unlocked by rank, totals or
 --     challenges.
 --   * An end-of-round summary for each hunter (Config.Remotes.RoundSummary).
+--   * XP for rounds and challenges (the rest of the XP, levels and their
+--     Marks rewards are LevelService's; level-up Marks are paid here).
 --
 -- Every shop request goes through Config.Remotes.Progress and is checked
 -- here: data loaded, a known track, the level cap, the price, and a short
@@ -32,6 +34,7 @@ local WaveService = require(script.Parent.WaveService)
 local HunterService = require(script.Parent.HunterService)
 local HunterGear = require(script.Parent.HunterGear)
 local Broadcast = require(script.Parent.Broadcast)
+local LevelService = require(script.Parent.LevelService)
 
 local ProgressService = {}
 
@@ -335,6 +338,8 @@ local function progress(player: Player, event: string, amount: number, filter: {
 				daily.Done[c.Id] = true
 				profile.ChallengesDone += 1
 				addMarks(player, c.Reward)
+				local X = Config.Leveling.XP
+				LevelService.Add(player, math.max(c.Reward * X.ChallengePerMark, X.ChallengeMin), "Challenge")
 				remote:FireClient(player, "Challenge", c.Text, c.Reward)
 				Broadcast.Feed(`{player.DisplayName} finished a daily challenge!`, "Good")
 				applyLook(player) -- (may unlock a cape or a title)
@@ -369,6 +374,8 @@ local function endRound(round: number, won: boolean)
 		-- Only for hunters who took part (no Marks for standing about).
 		if state.Round.Points > 0 then
 			addMarks(player, if won then M.RoundWon + M.RoundWonPerRound * round else M.DistrictFallen)
+			local X = Config.Leveling.XP
+			LevelService.Add(player, if won then X.RoundWon + X.RoundWonPerRound * round else X.DistrictFallen, "Round")
 			if won then
 				progress(player, "RoundWon", 1)
 			end
@@ -652,6 +659,11 @@ function ProgressService.Init(spawn: BasePart?)
 			state.Round.Points += points
 		end
 		addMarks(player, points * M.PerPoint)
+	end)
+
+	-- Level-ups pay Marks (LevelService).
+	LevelService.LeveledUp.Event:Connect(function(player: Player, _level: number, marks: number)
+		addMarks(player, marks)
 	end)
 
 	HunterService.Slashed.Event:Connect(function(player: Player, outcome: string, info: any)

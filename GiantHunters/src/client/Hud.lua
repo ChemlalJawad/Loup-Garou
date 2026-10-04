@@ -3,7 +3,8 @@
 --   * the crosshair, green when a hook would land, with left/right hook
 --     marks either side (yellow flying, green hooked);
 --   * the gear panel: two gas tanks, two boxes of blades, your speed, your
---     points and rank;
+--     points and rank; above it, your level badge and XP bar (a gold burst
+--     on a level-up, a floating "+XP" for each gain);
 --   * "SLASH!" / "TRIP" / "DAZE" hints when a cut is in reach (gold for the
 --     nape, sky blue for the rest: apart for every kind of colour vision);
 --   * the round and wave banner with the district's health under it, big
@@ -32,6 +33,8 @@ local Radar = require(script.Parent.Radar)
 local Effects = require(script.Parent.Effects)
 local Settings = require(script.Parent.Settings)
 local Tutorial = require(script.Parent.Tutorial)
+local Juice = require(script.Parent.Juice)
+local Stats = require(ReplicatedStorage.Shared.Stats)
 
 local Hud = {}
 
@@ -88,6 +91,10 @@ local gearPanel: Frame
 local maxBlades = 0 -- the pips built so far (upgrades can raise it)
 local speedLabel: TextLabel
 local rankLabel: TextLabel
+local levelBadge: TextLabel
+local levelPunch: UIScale
+local xpFill: Frame
+local xpLabel: TextLabel
 local hintLabel: TextLabel
 local waveLabel: TextLabel
 local announceTitle: TextLabel
@@ -295,6 +302,19 @@ local function build()
 	label({ AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 46), Size = UDim2.fromOffset(110, 14), Text = "SPEED", TextSize = 12, TextColor3 = BRASS, Parent = panel })
 	rankLabel = label({ AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 64), Size = UDim2.fromOffset(160, 18), Text = "RECRUIT  -  0 PTS", Font = Enum.Font.GothamBold, TextSize = 13, Parent = panel })
 
+	-- The level badge and XP bar, just above the gear panel.
+	local strip = new("Frame", { Name = "Level", AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 0, -6), Size = UDim2.fromOffset(300, 22), BackgroundTransparency = 1, Parent = panel })
+	levelBadge = label({ Size = UDim2.fromOffset(64, 22), BackgroundTransparency = 0.15, BackgroundColor3 = PANEL, Text = "LV 1", TextSize = 14, TextColor3 = TONES.Gold, TextStrokeTransparency = 0.3, Parent = strip })
+	corner(levelBadge, 11)
+	new("UIStroke", { Color = BRASS, Thickness = 1.5, ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Parent = levelBadge })
+	levelPunch = new("UIScale", { Parent = levelBadge })
+	local xpBack = new("Frame", { Position = UDim2.fromOffset(70, 5), Size = UDim2.fromOffset(230, 12), BackgroundColor3 = Color3.fromRGB(48, 52, 64), BackgroundTransparency = 0.15, Parent = strip })
+	corner(xpBack, 6)
+	new("UIStroke", { Color = BRASS, Thickness = 1, Parent = xpBack })
+	xpFill = new("Frame", { Size = UDim2.fromScale(0, 1), BackgroundColor3 = TONES.Gold, Parent = xpBack })
+	corner(xpFill, 6)
+	xpLabel = label({ Size = UDim2.fromScale(1, 1), Text = "", TextSize = 10, Font = Enum.Font.GothamBold, TextStrokeTransparency = 0.2, ZIndex = 2, Parent = xpBack })
+
 	-- Round / wave banner and announcements.
 	waveLabel = label({ AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 52), Size = UDim2.fromOffset(520, 38), BackgroundTransparency = 0.25, BackgroundColor3 = PANEL, Text = "", TextSize = 20, TextColor3 = TONES.Gold, Parent = gui })
 	corner(waveLabel, 12)
@@ -477,8 +497,41 @@ local function cutInReach(here: Vector3): string?
 	return found
 end
 
+-- The level badge and XP bar, from the player's attributes.
+local function showLevel()
+	local level = Stats.Level(player)
+	local xp = player:GetAttribute("XP")
+	local nextAt = player:GetAttribute("XPNext")
+	xp = if type(xp) == "number" then xp else 0
+	nextAt = if type(nextAt) == "number" then nextAt else 0
+	levelBadge.Text = `LV {level}`
+	local ratio = if nextAt > 0 then math.clamp((xp :: number) / nextAt, 0, 1) else 1
+	TweenService:Create(xpFill, TweenInfo.new(0.35, Enum.EasingStyle.Quad), { Size = UDim2.fromScale(ratio, 1) }):Play()
+	xpLabel.Text = if nextAt > 0 then `{xp} / {nextAt} XP` else "MAX LEVEL"
+end
+
+local function onXP(kind: unknown, amount: unknown)
+	if kind == "XP" and type(amount) == "number" then
+		local character = player.Character
+		local root = character and character:FindFirstChild("HumanoidRootPart")
+		if root and root:IsA("BasePart") then
+			Juice.FloatText(root.Position + Vector3.new(0, 4, 0), `+{amount} XP`, TONES.Sky)
+		end
+	elseif kind == "LevelUp" then
+		Juice.LevelUp()
+		levelPunch.Scale = 1.7
+		TweenService:Create(levelPunch, TweenInfo.new(0.6, Enum.EasingStyle.Elastic), { Scale = 1 }):Play()
+		xpFill.BackgroundColor3 = Color3.new(1, 1, 1)
+		TweenService:Create(xpFill, TweenInfo.new(0.8), { BackgroundColor3 = TONES.Gold }):Play()
+	end
+end
+
 function Hud.Init(grapple: any)
 	build()
+	showLevel()
+	for _, name in { "Level", "XP", "XPNext" } do
+		player:GetAttributeChangedSignal(name):Connect(showLevel)
+	end
 	scaled(Radar.Init(gui))
 	rescale()
 	local camera = Workspace.CurrentCamera
@@ -497,6 +550,7 @@ function Hud.Init(grapple: any)
 	end
 
 	setBlades(Config.Blades.Max)
+	remote(Config.Remotes.XP).OnClientEvent:Connect(onXP)
 	remote(Config.Remotes.State).OnClientEvent:Connect(function(state)
 		if type(state) ~= "table" then
 			return
@@ -646,7 +700,7 @@ function Hud.Init(grapple: any)
 		hookMarks.Left.TextColor3 = (hookColors :: any)[left] or hookColors.Idle
 		hookMarks.Right.TextColor3 = (hookColors :: any)[right] or hookColors.Idle
 
-		local ratio = math.clamp(grapple.Gas() / Config.Grapple.GasMax, 0, 1)
+		local ratio = math.clamp(grapple.Gas() / math.max(grapple.GasMax(), 1), 0, 1)
 		for _, fill in gasFills do
 			fill.Size = UDim2.fromScale(1, ratio)
 			fill.BackgroundColor3 = if ratio > 0.25 then Color3.fromRGB(120, 215, 255) else Color3.fromRGB(255, 150, 110)

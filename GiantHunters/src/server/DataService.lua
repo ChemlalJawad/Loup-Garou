@@ -2,7 +2,8 @@
 -- Saving hunters between sessions: points (and so the rank), giants taken
 -- down, the best round reached, and whether they've done the tutorial; and
 -- the progression (ProgressService): Marks, upgrade levels, today's
--- challenges, lifetime totals, the chosen cape and title.
+-- challenges, lifetime totals, the chosen cape and title; and the level and
+-- XP (LevelService).
 --
 -- Older saves simply lack the newer keys: every missing or bad key loads as
 -- its default.
@@ -36,6 +37,9 @@ export type Profile = {
 	Rescues: number, -- lifetime friends cut loose
 	Cape: string, -- Config.Cosmetics.Capes id
 	Title: string, -- Config.Cosmetics.Titles id, "" for none
+	-- Levels (LevelService):
+	Level: number, -- 1 to Config.Leveling.MaxLevel
+	XP: number, -- progress within the level
 }
 
 -- Today's challenges: the UTC day they're for, progress and which are done.
@@ -68,6 +72,8 @@ local function blank(): Profile
 		Rescues = 0,
 		Cape = Config.Cosmetics.DefaultCape,
 		Title = "",
+		Level = 1,
+		XP = 0,
 	}
 end
 
@@ -138,13 +144,14 @@ local function clean(stored: unknown): Profile
 	local profile = blank()
 	if type(stored) == "table" then
 		local data = stored :: { [string]: unknown }
-		for _, key in { "Points", "Giants", "BestRound", "Marks", "ChallengesDone", "CleanCuts", "Rescues" } do
+		for _, key in { "Points", "Giants", "BestRound", "Marks", "ChallengesDone", "CleanCuts", "Rescues", "XP" } do
 			local value = count(data[key])
 			if value then
 				(profile :: any)[key] = value
 			end
 		end
 		profile.TutorialDone = data.TutorialDone == true
+		profile.Level = math.clamp(count(data.Level) or 1, 1, Config.Leveling.MaxLevel)
 		profile.Upgrades = cleanMap(data.Upgrades, count)
 		local challenges = data.Challenges
 		if type(challenges) == "table" then
@@ -229,6 +236,9 @@ function DataService.Save(player: Player)
 			local old = clean(stored)
 			profile.BestRound = math.max(profile.BestRound, old.BestRound)
 			profile.TutorialDone = profile.TutorialDone or old.TutorialDone
+			if old.Level > profile.Level then -- (a level is never lost)
+				profile.Level, profile.XP = old.Level, old.XP
+			end
 			return profile
 		end)
 	end)

@@ -8,7 +8,9 @@
 --
 --   Upgrades.For(player, "HookRange")     -- studs, with the player's level
 --   Upgrades.Value("GasTank", 3)          -- a value at a given level
---   Upgrades.GrappleSettings(player)      -- Config.Grapple with upgrades applied
+--   Upgrades.GrappleSettings(player)      -- Config.Grapple with upgrades only
+--
+-- The final numbers (upgrades + level + gear) come from Stats.lua.
 
 local Config = require(script.Parent.Config)
 
@@ -16,8 +18,7 @@ local Upgrades = {}
 
 local PREFIX = "Up_"
 
--- The rig's numbers before any upgrade (Upgrades.ApplyToGrapple changes
--- Config.Grapple on the client; this copy never changes).
+-- The rig's numbers before any upgrade.
 local BASE_GRAPPLE = table.clone(Config.Grapple)
 
 function Upgrades.Attribute(name: string): string
@@ -99,16 +100,9 @@ function Upgrades.GrappleSettings(player: Player): typeof(Config.Grapple)
 	return settings
 end
 
--- Client only: writes the player's upgraded values into this client's own
--- Config.Grapple, so code that reads Config.Grapple live (the grapple, the
--- HUD's gas gauge) uses them. Always from the base values, so calling it
--- again never stacks.
-function Upgrades.ApplyToGrapple(player: Player)
-	local settings = Upgrades.GrappleSettings(player)
-	local live = Config.Grapple :: any
-	for key, value in settings :: any do
-		live[key] = value
-	end
-end
+-- Kept for older callers, and does nothing now: the grapple and the HUD read
+-- the live, complete numbers (upgrades, level, gear) from Stats.lua, and
+-- Config.Grapple stays the base rig.
+function Upgrades.ApplyToGrapple(_player: Player) end
 
 return Upgrades

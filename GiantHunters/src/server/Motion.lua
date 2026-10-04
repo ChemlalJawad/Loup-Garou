@@ -5,8 +5,9 @@
 -- report any velocity, or pop their character straight onto a nape. The
 -- server never asks: every Heartbeat it notes each hunter's position, works
 -- out the speed itself (for clean cuts), and if someone covers more ground
--- than the grapple rig ever could (Config.Grapple.MaxSpeed, with room for
--- lag), their cuts don't count for a couple of seconds.
+-- than their grapple rig ever could (Stats.For(player).MaxSpeed, level and
+-- gear included, with room for lag), their cuts don't count for a couple of
+-- seconds.
 --
 -- Whenever the server moves a hunter itself (respawn, a giant's hand, back
 -- onto the wall), it calls Motion.Reset so that jump isn't held against them.
@@ -16,6 +17,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
 local Config = require(ReplicatedStorage.Shared.Config)
+local Stats = require(ReplicatedStorage.Shared.Stats)
 
 local Motion = {}
 
@@ -104,7 +106,7 @@ end
 
 local function step()
 	local now = os.clock()
-	local limit = Config.Grapple.MaxSpeed * Config.AntiCheat.SpeedTolerance
+	local tolerance = Config.AntiCheat.SpeedTolerance
 	for _, player in Players:GetPlayers() do
 		local t = track(player)
 		local root = rootOf(player)
@@ -122,6 +124,8 @@ local function step()
 			continue
 		end
 		local position = root.Position
+		-- (Each hunter's own top speed: levels and gear make some faster.)
+		local limit = Stats.For(player).MaxSpeed * tolerance
 		local samples = t.Samples
 		-- Judge each move against where the hunter last was *seen to move*:
 		-- positions arrive from the client in bursts, and a lag spike looks

@@ -22,6 +22,7 @@ local Workspace = game:GetService("Workspace")
 local Config = require(ReplicatedStorage.Shared.Config)
 local Geo = require(ReplicatedStorage.Shared.Geo)
 local Upgrades = require(ReplicatedStorage.Shared.Upgrades)
+local Stats = require(ReplicatedStorage.Shared.Stats)
 local Motion = require(script.Parent.Motion)
 local Respawn = require(script.Parent.Respawn)
 local DataService = require(script.Parent.DataService)
@@ -72,9 +73,9 @@ local function promptKeys(prompt: ProximityPrompt)
 	prompt.GamepadKeyCode = Config.Prompts.Gamepad
 end
 
--- Blades per resupply, with the hunter's Blade Box upgrade.
+-- Blades per resupply (Blade Box upgrade and gear: Stats).
 local function maxBlades(player: Player): number
-	return Upgrades.For(player, "BladeCount")
+	return Stats.For(player).BladeMax
 end
 
 local function remote(name: string): RemoteEvent
@@ -333,9 +334,10 @@ local function onPlayerAdded(player: Player)
 	}
 	local leaderstats = Instance.new("Folder")
 	leaderstats.Name = "leaderstats"
-	for _, name in { "Giants", "Points" } do
+	for _, name in { "Level", "Giants", "Points" } do -- (Level: LevelService fills it in)
 		local value = Instance.new("IntValue")
 		value.Name = name
+		value.Value = if name == "Level" then 1 else 0
 		value.Parent = leaderstats
 	end
 	local rank = Instance.new("StringValue")
@@ -360,6 +362,14 @@ local function onPlayerAdded(player: Player)
 					end
 				end)
 			end)
+		end
+	end)
+	-- New gear or an upgrade can change the box size (never above it).
+	Stats.Changed(player, function()
+		local hunter = hunters[player]
+		if hunter then
+			hunter.Blades = math.min(hunter.Blades, maxBlades(player))
+			pushState(player)
 		end
 	end)
 	task.spawn(spawnCharacter, player)
@@ -621,7 +631,7 @@ function HunterService.Init(spawn: BasePart?)
 				return
 			end
 			local world = (part :: BasePart).CFrame:PointToWorldSpace(localPos :: Vector3)
-			if (world - root.Position).Magnitude > Upgrades.For(player, "HookRange") + 60 then
+			if (world - root.Position).Magnitude > Stats.For(player).HookRange + 60 then
 				return
 			end
 		end

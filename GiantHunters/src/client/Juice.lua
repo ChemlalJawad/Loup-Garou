@@ -111,6 +111,22 @@ function Juice.Vignette(strength: number, tint: Color3)
 	edgeGlow = math.max(edgeGlow, strength)
 end
 
+-- === Level up ===============================================================
+-- A warm gold flash and glow, a shower of sparks round you, a bright chime.
+
+function Juice.LevelUp()
+	local gold = Color3.fromRGB(255, 215, 90)
+	if flash then
+		Juice.Flash(0.35, gold)
+	end
+	Juice.Vignette(0.6, gold)
+	local root = myRoot()
+	if root then
+		Effects.Burst(root.Position + Vector3.new(0, 2, 0), gold, 1.4, 40)
+	end
+	Effects.Play("Resupply", nil, 0.8, 1.5)
+end
+
 -- === Floating text ==========================================================
 
 function Juice.FloatText(position: Vector3, text: string, color: Color3, big: boolean?)

@@ -36,6 +36,7 @@ local Workspace = game:GetService("Workspace")
 
 local Config = require(ReplicatedStorage.Shared.Config)
 local Geo = require(ReplicatedStorage.Shared.Geo)
+local Stats = require(ReplicatedStorage.Shared.Stats)
 local GiantFactory = require(script.Parent.GiantFactory)
 local Wall = require(script.Parent.World.Wall)
 local Layout = require(script.Parent.World.Layout)
@@ -929,7 +930,11 @@ local function rescue(giant: Giant, player: Player): string?
 	return captive.DisplayName
 end
 
-local function applyDamage(giant: Giant, player: Player, damage: number, clean: boolean, speed: number): (HitResult, HitInfo)
+-- `damage`: 1 for a full hit, 0.5 for a slow one. Armour plates crack by
+-- hits; the nape itself takes `damage` x `napeMult` (a hunter's level and
+-- gear: Stats.DamageMult). Nape health is fractional (kept to thousandths so
+-- rounding never leaves a sliver).
+local function applyDamage(giant: Giant, player: Player, damage: number, clean: boolean, speed: number, napeMult: number?): (HitResult, HitInfo)
 	local info: HitInfo = { Kind = giant.Kind.Display, Clean = clean, Speed = speed, Position = giant.Rig.Nape.Position }
 	info.Rescued = rescue(giant, player)
 	if giant.Armor > 0 then
@@ -943,7 +948,9 @@ local function applyDamage(giant: Giant, player: Player, damage: number, clean: 
 		return "Armor", info
 	end
 	local model = giant.Rig.Model
-	local health = (model:GetAttribute("NapeHealth") :: number) - damage
+	local before = model:GetAttribute("NapeHealth")
+	local health = (if type(before) == "number" then before else 0) - damage * (napeMult or 1)
+	health = math.floor(health * 1000 + 0.5) / 1000
 	model:SetAttribute("NapeHealth", math.max(health, 0))
 	if health <= 0 then
 		defeat(giant, player, clean, speed)
@@ -954,7 +961,7 @@ end
 
 local function cutNape(giant: Giant, player: Player, speed: number): (HitResult, HitInfo)
 	local clean = speed >= Config.Blades.CleanCutSpeed
-	return applyDamage(giant, player, if clean then 1 else 0.5, clean, speed)
+	return applyDamage(giant, player, if clean then 1 else 0.5, clean, speed, Stats.For(player).DamageMult)
 end
 
 -- A titan shifter's punch (on the hunters' side): every giant within

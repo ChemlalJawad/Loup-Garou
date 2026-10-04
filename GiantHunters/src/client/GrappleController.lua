@@ -46,6 +46,7 @@ local Workspace = game:GetService("Workspace")
 local CollectionService = game:GetService("CollectionService")
 
 local Config = require(ReplicatedStorage.Shared.Config)
+local Stats = require(ReplicatedStorage.Shared.Stats)
 local Effects = require(script.Parent.Effects)
 local Settings = require(script.Parent.Settings)
 local TouchButtons = require(script.Parent.TouchButtons)
@@ -73,7 +74,7 @@ type Hook = {
 
 local player = Players.LocalPlayer
 local camera = Workspace.CurrentCamera
-local settings = Config.Grapple
+local settings = Stats.Grapple(player) -- base rig + upgrades + level + gear (refreshed on Stats.Changed)
 
 local character: Model? = nil
 local root: BasePart? = nil
@@ -82,7 +83,7 @@ local hooks: { [string]: Hook } = {
 	Left = { Name = "Left", Side = -1, Held = false, State = "Idle", OnGiant = false, Length = 0, Twang = 0 },
 	Right = { Name = "Right", Side = 1, Held = false, State = "Idle", OnGiant = false, Length = 0, Twang = 0 },
 }
-local gas = Config.Grapple.GasMax
+local gas = settings.GasMax
 local gasHeld = false
 local lastSlash = 0
 local lastDash = 0
@@ -547,11 +548,11 @@ local function step(dt: number)
 			gas -= settings.GasPerSecondBoost * dt
 		end
 	elseif not hooked then
-		gas = math.min(Config.Grapple.GasMax, gas + settings.GasRegenPerSecondGrounded * dt)
+		gas = math.min(settings.GasMax, gas + settings.GasRegenPerSecondGrounded * dt)
 	end
 	if hooked and not reeling then
 		-- A trickle while you hang on a cable.
-		gas = math.min(Config.Grapple.GasMax, gas + settings.GasRegenPerSecondSwinging * dt)
+		gas = math.min(settings.GasMax, gas + settings.GasRegenPerSecondSwinging * dt)
 	end
 	if gas <= 0 then
 		gas = 0
@@ -624,7 +625,7 @@ local function onCharacter(newCharacter: Model)
 	character = newCharacter
 	root = newCharacter:WaitForChild("HumanoidRootPart", 10) :: BasePart?
 	humanoid = newCharacter:WaitForChild("Humanoid", 10) :: Humanoid?
-	gas = Config.Grapple.GasMax
+	gas = settings.GasMax
 	refreshFilter()
 	if humanoid then
 		-- Hunters flip and tumble through the air all the time: never let
@@ -711,6 +712,11 @@ end
 
 function GrappleController.Gas(): number
 	return gas
+end
+
+-- The tank's size (upgrades, level and gear included).
+function GrappleController.GasMax(): number
+	return settings.GasMax
 end
 
 function GrappleController.IsHooked(): boolean
@@ -812,6 +818,14 @@ function GrappleController.Init()
 	fxFolder.Name = "GrappleFx"
 	fxFolder.Parent = Workspace
 	refreshFilter()
+
+	-- A level-up, an upgrade or new gear: the rig's numbers change at once
+	-- (a bigger tank fills by the difference, a smaller one is topped off).
+	Stats.Changed(player, function()
+		local oldMax = settings.GasMax
+		settings = Stats.Grapple(player)
+		gas = math.clamp(gas + math.max(settings.GasMax - oldMax, 0), 0, settings.GasMax)
+	end)
 
 	if player.Character then
 		task.spawn(onCharacter, player.Character)
@@ -968,7 +982,7 @@ function GrappleController.Init()
 		hookRemote = hookEvent
 		hookEvent.OnClientEvent:Connect(onRemoteHook)
 		remote(Config.Remotes.Resupplied).OnClientEvent:Connect(function()
-			gas = Config.Grapple.GasMax
+			gas = settings.GasMax
 			Effects.Play("Resupply")
 		end)
 		struggleRemote = remote(Config.Remotes.Struggle)

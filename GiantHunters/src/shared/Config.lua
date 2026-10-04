@@ -414,6 +414,7 @@ Config.Remotes = {
 	-- Progression (ProgressService / UpgradeShop):
 	Progress = "GH_Progress", -- client -> server ("Sync") | ("Buy", track) | ("Cape", id) | ("Title", id?); server -> client ("State", snapshot) | ("Result", ok, message) | ("Challenge", text, reward) | ("Open")
 	RoundSummary = "GH_RoundSummary", -- server -> client ({ Round, Won, Takedowns, CleanCuts, BestSpeed, Points, Marks })
+	XP = "GH_XP", -- server -> client ("XP", amount) | ("LevelUp", level, marks) (Level, XP, XPNext are player attributes)
 }
 -- (Held also sends ("Wriggle", { Count, Needed }): the server's own count of
 -- a held hunter's wriggles, which drives the wriggle bar. Wave also carries
@@ -514,7 +515,7 @@ Config.District = {
 -- client's velocity): speeds for clean cuts come from this, and a hunter who
 -- moves faster than the rig allows can't cut anything for a moment.
 Config.AntiCheat = {
-	SpeedTolerance = 1.4, -- x Config.Grapple.MaxSpeed
+	SpeedTolerance = 1.4, -- x the hunter's own top speed (Stats.For(player).MaxSpeed)
 	TeleportSlack = 25, -- studs of extra movement allowed per check (lag, a titan's hip)
 	SuspectTime = 2, -- seconds of no cuts after a too-fast move
 	HookRelayRate = 10, -- cable updates a second relayed to other players
@@ -611,6 +612,45 @@ Config.Upgrades = {
 	} :: { [string]: UpgradeTrack },
 	ActionCooldown = 0.25, -- seconds between shop requests the server accepts
 	PromptDistance = 10,
+}
+
+-- === Levels ==================================================================
+-- Experience from play raises a hunter's level (1 to MaxLevel, saved). Each
+-- level after the first adds a little speed, gas and nape damage (Stats.lua
+-- combines them with upgrades and gear). Published as player attributes
+-- "Level", "XP" (progress within the level) and "XPNext" (0 at the top).
+-- See LevelService.
+Config.Leveling = {
+	MaxLevel = 50,
+	-- XP from `level` to the next: XPBase + XPPerLevel * level ^ XPExponent, rounded.
+	XPBase = 60,
+	XPPerLevel = 25,
+	XPExponent = 1.35,
+	-- Bonuses per level above 1 (at 50: about +30% speed, +50% gas, +40% damage).
+	SpeedPerLevel = 0.006, -- x top speed, swing pull, gas boost and dash
+	GasPerLevel = 0.01, -- x gas capacity
+	DamagePerLevel = 0.008, -- x nape damage (armour plates still crack by hits)
+	XP = {
+		TakedownPerPoint = 15, -- x the giant's Points
+		CleanCut = 4, -- every clean nape hit
+		CleanTakedown = 6, -- extra when the finishing cut was clean
+		Trip = 5,
+		Daze = 5,
+		Armor = 8, -- cracking an armour plate
+		Rescue = 20,
+		Cannon = 3,
+		ShifterPoint = 10, -- per point scored as (or against) a titan
+		RoundWon = 40, -- for everyone who took part...
+		RoundWonPerRound = 10, -- ...plus this x the round number
+		DistrictFallen = 15,
+		ChallengePerMark = 1, -- a finished challenge: its Marks reward in XP...
+		ChallengeMin = 40, -- ...but never less than this
+		Dummy = 2, -- a training dummy cut...
+		DummyPerMinute = 10, -- ...at most this many count a minute
+	},
+	MarksPerLevel = 5, -- Marks for every level-up...
+	MilestoneEvery = 5, -- ...but every 5th level...
+	MilestoneMarks = 50, -- ...pays this many instead
 }
 
 -- Three daily challenges a day (UTC), picked from the pool by the date, so

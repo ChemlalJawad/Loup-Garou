@@ -354,7 +354,8 @@ it, and it won't come back.
   The server owns every level and checks every purchase (data loaded, a
   real track, the level cap, the price, one request every 0.25 s). Blades
   are applied on the server; the grapple numbers are applied on each
-  client from the player's attributes (`Upgrades.lua`).
+  client from the player's attributes (`Upgrades.lua`, combined with the
+  level and gear in `Stats.lua`).
 - **Daily challenges**: three a day (the same for everyone, new at midnight
   UTC) from a pool of twelve: clean cuts, takedowns, a Sprinter, Crawlers,
   rescuing a friend, cracking an Armored plate, reaching wave 4, saving the
@@ -370,6 +371,47 @@ it, and it won't come back.
 - **Round summary**: when a round ends (saved or fallen) each hunter gets
   their own card: takedowns, clean cuts, best cut speed, points and Marks
   earned.
+
+## Levels
+
+Every hunter has a saved **level**, 1 to 50, shown as a badge with an XP
+bar just above the gear panel and as a **Level** column on the
+leaderboard. XP comes from playing (`Config.Leveling.XP`):
+
+| What | XP |
+|---|---|
+| A takedown | 15 x the giant's points (+6 if the last cut was clean) |
+| A clean nape cut | 4 |
+| Tripping or dazing a giant (the first in a row) | 5 |
+| Cracking an armour plate | 8 |
+| Cutting a friend loose | 20 |
+| A cannon hit | 3 |
+| Titan fights | 10 a point |
+| A round you took part in | 40 + 10 x the round when it's saved, 15 if it falls |
+| A daily challenge | its Marks reward in XP (at least 40) |
+| A training dummy cut | 2 (at most 10 cuts a minute) |
+
+Each level takes `60 + 25 x level^1.35` XP (85 for level 2, about 620
+at level 10, about 4,800 for the last). A level-up gets a big
+announcement, a gold burst on screen, a line in everyone's feed and
+**5 Marks** (**50** every 5th level); each gain floats up as "+XP".
+
+Every level after the first adds a small bonus (`Config.Leveling`):
+
+| Per level | At level 10 | At level 25 | At level 50 |
+|---|---|---|---|
+| +0.6% speed (top speed, swing, gas boost, dash) | +5.4% | +14.4% | +29.4% |
+| +1% gas capacity | +9% | +24% | +49% |
+| +0.8% nape damage | +7.2% | +19.2% | +39.2% |
+
+**Stats.lua** is the one place a hunter's numbers come together: the base
+rig (`Config.Grapple`, `Config.Blades`), then the Marks upgrades, then the
+level, then the equipped gear's mods (`Equip_Gear` from `Config.Catalog`).
+The grapple and the HUD on each client and the server (blades per box,
+nape damage, the cable relay's range and the speed check, which allows
+each hunter their own top speed) all read `Stats.For(player)`, and
+`Stats.Changed` tells them when to look again. Nape health can be
+fractional: armour plates still crack by hits, a slow cut still does half.
 
 ## The HUD
 
@@ -468,7 +510,9 @@ sound you've uploaded (`rbxassetid://...`).
 | `src/server/Motion.lua` | where every hunter really is: server-measured speed, too-fast moves |
 | `src/server/DataService.lua` | saving points, giants, best round, the tutorial and the progression (DataStore; missing keys load as defaults) |
 | `src/server/ProgressService.lua` | Marks, upgrade purchases, daily challenges, capes and titles, upgrade boards, the round summary |
-| `src/shared/Upgrades.lua` | upgrade levels to values (player attributes `Up_<Track>`), the upgraded grapple settings |
+| `src/shared/Upgrades.lua` | upgrade levels to values (player attributes `Up_<Track>`) |
+| `src/shared/Stats.lua` | a hunter's final numbers: base rig + upgrades + level + gear (`Stats.For`, `Stats.Grapple`, `Stats.Changed`), the XP curve |
+| `src/server/LevelService.lua` | XP and levels (attributes `Level`, `XP`, `XPNext`), level-up announcements and rewards, the leaderboard's Level |
 | `src/client/UpgradeShop.lua` | the shop (upgrades, challenges, looks), its button, the round summary card |
 | `src/server/Respawn.lua` | respawning on the wall, retried if it fails |
 
