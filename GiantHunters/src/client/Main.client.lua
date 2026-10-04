@@ -16,3 +16,10 @@ task.spawn(Hud.Init, Grapple)
 task.spawn(SkyController.Init)
 task.spawn(ShifterController.Init)
 task.spawn(UpgradeShop.Init)
+
+-- Feel & settings: the settings panel (gear, top right) and the client-only
+-- juice (hit-stop, flashes, floating score, speed lines, grab tells...).
+local Settings = require(script.Parent.Settings)
+local Juice = require(script.Parent.Juice)
+task.spawn(Settings.Init)
+task.spawn(Juice.Init, Grapple)

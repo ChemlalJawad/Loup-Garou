@@ -644,6 +644,36 @@ Config.Sounds = {
 	Boom = { Id = "rbxasset://sounds/action_jump_land.mp3", Volume = 1, Pitch = 0.22 },
 	Wind = { Id = "rbxasset://sounds/action_falling.mp3", Volume = 0.5, Pitch = 1 },
 	Splash = { Id = "rbxasset://sounds/impact_water.mp3", Volume = 0.6, Pitch = 1 },
+	-- (The default character sounds, also shipped with every client.)
+	Whoosh = { Id = "rbxasset://sounds/action_jump.mp3", Volume = 0.45, Pitch = 1.35 }, -- gas dash
+	Roar = { Id = "rbxasset://sounds/swordlunge.wav", Volume = 1, Pitch = 0.32 }, -- a giant's grab or roar tell
+	Cut = { Id = "rbxasset://sounds/unsheath.wav", Volume = 0.55, Pitch = 1.6 }, -- a cut that lands (pitch climbs with the combo)
+}
+
+-- === Feel (client-only juice; see Juice.lua and Settings.lua) =================
+Config.Feel = {
+	HitStop = 0.06, -- seconds the camera and your animations freeze on a hit
+	HitStopDefeat = 0.1,
+	AimAssistDefault = true,
+	AimAssistCone = 6, -- degrees round the crosshair in which a hook snaps to a nape
+	AimAssistBodyCone = 3, -- ... or to a giant's head/torso when the hook would miss
+	RollMax = 6, -- degrees the camera rolls into a swing
+	RollRate = 5,
+	FovSpeed = 18, -- extra field of view at top speed
+	FovKickReel = 5, -- extra FOV kicks (they decay), x the FOV setting
+	FovKickBoost = 4,
+	FovKickDash = 8,
+	FovKickDecay = 5,
+	SpeedLinesFrom = 75, -- studs/s: speed lines start here...
+	SpeedLinesFull = 150, -- ...and are at full strength here
+	SpeedLines = 18, -- streaks on screen at most (pooled)
+	StepReach = 7, -- x a giant's height: how far away its footsteps shake the camera
+	StepShake = 0.5, -- shake from a 46-stud giant's step right next to you
+	StepDustRange = 320, -- studs from the camera: dust puffs at footsteps
+	GrabTellReach = 2.2, -- x a giant's grab reach: you get the red warning this close
+	MaxBursts = 6, -- pooled nape bursts (steam + sparks) at once
+	FloatingTexts = 8, -- pooled "+8 x3" texts
+	BigTextScale = 1.25, -- the "bigger text" setting (on by default on phones)
 }
 
 return Config

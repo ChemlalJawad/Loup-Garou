@@ -179,10 +179,12 @@ anyone who comes close. Worth 12 points.
 | Wriggle free when grabbed | mash any key or click | mash any button | tap anywhere |
 | Resupply gas & blades (at a crate with a blue beam) | R | D-pad down | tap the prompt |
 | Fire a wall cannon / take the titan crystal | R | D-pad down | tap the prompt |
+| Settings (aim assist, camera roll, shake, FOV, text size) | click the gear, top right | - | tap the gear, top right |
 
 Shift is left free for **shift-lock** (camera lock), which makes aiming
 easier: you aim from the centre of the screen, and the crosshair turns
-green when a hook would land. With a gamepad or on a touch screen you
+sky blue when a hook would land (gold, and bigger, when aim assist has a
+giant). With a gamepad or on a touch screen you
 always aim from the centre. On phones and tablets the buttons sit in an arc
 round the jump button, and the whole HUD shrinks to fit the screen (the
 radar and the kill feed move to the top).
@@ -336,22 +338,60 @@ it, and it won't come back.
 
 ## The HUD
 
-Crosshair with left/right hook marks (yellow flying, green hooked); the
-gear panel (two gas tanks, two boxes of four blades, your speed, rank and
+Crosshair with left/right hook marks (gold flying, sky blue hooked); the
+gear panel (two gas tanks, two boxes of blades (half your blades each), your speed, rank and
 points); a hint when a cut is in reach ("SLASH THE NAPE!", "TRIP",
-"DAZE"; "BLOCKED!" when a Sprinter's hand covers the nape); the round and wave banner with the wave's time left and the
+"DAZE": gold for the nape, sky blue for the rest; "BLOCKED!" when a Sprinter's hand covers the nape); the round and wave banner with the wave's time left and the
 district's health under it; announcements; a kill feed; the combo
-counter; a radar that turns with the camera (giants red, runners orange,
+counter (a big "x3" in a ring of dots that empties as the combo window
+runs out, changing colour with each step up); a radar that turns with the camera (giants red, runners orange,
 sprinters violet, crawlers olive, the Beast brown, armoured grey,
 hunters blue, crates cyan, the gate yellow, the wall a
-ring, and arrows round its edge for giants out of range); the GRABBED!
+ring, and arrows round its edge for giants out of range; giants are
+squares, abnormals diamonds, hunters and crates round, and a giant reaching
+to grab flashes white); the GRABBED!
 screen with a wriggle meter.
+
+## Feel & settings
+
+Everything here runs on your own client (nothing extra goes over the
+network) and is tuned in `Config.Feel`.
+
+- **Cuts**: a hit freezes the camera and your animations for a few
+  hundredths of a second (hit-stop; physics carries on), throws a big puff
+  of steam, a spray and ring of sparks and a flash of light off the nape,
+  and floats "CLEAN!" / "HIT" / "TRIPPED" / "DAZED" there. Clean cuts flash
+  the screen and light a pale blue vignette; a takedown does it bigger, and
+  the points you got float up from the nape ("+8  x3"). The cut's ring
+  climbs in pitch with your combo.
+- **The grapple**: a disc on the surface shows where each hook would bite
+  (blue left, orange right; brighter on a giant). **Aim assist** pulls a
+  hook onto a nape within 6 degrees of the crosshair (or onto a giant's
+  head or back when you'd miss by a hair). The view kicks wider as you
+  reel, boost or dash, speed lines stream out from where you're heading
+  past 75 studs/s, the camera rolls a little into swings, and the wind gets
+  louder and higher with speed. Cables sway as they fly, twang when they
+  bite, and pull thin and bright while you reel; the gas jets have a fast
+  bright core, and a dash whooshes.
+- **Giants**: every footstep throws up dust and shakes the camera by the
+  giant's size and how close you are, and the thud carries further from big
+  ones. When a giant near you raises its arms to grab (or a Beast roars) it
+  growls, and the edge of the screen glows red on its side with a "!"
+  arrow pointing at it. A defeated giant drops to its knees and slumps
+  forward as it steams away.
+- **Settings** (the gear, top right; for this session only): aim assist,
+  the hook marker, camera roll, speed lines, screen shake (off / low /
+  normal / strong), speed and FOV effects (off / low / normal / strong), and
+  bigger text (on by default on phones).
+- **Colours** chosen to stay apart for every kind of colour vision (blue,
+  orange, gold, grey), and shapes or words say the same thing as the
+  colour.
 
 ## Sounds
 
 The game uses a few sound files that ship with every Roblox client
 (`rbxasset://sounds/...`: the classic sword slash, lunge and unsheath, the
-character landing thud, falling wind, water splash). Nothing is uploaded
+character landing thud, jump and falling wind, water splash). Nothing is uploaded
 and there are no asset ids to set up. They haven't been checked in Studio
 from here, so if one doesn't play, swap its id in `Config.Sounds` for any
 sound you've uploaded (`rbxassetid://...`).
@@ -380,7 +420,9 @@ sound you've uploaded (`rbxassetid://...`).
 | `src/client/GrappleController.lua` | flying hooks, taut-cable swing, reel, gas boost and dash, air spin slash, flares, being grabbed or swatted, other hunters' cables |
 | `src/client/GiantAnimator.lua` | client-only animation (walk, grab, hold, swat, kneel, daze, leap, kick, stare), footsteps, daze stars |
 | `src/client/Hud.lua`, `Radar.lua` | the HUD and the radar |
-| `src/client/Effects.lua` | camera shake, sounds, hit bursts, the windmill |
+| `src/client/Effects.lua` | camera shake, sounds (with a little variety), nape bursts, footstep dust and shake, the windmill |
+| `src/client/Juice.lua` | hit-stop, flashes and vignettes, floating score, speed lines, camera roll, grab tells, defeated giants slumping |
+| `src/client/Settings.lua` | the settings panel (session-only) |
 | `src/client/SkyController.lua`, `src/shared/Sky.lua` | the sky by the hour; lamps, torches, windows and giants' eyes at night |
 | `src/client/ShifterController.lua` | choosing a side, T to transform, titan punch and roar |
 | `src/client/TouchButtons.lua` | the on-screen buttons on phones and tablets |
