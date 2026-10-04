@@ -29,8 +29,8 @@
 --                       server time, read by LevelService and the HUD)
 --       ChallengeReroll swap one daily challenge (the one picked in the shop)
 --       Fireworks       a firework show over the buyer, for everyone
---       single styles   Config.Monetization.Products[item.ProductKey] or
---                       CosmeticProducts[itemId] (ShopService.GrantStyle)
+--       single styles   Config.Monetization.Products.Cosmetics[item.ProductKey]
+--                       (ShopService.GrantStyle)
 --
 -- Client requests: Config.Remotes.Monetization ("Buy", key, arg?) and
 -- ("BuyCosmetic", itemId).
@@ -66,6 +66,12 @@ local grants: { [number]: Grant } = {} -- product id -> what it gives
 
 local function passId(key: string): number
 	return M.GamePasses[key] or 0
+end
+
+-- A product's id by its key (0: not set up; the styles are separate).
+local function productId(key: string): number
+	local id = (M.Products :: any)[key]
+	return if type(id) == "number" then id else 0
 end
 
 function MonetizationService.OwnsPass(player: Player, key: string): boolean
@@ -184,10 +190,8 @@ local function styleProduct(id: string): number
 	if not item or item.Source ~= "Robux" then
 		return 0
 	end
-	if type(item.ProductKey) == "string" and (M.Products[item.ProductKey] or 0) ~= 0 then
-		return M.Products[item.ProductKey]
-	end
-	return M.CosmeticProducts[id] or 0
+	local key = if type(item.ProductKey) == "string" then item.ProductKey else id
+	return M.Products.Cosmetics[key] or 0
 end
 
 local function buildGrants()
@@ -199,9 +203,10 @@ local function buildGrants()
 		ChallengeReroll = reroll,
 		Fireworks = fireworks,
 	}
-	for key, id in M.Products do
-		if id ~= 0 and byKey[key] then
-			grants[id] = byKey[key]
+	for key, grant in byKey do
+		local id = productId(key)
+		if id ~= 0 then
+			grants[id] = grant
 		end
 	end
 	local items = (Config :: any).CosmeticItems
@@ -310,7 +315,7 @@ local function onRequest(player: Player, action: unknown, a: unknown, b: unknown
 			end
 			return
 		end
-		local product = M.Products[a] or 0
+		local product = productId(a)
 		if product == 0 or not grants[product] then
 			return -- (not set up: refused)
 		end

@@ -238,6 +238,7 @@ anyone who comes close. Worth 12 points.
 | Transform into a titan (with the titan power, or a full Titan Gauge) | T | D-pad up | "Titan" |
 | Titan: primary / secondary power | Click or F / G | X / Y | the two power buttons |
 | Your technique (bought in the shop) | V | R2 | "Skill" |
+| Your second technique (Second Technique Slot pass) | B | L2 | "Skill 2" |
 | Wriggle free when grabbed | mash any key or click | mash any button | tap anywhere |
 | Resupply gas & blades (at a crate with a blue beam) | R | D-pad down | tap the prompt |
 | Fire a wall cannon / take the titan crystal | R | D-pad down | tap the prompt |
@@ -526,6 +527,78 @@ Other hunters' gas jets aren't drawn on your screen (only your own are),
 so `Cos_Gas` shows only to you. Defeat effects are pooled, skipped past
 `Config.CosmeticFx.Range` studs, and halved on phones and low graphics.
 
+## Robux shop & season pass
+
+The shop also has **ROBUX**, **STYLE** and **SEASON** tabs. The rules,
+built for a young audience and Roblox policy:
+
+* nothing sold for Robux makes a hunter stronger by itself: gear and
+  upgrades still unlock by level, Marks bags only buy what your level
+  already allows;
+* no paid random loot boxes, no fake timers, no pop-ups: a purchase prompt
+  only opens when a player presses a button in the shop (the server checks
+  the request and opens the prompt);
+* every id in `Config.Monetization` starts at **0**, which means "not set
+  up": the item is hidden in the shop and refused by the server.
+
+| Item | Kind | What it gives |
+|---|---|---|
+| Double Marks | pass | x2 Marks from play (attribute `MarksMult`, read by ProgressService) |
+| Commander Pack | pass | the styles with `PassKey = "CommanderPack"` + the **Elite Commander** title |
+| Second Technique Slot | pass | wear a second technique (B / L2 / "SKILL 2"); techniques are still bought with Marks |
+| Shifter Pack | pass | the titan looks with `PassKey = "ShifterPack"` |
+| Season Premium | pass | the premium season track |
+| Bag / Chest / Vault of Marks | product | 500 / 1,500 / 5,000 Marks |
+| Server XP Boost | product | x2 XP for **everyone** in the server for 30 minutes (stacks; a feed line thanks the buyer, a timer shows under the UPGRADES button) |
+| Challenge Reroll | product | swap one of today's challenges (the **SWAP** button on a challenge, or the first one not done) |
+| Fireworks Show | product | a firework show over the buyer that everyone sees |
+| Single styles | product | a style with `Source = "Robux"` (`Config.Monetization.Products.Cosmetics[<item id>]`) |
+
+**How it works** (`MonetizationService`): passes are checked on join
+(`UserOwnsGamePassAsync`, in a pcall, retried) and on
+`PromptGamePassPurchaseFinished`, and published as player attributes
+`Pass_<Key>` (true / false). Products go through `ProcessReceipt`, which
+never grants twice: each `PurchaseId` is recorded in the player's saved
+profile (`Receipts`), the profile is saved straight away, and the purchase
+is only confirmed once that save worked (otherwise, or while the player's
+data is still loading, it answers `NotProcessedYet` and Roblox asks again
+later).
+
+**Styles** (`ShopService`, the STYLE tab): `Config.CosmeticItems` by slot,
+each with a colour swatch and a WEAR / BUY (Marks) / Robux / pass / season
+button. Owned and worn styles are saved in the profile's `Cosmetics`
+(`{ Owned, Equip = { [Slot] = id } }`) and published as `Cos_<Slot>`
+attributes (`""` = the corps' issue), which the looks read. Free styles are
+everyone's; pass styles are owned while the pass is.
+
+**The season** (`SeasonService`, `Config.Season`, "Season of Mist"): season
+XP is half of every XP you earn (`XPShare`); 30 tiers, each with an
+optional free and premium reward (Marks or a `Season1_*` style), claimed
+with a button. Saved in the profile's `Season`; it starts over when
+`Config.Season.Id` changes (set `EndsUtc` to show the time left).
+
+### Setting it up
+
+1. Publish the place (File > Publish to Roblox).
+2. In the [Creator Dashboard](https://create.roblox.com/dashboard/creations),
+   open the experience > **Monetization** > **Passes**: create the five
+   passes (Double Marks, Commander Pack, Second Technique Slot, Shifter Pack,
+   Season Premium), set them **On Sale** with a price.
+3. **Monetization** > **Developer Products**: create the products (three
+   Marks bags, Server XP Boost, Challenge Reroll, Fireworks Show, and one per
+   Robux style you want to sell).
+4. Copy each id into `src/shared/Config.lua` > `Config.Monetization`
+   (`GamePasses`, `Products`, `Products.Cosmetics`). Never use someone else's
+   ids.
+5. Game Settings > Security: **Enable Studio Access to API Services** (for
+   saving and for prices in Studio).
+6. Press Play in Studio: purchases there are **test purchases** (no Robux
+   spent), and the Studio self-check lists every id still 0 and checks that
+   the season's rewards exist.
+
+Premium Payouts (Roblox pays you for the time Premium members play) need no
+code.
+
 ## The HUD
 
 Crosshair with left/right hook marks (gold flying, sky blue hooked); the
@@ -626,10 +699,12 @@ sound you've uploaded (`rbxassetid://...`).
 | `src/shared/Upgrades.lua` | upgrade levels to values (player attributes `Up_<Track>`) |
 | `src/shared/Stats.lua` | a hunter's final numbers: base rig + upgrades + level + gear (`Stats.For`, `Stats.Grapple`, `Stats.Changed`), the XP curve |
 | `src/server/LevelService.lua` | XP and levels (attributes `Level`, `XP`, `XPNext`), level-up announcements and rewards, the leaderboard's Level |
-| `src/client/UpgradeShop.lua` | the shop (upgrades, gear, techniques, titans, challenges, looks), its button, the round summary card |
+| `src/client/UpgradeShop.lua` | the shop (upgrades, gear, techniques, titans, challenges, looks, Robux, styles, season), its button, the XP boost timer, fireworks, the round summary card |
 | `src/server/ShopService.lua` | buying gear, techniques and titan forms with Marks; what each hunter wears (`Equip_*` attributes) |
 | `src/server/TechniqueService.lua` | the six techniques, checked and carried out on the server |
 | `src/client/TechniqueController.lua` | the technique key / button, its cooldown ring, the dashes and the gas refill |
+| `src/server/MonetizationService.lua` | the Robux shop: game passes (`Pass_*` attributes), developer products, idempotent receipts, the XP boost, fireworks |
+| `src/server/SeasonService.lua` | the season pass: season XP, tiers, claiming rewards |
 | `src/server/Respawn.lua` | respawning on the wall, retried if it fails |
 | `src/client/CosmeticsClient.lua` | cosmetic gas and cable colours, defeat effects (yours and other hunters') |
 

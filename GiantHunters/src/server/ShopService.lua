@@ -310,7 +310,7 @@ local function sendStyles(player: Player)
 		end
 	end
 	local equip: { [string]: string } = {}
-	for _, slot in Config.Monetization.StyleSlots do
+	for _, slot in Config.CosmeticSlots do
 		local worn = player:GetAttribute(`Cos_{slot}`)
 		equip[slot] = if type(worn) == "string" then worn else ""
 	end
@@ -325,7 +325,7 @@ local function publishStyles(player: Player)
 		return
 	end
 	local saved = cosmeticsOf(profile).Equip
-	for _, slot in Config.Monetization.StyleSlots do
+	for _, slot in Config.CosmeticSlots do
 		local id = saved[slot]
 		local item = if type(id) == "string" and id ~= "" then styleItem(id) else nil
 		local ok = item ~= nil and item.Slot == slot and ShopService.OwnsStyle(player, id)
@@ -396,7 +396,7 @@ local function buyStyle(player: Player, profile: any, id: string)
 end
 
 local function equipStyle(player: Player, profile: any, slot: string, id: string)
-	if not table.find(Config.Monetization.StyleSlots, slot) then
+	if not table.find(Config.CosmeticSlots, slot) then
 		return
 	end
 	local item = if id ~= "" then styleItem(id) else nil
@@ -475,7 +475,7 @@ local function onPlayerAdded(player: Player)
 	for _, slot in EQUIP_SLOTS do
 		player:SetAttribute(`Equip_{slot}`, "")
 	end
-	for _, slot in Config.Monetization.StyleSlots do
+	for _, slot in Config.CosmeticSlots do
 		player:SetAttribute(`Cos_{slot}`, "")
 	end
 	player:GetAttributeChangedSignal("DataLoaded"):Connect(function()

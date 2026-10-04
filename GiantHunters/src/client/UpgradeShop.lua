@@ -239,7 +239,7 @@ local function renderChallenges(page: ScrollingFrame)
 		bar(frame, UDim2.fromOffset(12, 40), UDim2.new(1, -170, 0, 12), (c.Progress or 0) / math.max(c.Goal or 1, 1), if done then GOOD else BRASS)
 		label({ AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -150, 0, 54), Size = UDim2.fromOffset(80, 14), Text = `{c.Progress or 0} / {c.Goal or 1}`, TextSize = 11, TextColor3 = MUTED, TextXAlignment = Enum.TextXAlignment.Right, Parent = frame })
 		-- (A Challenge Reroll, when it's set up: swap this one for another.)
-		local rerollId = Config.Monetization.Products.ChallengeReroll or 0
+		local rerollId = Config.Monetization.Products.ChallengeReroll
 		local swap = not done and rerollId ~= 0
 		if swap then
 			button({
@@ -540,7 +540,8 @@ local function passId(key: string): number
 end
 
 local function productId(key: string): number
-	return MON.Products[key] or 0
+	local id = (MON.Products :: any)[key]
+	return if type(id) == "number" then id else 0
 end
 
 local function ownsPass(key: string): boolean
@@ -576,10 +577,8 @@ local function styleProduct(id: string, item: any): number
 	if item.Source ~= "Robux" then
 		return 0
 	end
-	if type(item.ProductKey) == "string" and productId(item.ProductKey) ~= 0 then
-		return productId(item.ProductKey)
-	end
-	return MON.CosmeticProducts[id] or 0
+	local key = if type(item.ProductKey) == "string" then item.ProductKey else id
+	return MON.Products.Cosmetics[key] or 0
 end
 
 -- The swatch colour of a style's Preview (whatever colour it carries).
@@ -661,7 +660,7 @@ local function renderStyle(page: ScrollingFrame)
 	local worn = (styleState and styleState.Equip) or {}
 	local marks = currentMarks()
 	local order = 0
-	for _, slot in MON.StyleSlots do
+	for _, slot in Config.CosmeticSlots do
 		local list = {}
 		for id, item in items do
 			if type(id) == "string" and type(item) == "table" and item.Slot == slot then
@@ -720,7 +719,13 @@ local function renderStyle(page: ScrollingFrame)
 						monetRemote:FireServer("Buy", item.PassKey)
 					end
 				elseif item.Source == "Season" then
-					text = if type(item.SeasonTier) == "number" then `SEASON  {item.SeasonTier}` else "SEASON"
+					local seasonTier: number? = if type(item.SeasonTier) == "number" then item.SeasonTier else nil
+					for t, spec in Config.Season.Tiers do
+						if (spec.Free and spec.Free.Cosmetic == id) or (spec.Premium and spec.Premium.Cosmetic == id) then
+							seasonTier = t
+						end
+					end
+					text = if seasonTier then `SEASON  TIER {seasonTier}` else "SEASON"
 					onClick = function()
 						toast("Earn it on the season track (SEASON tab)", MUTED)
 					end

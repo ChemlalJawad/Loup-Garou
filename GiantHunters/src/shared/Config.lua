@@ -1464,18 +1464,28 @@ Config.Monetization = {
 		ServerXPBoost = 0, -- x2 XP for the whole server for XPBoost.Duration (stacks)
 		ChallengeReroll = 0, -- swap one of your daily challenges for another
 		Fireworks = 0, -- a firework show over you, for everyone to see
-		-- Single Robux cosmetics: add `<ProductKey> = <id>` here for a
-		-- Config.CosmeticItems entry with Source = "Robux" and that ProductKey.
-	} :: { [string]: number },
-	-- ...or by cosmetic id (Config.CosmeticItems[id], Source = "Robux"),
-	-- for items without a ProductKey: { [itemId] = productId }.
-	CosmeticProducts = {} :: { [string]: number },
+		-- Single Robux styles: Config.CosmeticItems entries with Source =
+		-- "Robux", by their ProductKey (= the item id).
+		Cosmetics = {
+			NightGlowCape = 0,
+			SunsetSplitCape = 0,
+			LilacFoilBlade = 0,
+			LimeSparkBlade = 0,
+			RainbowTrail = 0,
+			CandyTrail = 0,
+			BubblegumGas = 0,
+			RainbowGas = 0,
+			SunbeamCable = 0,
+			RainbowCable = 0,
+			HeartBurst = 0,
+			BubblePop = 0,
+			SnowSkin = 0,
+		} :: { [string]: number },
+	},
 	MarksBags = { MarksSmall = 500, MarksMedium = 1500, MarksLarge = 5000 } :: { [string]: number },
 	DoubleMarksMultiplier = 2, -- (Marks from play only: not bags, not season rewards)
 	XPBoost = { Multiplier = 2, Duration = 30 * 60 }, -- seconds; Workspace attribute "XPBoostUntil"
 	Fireworks = { Height = 55, Bursts = 7 },
-	-- The STYLE tab's slots, in order (Config.CosmeticItems[id].Slot).
-	StyleSlots = { "Cape", "Blade", "Trail", "Gas", "Cable", "Defeat", "TitanSkin" },
 	PromptCooldown = 1, -- seconds between purchase prompts the server opens for one player
 	-- What the ROBUX tab shows (Key: a GamePasses or Products key).
 	Cards = {

@@ -94,6 +94,65 @@ function StudioCheck.Run(world: { Spawn: BasePart?, GiantSpawns: { Vector3 } })
 	end
 	report("INFO", `shop items: {count}`)
 
+	-- The Robux shop: ids still 0 are hidden and refused (paste yours from
+	-- the Creator Dashboard into Config.Monetization).
+	local mon = Config.Monetization
+	local unset: { string } = {}
+	for key, id in mon.GamePasses do
+		if id == 0 then
+			table.insert(unset, `GamePasses.{key}`)
+		end
+	end
+	for _, key in { "MarksSmall", "MarksMedium", "MarksLarge", "ServerXPBoost", "ChallengeReroll", "Fireworks" } do
+		if (mon.Products :: any)[key] == 0 then
+			table.insert(unset, `Products.{key}`)
+		end
+	end
+	local styleUnset = 0
+	for key, id in mon.Products.Cosmetics do
+		if id == 0 then
+			styleUnset += 1
+		end
+		local item = Config.CosmeticItems[key]
+		if not item or item.Source ~= "Robux" then
+			report("WARN", `Monetization.Products.Cosmetics.{key}: no Robux style with that id`)
+		end
+	end
+	table.sort(unset)
+	check(#unset == 0, if #unset == 0 then "all game pass and product ids set" else `monetization ids still 0 (hidden in the shop): {table.concat(unset, ", ")}`, "WARN")
+	check(styleUnset == 0, `Robux style product ids still 0: {styleUnset}`, "WARN")
+	for id, item in Config.CosmeticItems do
+		if item.Source == "Robux" and mon.Products.Cosmetics[item.ProductKey or id] == nil then
+			report("WARN", `style {id} is sold for Robux but has no Monetization.Products.Cosmetics entry`)
+		elseif item.Source == "Pass" and (item.PassKey == nil or mon.GamePasses[item.PassKey] == nil) then
+			report("FAIL", `style {id}: PassKey "{tostring(item.PassKey)}" isn't in Monetization.GamePasses`)
+		end
+	end
+
+	-- The season: tiers in order, rewards that exist.
+	local lastXP = 0
+	local seasonOk = true
+	for i, tier in Config.Season.Tiers do
+		if tier.XP <= lastXP then
+			report("FAIL", `Season tier {i}: XP {tier.XP} isn't above the tier before`)
+			seasonOk = false
+		end
+		lastXP = tier.XP
+		for _, reward in { tier.Free, tier.Premium } do
+			local cosmetic = reward and reward.Cosmetic
+			if cosmetic then
+				local item = Config.CosmeticItems[cosmetic]
+				if not item then
+					report("FAIL", `Season tier {i}: style "{cosmetic}" isn't in Config.CosmeticItems`)
+					seasonOk = false
+				elseif item.Source ~= "Season" then
+					report("WARN", `Season tier {i}: style "{cosmetic}" has Source "{item.Source}", not "Season"`)
+				end
+			end
+		end
+	end
+	check(seasonOk, `season "{Config.Season.Id}": {#Config.Season.Tiers} tiers, rewards found`)
+
 	-- Every giant kind and titan form builds, far away, then is removed.
 	local rng = Random.new(1)
 	local function tryBuild(label: string, kindName: string, form: any?)
