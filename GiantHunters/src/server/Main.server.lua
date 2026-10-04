@@ -43,4 +43,9 @@ require(script.Parent.WeatherService).Init()
 WaveService.RoundEnded.Event:Connect(ShifterService.ClearPowers)
 WaveService.DistrictFallen.Event:Connect(ShifterService.ClearPowers)
 
+-- The shop's gear, techniques and titan forms (Marks and levels are in by
+-- now), and the techniques themselves.
+require(script.Parent.ShopService).Init()
+require(script.Parent.TechniqueService).Init()
+
 print(`[{Config.GAME_NAME}] server ready`)

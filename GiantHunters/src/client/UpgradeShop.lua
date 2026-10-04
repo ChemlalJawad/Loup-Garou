@@ -3,17 +3,16 @@
 -- end-of-round summary.
 --
 -- Opened from the "UPGRADES" button (left edge, sized for thumbs) or at an
--- upgrade board (the headquarters, the spawn post: key R). Three tabs:
+-- upgrade board (the headquarters, the spawn post: key R). Six tabs:
 --   * Upgrades: each track's level, what the next one gives, and its price
 --     in Marks;
+--   * Gear, Techniques, Titans: cards for Config.Catalog and
+--     Config.TitanForms, with what each changes (+12% speed, -10% gas...),
+--     its price and level, why it's locked, and buy / equip buttons;
 --   * Challenges: today's three, with progress bars and the time left;
 --   * Look: cape colours and titles, with how to unlock the locked ones.
--- The server decides everything (ProgressService); this only shows its
--- snapshot and sends requests.
---
--- It also keeps this client's Config.Grapple in step with the player's
--- upgrade levels (Upgrades.ApplyToGrapple), so the grapple and the gas
--- gauge use the upgraded tank, refill, reel and range.
+-- The server decides everything (ProgressService, ShopService); this only
+-- shows their snapshots and sends requests.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -40,6 +39,7 @@ local LOCKED = Color3.fromRGB(70, 72, 82)
 local DESIGN = Vector2.new(640, 440) -- the window's size before scaling
 
 local remote: RemoteEvent
+local shopRemote: RemoteEvent
 local gui: ScreenGui
 local window: Frame
 local marksLabel: TextLabel
@@ -55,7 +55,24 @@ local scales: { UIScale } = {}
 
 local current = "Upgrades"
 local snapshot: any = nil
+local shopState: any = nil -- ShopService's { Owned, Equip }
 local toastToken = 0
+
+local TABS = { "Upgrades", "Gear", "Techniques", "Titans", "Challenges", "Look" }
+
+-- The live balance (the shop's purchases change it between snapshots).
+local function currentMarks(): number
+	local marks = player:GetAttribute("Marks")
+	if type(marks) == "number" then
+		return marks
+	end
+	return (snapshot and snapshot.Marks) or 0
+end
+
+local function currentLevel(): number
+	local level = player:GetAttribute("Level")
+	return if type(level) == "number" then level else 1
+end
 local summaryToken = 0
 
 local function new(className: string, props: { [string]: any }): any
@@ -160,7 +177,7 @@ local function bar(parent: Instance, position: UDim2, size: UDim2, ratio: number
 end
 
 local function renderUpgrades(page: ScrollingFrame)
-	local marks = snapshot.Marks or 0
+	local marks = currentMarks()
 	for i, name in Config.Upgrades.Order do
 		local track = Config.Upgrades.Tracks[name]
 		local level = (snapshot.Upgrades and snapshot.Upgrades[name]) or 0
@@ -293,8 +310,189 @@ local function renderLook(page: ScrollingFrame)
 	end
 end
 
+-- === Gear, techniques, titans ================================================
+
+type Card = {
+	Id: string,
+	Category: string, -- "Gear" | "Technique" | "Titan"
+	Display: string,
+	Description: string,
+	Price: number,
+	LevelRequired: number,
+	Order: number,
+	Lines: { { Text: string, Good: boolean } }, -- what it changes
+}
+
+local function percent(mult: number, what: string): { Text: string, Good: boolean }
+	local delta = math.floor((mult - 1) * 100 + 0.5)
+	return { Text = `{if delta >= 0 then "+" else "-"}{math.abs(delta)}% {what}`, Good = delta >= 0 }
+end
+
+local function gearLines(mods: Config.GearMods?): { { Text: string, Good: boolean } }
+	local lines = {}
+	if not mods then
+		return lines
+	end
+	if mods.SpeedMult then
+		table.insert(lines, percent(mods.SpeedMult, "speed"))
+	end
+	if mods.GasMult then
+		table.insert(lines, percent(mods.GasMult, "gas"))
+	end
+	if mods.GasRegenMult then
+		table.insert(lines, percent(mods.GasRegenMult, "gas refill"))
+	end
+	if mods.ReelMult then
+		table.insert(lines, percent(mods.ReelMult, "reel"))
+	end
+	if mods.DamageMult then
+		table.insert(lines, percent(mods.DamageMult, "damage"))
+	end
+	if mods.HookRangeAdd then
+		table.insert(lines, { Text = `{if mods.HookRangeAdd >= 0 then "+" else "-"}{math.abs(mods.HookRangeAdd)} hook range`, Good = mods.HookRangeAdd >= 0 })
+	end
+	if mods.BladeAdd then
+		local n = math.abs(mods.BladeAdd)
+		table.insert(lines, { Text = `{if mods.BladeAdd >= 0 then "+" else "-"}{n} blade{if n == 1 then "" else "s"}`, Good = mods.BladeAdd >= 0 })
+	end
+	return lines
+end
+
+local function techniqueLines(spec: Config.TechniqueSpec?): { { Text: string, Good: boolean } }
+	local lines = {}
+	if not spec then
+		return lines
+	end
+	table.insert(lines, { Text = `cooldown {spec.Cooldown} s`, Good = true })
+	if spec.Range then
+		table.insert(lines, { Text = `range {spec.Range} studs`, Good = true })
+	elseif spec.Radius then
+		table.insert(lines, { Text = `{spec.Radius} studs round you`, Good = true })
+	elseif spec.Distance then
+		table.insert(lines, { Text = `{spec.Distance}-stud dash`, Good = true })
+	end
+	if spec.BladeCost then
+		table.insert(lines, { Text = `uses {spec.BladeCost} blade`, Good = false })
+	end
+	return lines
+end
+
+local function cardsFor(category: string): { Card }
+	local cards: { Card } = {}
+	if category == "Titan" then
+		local forms = (Config :: any).TitanForms
+		if type(forms) == "table" then
+			for id, form in forms do
+				if type(id) == "string" and type(form) == "table" then
+					table.insert(cards, {
+						Id = id,
+						Category = "Titan",
+						Display = tostring(form.Display or id),
+						Description = tostring(form.Description or ""),
+						Price = tonumber(form.Price) or 0,
+						LevelRequired = tonumber(form.LevelRequired) or 1,
+						Order = tonumber(form.Order) or 99,
+						Lines = {},
+					})
+				end
+			end
+		end
+	else
+		for id, item in Config.Catalog do
+			if item.Category == category then
+				table.insert(cards, {
+					Id = id,
+					Category = category,
+					Display = item.Display,
+					Description = item.Description,
+					Price = item.Price,
+					LevelRequired = item.LevelRequired,
+					Order = item.Order,
+					Lines = if category == "Gear" then gearLines(item.Mods) else techniqueLines(item.Technique),
+				})
+			end
+		end
+	end
+	table.sort(cards, function(a, b)
+		return if a.Order ~= b.Order then a.Order < b.Order else a.Id < b.Id
+	end)
+	return cards
+end
+
+local function renderCatalog(page: ScrollingFrame, category: string)
+	local cards = cardsFor(category)
+	if #cards == 0 then
+		label({ Size = UDim2.new(1, -8, 0, 40), Text = if category == "Titan" then "Titan forms are coming soon!" else "Nothing here yet.", TextSize = 16, TextColor3 = MUTED, Parent = page })
+		return
+	end
+	local marks = currentMarks()
+	local level = currentLevel()
+	local owned = (shopState and shopState.Owned) or {}
+	local equipped = (shopState and shopState.Equip and shopState.Equip[category]) or ""
+	for i, card in cards do
+		local has = card.Price <= 0 or owned[card.Id] == true
+		local wearing = equipped == card.Id
+		local levelOk = level >= card.LevelRequired
+		local frame = row(page, 92, i)
+		if wearing then
+			new("UIStroke", { Color = GOOD, Thickness = 2, ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Parent = frame })
+		end
+		label({ Position = UDim2.fromOffset(12, 6), Size = UDim2.new(1, -160, 0, 22), Text = card.Display, TextSize = 18, Font = Enum.Font.GothamBlack, TextColor3 = if has or levelOk then TEXT else MUTED, Parent = frame })
+		label({ Position = UDim2.fromOffset(12, 28), Size = UDim2.new(1, -160, 0, 30), Text = card.Description, TextSize = 12, TextColor3 = MUTED, Font = Enum.Font.GothamMedium, TextWrapped = true, TextYAlignment = Enum.TextYAlignment.Top, Parent = frame })
+		-- What it changes, green for better and red for worse.
+		local parts = {}
+		for _, line in card.Lines do
+			local hex = if line.Good then "#6EDC82" else "#F07869"
+			table.insert(parts, `<font color="{hex}">{line.Text}</font>`)
+		end
+		label({ Position = UDim2.fromOffset(12, 64), Size = UDim2.new(1, -160, 0, 18), Text = table.concat(parts, "   "), RichText = true, TextSize = 13, Parent = frame })
+		label({ AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -10, 0, 6), Size = UDim2.fromOffset(130, 18), Text = if has then "OWNED" else `Level {card.LevelRequired}`, TextSize = 12, TextColor3 = if has or levelOk then BRASS else BAD, TextXAlignment = Enum.TextXAlignment.Right, Parent = frame })
+		local text, color, textColor
+		if wearing then
+			text, color, textColor = "EQUIPPED", GOOD, INK
+		elseif has then
+			text, color, textColor = "EQUIP", BRASS, INK
+		elseif not levelOk then
+			text, color, textColor = `LEVEL {card.LevelRequired}`, LOCKED, MUTED
+		else
+			text, color, textColor = `BUY  {card.Price}`, if marks >= card.Price then BRASS else LOCKED, if marks >= card.Price then INK else MUTED
+		end
+		button({
+			AnchorPoint = Vector2.new(1, 1),
+			Position = UDim2.new(1, -10, 1, -10),
+			Size = UDim2.fromOffset(130, 44),
+			Text = text,
+			TextSize = 15,
+			BackgroundColor3 = color,
+			TextColor3 = textColor,
+			Parent = frame,
+		}, function()
+			if wearing then
+				shopRemote:FireServer("Equip", card.Category, "") -- tap again to take it off
+			elseif has then
+				shopRemote:FireServer("Equip", card.Category, card.Id)
+			elseif not levelOk then
+				toast(`Reach level {card.LevelRequired} to unlock {card.Display}`, MUTED)
+			elseif marks < card.Price then
+				toast(`You need {card.Price - marks} more Marks`, MUTED)
+			else
+				shopRemote:FireServer("Buy", card.Category, card.Id)
+			end
+		end)
+	end
+	if category == "Technique" then
+		footer.Text = "Use your technique with V, R2 on a gamepad, or the SKILL button."
+	elseif category == "Titan" then
+		footer.Text = "Your titan form is the shape you take when you transform."
+	else
+		footer.Text = "One set of gear at a time: tap EQUIPPED to go back to the corps' issue."
+	end
+end
+
+local CATALOG_TABS: { [string]: string } = { Gear = "Gear", Techniques = "Technique", Titans = "Titan" }
+
 local function render()
-	local marks = (snapshot and snapshot.Marks) or player:GetAttribute("Marks") or 0
+	local marks = currentMarks()
 	marksLabel.Text = `{marks} Marks`
 	openButton.Text = `UPGRADES\n{marks} Marks`
 	for name, tab in tabButtons do
@@ -314,7 +512,9 @@ local function render()
 		label({ Size = UDim2.new(1, -8, 0, 40), Text = "Loading your progress...", TextSize = 16, TextColor3 = MUTED, Parent = page })
 		return
 	end
-	if current == "Upgrades" then
+	if CATALOG_TABS[current] then
+		renderCatalog(page, CATALOG_TABS[current])
+	elseif current == "Upgrades" then
 		renderUpgrades(page)
 	elseif current == "Challenges" then
 		renderChallenges(page)
@@ -327,6 +527,9 @@ local function setOpen(open: boolean)
 	window.Visible = open
 	if open and not snapshot then
 		remote:FireServer("Sync")
+	end
+	if open and not shopState then
+		shopRemote:FireServer("Sync")
 	end
 	render()
 end
@@ -400,8 +603,8 @@ local function build()
 		setOpen(false)
 	end)
 
-	for i, name in { "Upgrades", "Challenges", "Look" } do
-		tabButtons[name] = button({ Position = UDim2.fromOffset(16 + (i - 1) * 140, 50), Size = UDim2.fromOffset(132, 36), Text = string.upper(name), TextSize = 15, Parent = window }, function()
+	for i, name in TABS do
+		tabButtons[name] = button({ Position = UDim2.fromOffset(16 + (i - 1) * 102, 50), Size = UDim2.fromOffset(96, 36), Text = string.upper(name), TextSize = 12, Parent = window }, function()
 			current = name
 			render()
 		end)
@@ -469,14 +672,12 @@ end
 function UpgradeShop.Init()
 	local remotes = ReplicatedStorage:WaitForChild("Remotes")
 	remote = remotes:WaitForChild(Config.Remotes.Progress) :: RemoteEvent
+	shopRemote = remotes:WaitForChild(Config.Remotes.Shop) :: RemoteEvent
 	local summaryRemote = remotes:WaitForChild(Config.Remotes.RoundSummary) :: RemoteEvent
 
-	-- The rig follows the upgrade levels (from the start, and on each buy).
-	Upgrades.ApplyToGrapple(player)
+	-- (The grapple reads its upgraded numbers from Stats itself.)
 	player.AttributeChanged:Connect(function(name)
-		if Upgrades.TrackOf(name) then
-			Upgrades.ApplyToGrapple(player)
-		elseif name == "Marks" and openButton then
+		if (name == "Marks" or name == "Level") and openButton then
 			render()
 		end
 	end)
@@ -496,8 +697,17 @@ function UpgradeShop.Init()
 			toast(`Challenge complete: {tostring(a)}  +{tostring(b)} Marks`, BRASS)
 		end
 	end)
+	shopRemote.OnClientEvent:Connect(function(kind: unknown, a: unknown, b: unknown)
+		if kind == "State" then
+			shopState = a
+			render()
+		elseif kind == "Result" then
+			toast(tostring(b), if a == true then GOOD else BAD)
+		end
+	end)
 	summaryRemote.OnClientEvent:Connect(showSummary)
 	remote:FireServer("Sync")
+	shopRemote:FireServer("Sync")
 end
 
 return UpgradeShop

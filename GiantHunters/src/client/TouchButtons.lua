@@ -26,6 +26,7 @@ local SLOTS: { [string]: Slot } = {
 	Dash = { X = -0.85, Y = -2.85, Size = 0.9 },
 	Flare = { X = -0.85, Y = -3.95, Size = 0.75 },
 	Titan = { X = -2.05, Y = -3.7, Size = 0.85 },
+	Technique = { X = -3.2, Y = -3.8, Size = 0.85 }, -- the shop technique (TechniqueController)
 }
 
 type Button = { Gui: TextButton, Slot: Slot, Shown: boolean }

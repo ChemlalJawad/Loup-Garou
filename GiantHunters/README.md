@@ -203,6 +203,7 @@ anyone who comes close. Worth 12 points.
 | Signal flare | G | Y | "Flare" |
 | Transform into a titan (with the titan power) | T | D-pad up | "Titan" |
 | Titan: punch / roar | Click or F / G | X / Y | "Punch" / "Roar" |
+| Your technique (bought in the shop) | V | R2 | "Skill" |
 | Wriggle free when grabbed | mash any key or click | mash any button | tap anywhere |
 | Resupply gas & blades (at a crate with a blue beam) | R | D-pad down | tap the prompt |
 | Fire a wall cannon / take the titan crystal | R | D-pad down | tap the prompt |
@@ -413,6 +414,51 @@ each hunter their own top speed) all read `Stats.For(player)`, and
 `Stats.Changed` tells them when to look again. Nape health can be
 fractional: armour plates still crack by hits, a slow cut still does half.
 
+## Shop: gear, techniques and titans
+
+The shop (the **UPGRADES** button or an upgrade board) also has **Gear**,
+**Techniques** and **Titans** tabs. Everything is bought once with Marks
+(never real money), from a hunter level, and is yours for good. Each card
+shows what it changes in green and red, its price and level, and why it's
+locked; tap **EQUIP** to wear it (tap **EQUIPPED** to take it off). One
+gear set, one technique and one titan form are worn at a time (player
+attributes `Equip_Gear`, `Equip_Technique`, `Equip_Titan`, saved with the
+profile's `Owned` and `Equip`).
+
+**Gear** (`Config.Catalog`, `Mods` read by `Stats.For`): every set is a
+trade-off, and shows on the hunter (rig and tank colours, tank size, sword
+hilts and glowing edge; `HunterGear.ApplyGearLook`).
+
+| Gear | Level | Marks | Effect |
+|---|---|---|---|
+| Swift Rig | 2 | 150 | +12% speed, -10% gas |
+| Long-Haul Tanks | 2 | 150 | +25% gas, -7% speed (bigger tanks) |
+| Heavy Edge Blades | 4 | 250 | +25% damage, -10% reel |
+| Featherweight Set | 5 | 250 | +8% speed, +8% reel, -15% gas, -1 blade |
+| Ranger Rig | 6 | 300 | +25 studs hook range, -15% gas refill |
+| Storm-Cell Rig | 8 | 350 | +35% gas refill, -10% gas |
+| Bulwark Kit | 10 | 400 | +2 blades, -6% speed |
+| Veteran's Rig | 20 | 900 | +5% speed, gas, refill, reel and damage |
+
+**Techniques**: one active ability on **V** (R2 on a gamepad, the
+**SKILL** button on a touch screen), with a cooldown ring at the right of
+the screen. The client only asks; `TechniqueService` checks that you own
+and wear it, that you're alive, free and not a titan, its cooldown and its
+own rules, then does it. Cuts go through `GiantService.TryHit`, so armour,
+guarding hands, points, Marks and challenges work as for any slash.
+
+| Technique | Level | Marks | Cooldown | What it does |
+|---|---|---|---|---|
+| Gale Burst | 1 | 100 | 8 s | a gust throws you where you're heading, no gas needed |
+| Second Wind | 2 | 150 | 60 s | half a tank of gas back |
+| Smoke Pellet | 3 | 200 | 25 s | a smoke cloud dazes every giant within 35 studs |
+| Anchor Pull | 4 | 250 | 20 s | yanks a Small or Medium giant's ankle (within 60 studs, near your aim): it trips |
+| Whirlwind Cut | 5 | 300 | 14 s | a 40-stud spinning dash that cuts up to 2 napes it passes; uses a blade |
+| Flare Lance | 10 | 600 | 45 s | a glowing lance flies up to 120 studs; within 6 studs of a nape it lands one full cut (cracks armour first) |
+
+**Titans**: the forms in `Config.TitanForms` (the titan shifters), bought
+and worn the same way; the tab says "coming soon" while there are none.
+
 ## The HUD
 
 Crosshair with left/right hook marks (gold flying, sky blue hooked); the
@@ -513,7 +559,10 @@ sound you've uploaded (`rbxassetid://...`).
 | `src/shared/Upgrades.lua` | upgrade levels to values (player attributes `Up_<Track>`) |
 | `src/shared/Stats.lua` | a hunter's final numbers: base rig + upgrades + level + gear (`Stats.For`, `Stats.Grapple`, `Stats.Changed`), the XP curve |
 | `src/server/LevelService.lua` | XP and levels (attributes `Level`, `XP`, `XPNext`), level-up announcements and rewards, the leaderboard's Level |
-| `src/client/UpgradeShop.lua` | the shop (upgrades, challenges, looks), its button, the round summary card |
+| `src/client/UpgradeShop.lua` | the shop (upgrades, gear, techniques, titans, challenges, looks), its button, the round summary card |
+| `src/server/ShopService.lua` | buying gear, techniques and titan forms with Marks; what each hunter wears (`Equip_*` attributes) |
+| `src/server/TechniqueService.lua` | the six techniques, checked and carried out on the server |
+| `src/client/TechniqueController.lua` | the technique key / button, its cooldown ring, the dashes and the gas refill |
 | `src/server/Respawn.lua` | respawning on the wall, retried if it fails |
 
 Movement runs on each player's own client, so the grapple feels instant.

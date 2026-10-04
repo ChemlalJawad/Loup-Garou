@@ -415,6 +415,9 @@ Config.Remotes = {
 	Progress = "GH_Progress", -- client -> server ("Sync") | ("Buy", track) | ("Cape", id) | ("Title", id?); server -> client ("State", snapshot) | ("Result", ok, message) | ("Challenge", text, reward) | ("Open")
 	RoundSummary = "GH_RoundSummary", -- server -> client ({ Round, Won, Takedowns, CleanCuts, BestSpeed, Points, Marks })
 	XP = "GH_XP", -- server -> client ("XP", amount) | ("LevelUp", level, marks) (Level, XP, XPNext are player attributes)
+	-- Shop: gear, techniques, titans (ShopService / TechniqueService):
+	Shop = "GH_Shop", -- client -> server ("Sync") | ("Buy", category, id) | ("Equip", category, id); category "Gear" | "Technique" | "Titan"; server -> client ("State", { Owned, Equip }) | ("Result", ok, message)
+	Technique = "GH_Technique", -- client -> server (aimPoint: Vector3?, the world point under the crosshair); server -> client ("Go", id, cooldown) | ("Denied", id, reason, wait) | ("Hits", id, count)
 }
 -- (Held also sends ("Wriggle", { Count, Needed }): the server's own count of
 -- a held hunter's wriggles, which drives the wriggle bar. Wave also carries
@@ -761,6 +764,226 @@ Config.Feel = {
 	MaxBursts = 6, -- pooled nape bursts (steam + sparks) at once
 	FloatingTexts = 8, -- pooled "+8 x3" texts
 	BigTextScale = 1.25, -- the "bigger text" setting (on by default on phones)
+}
+
+-- === Shop: gear and techniques (ShopService / TechniqueService) ==============
+-- Bought once with Marks (never real money), from a hunter level (the
+-- player's "Level" attribute; 1 if missing). One gear set and one technique
+-- are worn at a time (player attributes "Equip_Gear", "Equip_Technique", and
+-- "Equip_Titan" for Config.TitanForms), saved under the profile's "Owned"
+-- and "Equip" keys.
+--
+-- Mods (read by Stats.For for the equipped gear; missing = no change):
+--   SpeedMult      x the rig's top speed and boosts
+--   GasMult        x the tank size
+--   GasRegenMult   x the tank refill
+--   ReelMult       x the reel speed and pull
+--   DamageMult     x the damage of a nape cut
+--   HookRangeAdd   + studs of hook range
+--   BladeAdd       + blades per resupply
+-- Look: how the gear shows on the hunter (HunterGear.ApplyGearLook).
+export type GearMods = {
+	SpeedMult: number?,
+	GasMult: number?,
+	GasRegenMult: number?,
+	ReelMult: number?,
+	DamageMult: number?,
+	HookRangeAdd: number?,
+	BladeAdd: number?,
+}
+export type GearLook = {
+	Rig: Color3?, -- the reel box and blade boxes
+	Steel: Color3?, -- the drum, launchers, tanks and trim
+	TankScale: number?, -- x the gas tanks' size
+	Hilt: Color3?, -- the swords' hilts and collars
+	Edge: Color3?, -- the swords' glowing edge and their trail
+}
+-- Every number a technique uses (each uses a few of them).
+export type TechniqueSpec = {
+	Cooldown: number, -- seconds
+	Range: number?, -- studs
+	Radius: number?, -- studs
+	Distance: number?, -- studs (a dash)
+	Speed: number?, -- studs/s
+	Duration: number?, -- seconds
+	MaxHits: number?,
+	BladeCost: number?,
+	GasFraction: number?,
+	Impulse: number?,
+	Kinds: { string }?, -- giant kinds it works on
+}
+export type CatalogItem = {
+	Id: string,
+	Category: string, -- "Gear" | "Technique"
+	Display: string,
+	Description: string,
+	Price: number, -- Marks
+	LevelRequired: number,
+	Order: number,
+	Mods: GearMods?,
+	Look: GearLook?,
+	Technique: TechniqueSpec?,
+}
+
+Config.Catalog = {
+	-- Gear: every set is a trade-off, except the veteran's.
+	SwiftRig = {
+		Id = "SwiftRig",
+		Category = "Gear",
+		Display = "Swift Rig",
+		Description = "A slim, light rig: faster swings, smaller tanks.",
+		Price = 150,
+		LevelRequired = 2,
+		Order = 1,
+		Mods = { SpeedMult = 1.12, GasMult = 0.9 },
+		Look = { Rig = Color3.fromRGB(70, 110, 170), Steel = Color3.fromRGB(205, 220, 235), TankScale = 0.85, Edge = Color3.fromRGB(140, 210, 255) },
+	},
+	LongHaulTanks = {
+		Id = "LongHaulTanks",
+		Category = "Gear",
+		Display = "Long-Haul Tanks",
+		Description = "Big tanks for long patrols: lots more gas, a bit slower.",
+		Price = 150,
+		LevelRequired = 2,
+		Order = 2,
+		Mods = { GasMult = 1.25, SpeedMult = 0.93 },
+		Look = { Rig = Color3.fromRGB(88, 96, 70), Steel = Color3.fromRGB(150, 160, 130), TankScale = 1.3 },
+	},
+	HeavyEdge = {
+		Id = "HeavyEdge",
+		Category = "Gear",
+		Display = "Heavy Edge Blades",
+		Description = "Thick, heavy blades hit harder; the reel feels the weight.",
+		Price = 250,
+		LevelRequired = 4,
+		Order = 3,
+		Mods = { DamageMult = 1.25, ReelMult = 0.9 },
+		Look = { Rig = Color3.fromRGB(46, 44, 48), Hilt = Color3.fromRGB(40, 36, 36), Edge = Color3.fromRGB(255, 160, 70) },
+	},
+	Featherweight = {
+		Id = "Featherweight",
+		Category = "Gear",
+		Display = "Featherweight Set",
+		Description = "Everything trimmed down: quick and nimble, but less gas and one blade fewer.",
+		Price = 250,
+		LevelRequired = 5,
+		Order = 4,
+		Mods = { SpeedMult = 1.08, ReelMult = 1.08, GasMult = 0.85, BladeAdd = -1 },
+		Look = { Rig = Color3.fromRGB(225, 225, 215), Steel = Color3.fromRGB(240, 240, 235), TankScale = 0.8, Hilt = Color3.fromRGB(230, 225, 210), Edge = Color3.fromRGB(200, 255, 230) },
+	},
+	RangerRig = {
+		Id = "RangerRig",
+		Category = "Gear",
+		Display = "Ranger Rig",
+		Description = "Long cables to reach far-off rooftops; the tanks refill slower.",
+		Price = 300,
+		LevelRequired = 6,
+		Order = 5,
+		Mods = { HookRangeAdd = 25, GasRegenMult = 0.85 },
+		Look = { Rig = Color3.fromRGB(60, 92, 60), Steel = Color3.fromRGB(170, 160, 120), Edge = Color3.fromRGB(170, 255, 150) },
+	},
+	StormCell = {
+		Id = "StormCell",
+		Category = "Gear",
+		Display = "Storm-Cell Rig",
+		Description = "Clever valves catch the wind: much faster refill, smaller tanks.",
+		Price = 350,
+		LevelRequired = 8,
+		Order = 6,
+		Mods = { GasRegenMult = 1.35, GasMult = 0.9 },
+		Look = { Rig = Color3.fromRGB(64, 70, 110), Steel = Color3.fromRGB(150, 180, 230), TankScale = 0.95, Edge = Color3.fromRGB(190, 170, 255) },
+	},
+	BulwarkKit = {
+		Id = "BulwarkKit",
+		Category = "Gear",
+		Display = "Bulwark Kit",
+		Description = "Extra blade boxes: two more blades a resupply, a little slower.",
+		Price = 400,
+		LevelRequired = 10,
+		Order = 7,
+		Mods = { BladeAdd = 2, SpeedMult = 0.94 },
+		Look = { Rig = Color3.fromRGB(110, 70, 50), Steel = Color3.fromRGB(190, 160, 110), Hilt = Color3.fromRGB(120, 80, 50) },
+	},
+	VeteransRig = {
+		Id = "VeteransRig",
+		Category = "Gear",
+		Display = "Veteran's Rig",
+		Description = "Fine work, a little better at everything. For seasoned hunters.",
+		Price = 900,
+		LevelRequired = 20,
+		Order = 8,
+		Mods = { SpeedMult = 1.05, GasMult = 1.05, GasRegenMult = 1.05, ReelMult = 1.05, DamageMult = 1.05 },
+		Look = { Rig = Color3.fromRGB(40, 40, 46), Steel = Color3.fromRGB(214, 186, 120), Hilt = Color3.fromRGB(214, 186, 120), Edge = Color3.fromRGB(255, 230, 150) },
+	},
+
+	-- Techniques: one active ability on a key (V / R2 / the "SKILL" button).
+	GaleBurst = {
+		Id = "GaleBurst",
+		Category = "Technique",
+		Display = "Gale Burst",
+		Description = "A gust of wind throws you where you're heading. Needs no gas.",
+		Price = 100,
+		LevelRequired = 1,
+		Order = 11,
+		Technique = { Cooldown = 8, Impulse = 85 },
+	},
+	SecondWind = {
+		Id = "SecondWind",
+		Category = "Technique",
+		Display = "Second Wind",
+		Description = "Crack open the spare valve: half a tank of gas back.",
+		Price = 150,
+		LevelRequired = 2,
+		Order = 12,
+		Technique = { Cooldown = 60, GasFraction = 0.5 },
+	},
+	SmokePellet = {
+		Id = "SmokePellet",
+		Category = "Technique",
+		Display = "Smoke Pellet",
+		Description = "A big cloud of smoke: giants close by can't see for a few seconds.",
+		Price = 200,
+		LevelRequired = 3,
+		Order = 13,
+		Technique = { Cooldown = 25, Radius = 35 },
+	},
+	AnchorPull = {
+		Id = "AnchorPull",
+		Category = "Technique",
+		Display = "Anchor Pull",
+		Description = "Hook a small or medium giant's ankle and yank: down it goes.",
+		Price = 250,
+		LevelRequired = 4,
+		Order = 14,
+		Technique = { Cooldown = 20, Range = 60, Radius = 30, Kinds = { "Small", "Medium" } },
+	},
+	WhirlwindCut = {
+		Id = "WhirlwindCut",
+		Category = "Technique",
+		Display = "Whirlwind Cut",
+		Description = "Spin forward like a top, cutting any nape you pass. Uses one blade.",
+		Price = 300,
+		LevelRequired = 5,
+		Order = 15,
+		Technique = { Cooldown = 14, Distance = 40, Speed = 100, Duration = 0.7, MaxHits = 2, BladeCost = 1 },
+	},
+	FlareLance = {
+		Id = "FlareLance",
+		Category = "Technique",
+		Display = "Flare Lance",
+		Description = "Throw a glowing lance at a nape from far away. Cracks armour too.",
+		Price = 600,
+		LevelRequired = 10,
+		Order = 16,
+		Technique = { Cooldown = 45, Range = 120, Radius = 6, Speed = 180 },
+	},
+} :: { [string]: CatalogItem }
+
+Config.Shop = {
+	ActionCooldown = 0.25, -- seconds between shop requests the server accepts
+	TechniqueKey = Enum.KeyCode.V,
+	TechniqueGamepad = Enum.KeyCode.ButtonR2,
+	TechniqueSlack = 0.3, -- seconds a technique may arrive early (network jitter)
 }
 
 return Config

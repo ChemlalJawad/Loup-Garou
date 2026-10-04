@@ -30,3 +30,6 @@ task.spawn(Weather.Init)
 task.spawn(require(script.Parent.Townsfolk).Init)
 task.spawn(require(script.Parent.Birds).Init)
 task.spawn(require(script.Parent.Breeze).Init)
+
+-- The shop technique: its key (V / R2), SKILL button and cooldown ring.
+task.spawn(require(script.Parent.TechniqueController).Init, Grapple)

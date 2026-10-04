@@ -11,6 +11,8 @@
 --     launcher either side (HookLauncher1 = left, HookLauncher2 = right,
 --     each with a "CableOrigin" attachment at its tip), and on each hip a
 --     blade box with a gas tank on top.
+--   * shop gear (the "Equip_Gear" attribute, Config.Catalog Look) recolours
+--     the rig and the swords and resizes the tanks (ApplyGearLook).
 --
 -- The avatar itself is re-dressed first through its HumanoidDescription
 -- (no asset ids needed): classic shirt and pants off, layered clothing and
@@ -28,7 +30,10 @@
 -- work; on R6 the rig is built on the bottom of the torso.
 
 local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
+
+local Config = require(ReplicatedStorage.Shared.Config)
 
 local HunterGear = {}
 
@@ -408,6 +413,67 @@ function HunterGear.Dress(character: Model)
 	end
 	limbs(gear, character, not uniform)
 	gear.Parent = character
+	HunterGear.ApplyGearLook(character)
+end
+
+-- === Shop gear (Config.Catalog) ==============================================
+-- The equipped gear set (the player's "Equip_Gear" attribute) recolours the
+-- rig and the swords and resizes the gas tanks; no gear: the corps' issue.
+
+local TANK_SIZE = Vector3.new(1.3, 0.4, 0.4)
+local SWORD_HILT = Color3.fromRGB(52, 54, 62)
+local SWORD_COLLAR = Color3.fromRGB(176, 160, 116)
+local SWORD_EDGE = Color3.fromRGB(240, 250, 255)
+local SWORD_TRAIL = Color3.fromRGB(200, 235, 255)
+local RIG_PARTS = { ReelBox = true, BladeBox1 = true, BladeBox2 = true, GasValve1 = true, GasValve2 = true }
+local STEEL_PARTS = { ReelDrum = true, HookLauncher1 = true, HookLauncher2 = true, GasTank1 = true, GasTank2 = true, BladeBoxTrim1 = true, BladeBoxTrim2 = true }
+
+local function gearLook(character: Model): Config.GearLook
+	local player = Players:GetPlayerFromCharacter(character)
+	local id = player and player:GetAttribute("Equip_Gear")
+	local item = if type(id) == "string" then Config.Catalog[id] else nil
+	return (item and item.Category == "Gear" and item.Look) or {}
+end
+
+-- Safe to call any time (the swords may not be on yet: call again after).
+function HunterGear.ApplyGearLook(character: Model)
+	local look = gearLook(character)
+	local gear = character:FindFirstChild("HunterGear")
+	if gear then
+		for _, item in gear:GetChildren() do
+			if item:IsA("BasePart") then
+				if RIG_PARTS[item.Name] then
+					item.Color = look.Rig or DARK_STEEL
+				elseif STEEL_PARTS[item.Name] then
+					item.Color = look.Steel or STEEL
+				end
+				if item.Name == "GasTank1" or item.Name == "GasTank2" then
+					item.Size = TANK_SIZE * (look.TankScale or 1)
+				end
+			end
+		end
+	end
+	for _, name in { "LeftSword", "RightSword" } do
+		local sword = character:FindFirstChild(name)
+		if sword then
+			for _, item in sword:GetChildren() do
+				if item:IsA("BasePart") then
+					if item.Name == "Hilt" then
+						item.Color = look.Hilt or SWORD_HILT
+					elseif item.Name == "Collar" then
+						item.Color = look.Hilt or SWORD_COLLAR
+					elseif item.Name == "Edge" then
+						item.Color = look.Edge or SWORD_EDGE
+					end
+				end
+			end
+			local blade = sword:FindFirstChild("Blade")
+			local trail = blade and blade:FindFirstChild("BladeTrail")
+			if trail and trail:IsA("Trail") then
+				trail.Color = ColorSequence.new(look.Edge or SWORD_TRAIL)
+			end
+		end
+	end
 end
 
 -- Re-colours a dressed hunter's cape and emblem from the player's
