@@ -315,12 +315,13 @@ function GiantFactory.Build(kindName: string, position: Vector3, rng: Random): R
 	-- Neck and head. The head juts forward and its motor leans back against
 	-- the slouch, so the face stays level and stares straight ahead.
 	local neckBaseY = waistY + torsoHeight
-	-- A tilted head hangs to one side from the top of the neck, for good
+	-- A tilted head hangs to one side, for good
 	-- (the whole face goes with it: everything below is built on headCentre).
 	local headForward = headSize * 0.12
-	local tilt = if odd.Tilt then (if rng:NextNumber() < 0.5 then -1 else 1) * rng:NextNumber(0.32, 0.45) else 0
-	local neckTop = base * CFrame.new(0, neckBaseY + neckLength, -headForward)
-	local headCentre = neckTop * CFrame.Angles(0, 0, tilt) * CFrame.new(0, headSize * 0.45, 0)
+	local tilt = if odd.Tilt then (if rng:NextNumber() < 0.5 then -1 else 1) * rng:NextNumber(0.35, 0.5) else 0
+	-- (the whole neck leans over from its base, the head rolled with it)
+	local neckBase = base * CFrame.new(0, neckBaseY, 0)
+	local headCentre = neckBase * CFrame.Angles(0, 0, tilt) * CFrame.new(0, neckLength + headSize * 0.45, -headForward)
 	local neckFrom = base * Vector3.new(0, neckBaseY - headSize * 0.1, 0)
 	local neckTo = headCentre.Position
 	local neckWidth = headSize * (if odd.LongNeck then 0.44 else 0.5)
@@ -510,7 +511,7 @@ function GiantFactory.Build(kindName: string, position: Vector3, rng: Random): R
 	-- the neck both stay clear.
 	local style = look.Hair or pick(rng, HAIR_STYLES)
 	-- (a tilted head drops one side of the back of the skull: sit higher)
-	local lift = math.abs(tilt) * 0.2
+	local lift = math.abs(tilt) * 0.32
 	local function cap(size: number)
 		-- (a deep slouch tips the nape up behind the head: sit higher then)
 		face("Hair", Vector3.one * headSize * size, CFrame.new(0, headSize * (0.2 + body.Hunch * 0.15 + lift), headSize * (0.12 - body.Hunch * 0.15)), hairColor, Enum.PartType.Ball)
@@ -541,7 +542,7 @@ function GiantFactory.Build(kindName: string, position: Vector3, rng: Random): R
 		face("Bun", Vector3.one * headSize * 0.4, CFrame.new(0, headSize * 0.7, headSize * 0.1), hairColor, Enum.PartType.Ball)
 	elseif style == "Curly" then
 		for c, spot in { { 0, 0.42 }, { -0.7, 0.3 }, { 0.7, 0.3 }, { -1.7, 0.26 }, { 1.7, 0.26 }, { math.pi, 0.3 }, { 0, 0.3 } } do
-			local at = onBall(skull, spot[1], headSize * spot[2], -headSize * 0.02)
+			local at = onBall(skull, spot[1], headSize * spot[2], -headSize * 0.02) + Vector3.new(0, headSize * lift, 0)
 			face(`Curl{c}`, Vector3.one * headSize * (if c == 1 then 0.5 else 0.36), CFrame.new(if c == 1 then Vector3.new(0, headSize * 0.36, headSize * 0.06) else at), hairColor, Enum.PartType.Ball)
 		end
 	elseif style == "Ponytail" then

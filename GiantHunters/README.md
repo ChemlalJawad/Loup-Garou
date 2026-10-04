@@ -19,6 +19,8 @@ This is a separate Rojo project from Brainrot Hatch Wars, in the same repo.
 
 ![Giant looks, and the hunters' uniform and gear](hunters-preview.jpg)
 
+![Odd giants (scratching, odd arms, a long neck, a tongue, a waddle, a tilted head) and the new landmarks: the mill ruin, the aqueduct, the watch-fort](world2-preview.jpg)
+
 *Offline previews, rendered outside Roblox from the same building code
 (so the lighting isn't Roblox's). Not Studio screenshots.*
 
@@ -85,12 +87,26 @@ The district, the giants and the HUD all build themselves. You can also
   other grove, on the tree platforms, at the castle, the training grounds
   and a few lonely spots in the far north and the Great Forest, each with
   a blue beam.
+- **Landmarks** to steer by and swing along: the **old mill tower**, a
+  broken stone ruin in the far north-west with a crate on the floor of its
+  fallen-in top; the **aqueduct**, a line of 64-stud stone arches striding
+  across the north-east plains and over the north road (a few spans have
+  fallen; a crate sits in the channel halfway); and the **watch-fort** where
+  the east road enters the Great Forest: a log stockade, a lookout tower
+  with a crate on its deck, a banner and a torch.
+- **Town life**: townsfolk stroll the streets by day (fewer at night and in
+  the rain). They step out of doors near you, and when the giants come (or
+  one gets close) they hurry back indoors. Flocks of birds circle over the
+  roofs and treetops and scatter when a giant comes near; washing flaps on
+  the lines and the market awnings sway. All of it lives only on each
+  player's own screen, near the camera: up to 30 villagers (14 on phones),
+  seven parts each, and three flocks.
 - **Where giants appear**: out on the southern plains, 680 studs from the
   centre, in the open between the forest and the farms.
 
 ### Performance
 
-The map is about 10,600 parts, built into a folder outside the Workspace
+The map is about 10,800 parts, built into a folder outside the Workspace
 and dropped in at once (each layer is timed in the output, and a layer
 that fails is skipped with a warning instead of stopping the server).
 **Streaming is on**: clients load what's within about 1,000 studs. The
@@ -134,6 +150,17 @@ At night it's properly dark: torches burn along the whole wall and round
 the plaza and the gate square, the street lamps light up along the
 avenues, ring roads and bridges, and 4 windows in 10 glow warm. The
 giants' tiny pupils glow orange in the dark, and they walk 20% faster.
+
+## Weather
+
+Every 6 to 11 minutes a **soft rain** or a **fog bank** rolls in for 2 to
+4 minutes (`Config.Weather`), with a quiet line in the feed. The server
+only picks it (the Workspace attribute `Weather`); each client fades it in
+over 20 seconds: the sky greys and the clouds close in, or the air turns
+to a pale haze (`Sky.WithWeather`), and rain falls round the camera (a
+third as much on phones). Nothing scary: no storms, no thunder. It never
+starts while someone is doing the tutorial, and stays clear on the screen
+of a player still in it.
 
 ## Titan shifters
 
@@ -268,6 +295,14 @@ it, and it won't come back.
     mohawk, bun, curly; dark, brown, blond, ginger, grey or white),
     sometimes a beard, and ribs on the skinny ones. Hair never covers the
     nape. Giants 46 studs and up steam a little.
+  - **Odd ones** (`Config.GiantOddities`): Runners often, and now and then
+    a plain giant, come out wrong: a head hanging to one side for good, a
+    neck twice as long, a tongue lolling out of a gaping mouth, or one arm
+    much longer than the other. The nape stays clear on all of them.
+  - Standing about with nothing to do, a giant scratches its head, looks
+    slowly round, or sniffs the air toward the nearest hunter. Heavy ones
+    (chubby, stocky, the Beast, anything 40+ tall) waddle from foot to foot
+    with their arms out and their bellies bouncing.
 - **Grabs**: a giant raises its arms first (the warning). If it catches
   you, you're held in its hand: **mash anything to wriggle free** (any
   key, click, tap or button; the bar fills as the server counts them), or
@@ -325,18 +360,21 @@ sound you've uploaded (`rbxassetid://...`).
 | `src/server/World/Wall.lua` | the Great Wall, the breachable gate, watchtowers, cannons, the spawn post (one persistent model) |
 | `src/server/World/Town.lua` | row houses, plaza, church, headquarters, market, garden, bridges |
 | `src/server/World/Wilds.lua` | giant forest, the Great Forest, training grounds, castle, signal towers, groves, farms, windmill, roads and bridges, plains, supplies, hook coverage, giant entry points, the edge of the world |
+| `src/server/World/Landmarks.lua` | the old mill tower, the aqueduct, the watch-fort |
 | `src/server/World/Kit.lua`, `Layout.lua` | shared part helpers and set pieces; where the big pieces go, the roads, the hill ring and ground height |
-| `src/server/GiantFactory.lua` | part-built giant rig (rounded body, face, armour, Motor6D waist/limbs/neck, glowing nape, kinematic mover) |
+| `src/server/GiantFactory.lua` | part-built giant rig (rounded body, face, oddities, armour, Motor6D waist/limbs/neck, glowing nape, kinematic mover) |
 | `src/server/GiantService.lua` | giant AI, grabs and holds, swats, the three cuts, armour, takedowns, the Wallbreaker |
 | `src/server/WaveService.lua` | rounds and waves (and the odd Beast Giant) |
 | `src/server/DayNightService.lua` | the 24-hour clock |
+| `src/server/WeatherService.lua`, `src/client/Weather.lua` | passing rain and fog: the server picks, each client fades the sky and the rain |
+| `src/client/Townsfolk.lua`, `Birds.lua`, `Breeze.lua` | client-only town life: villagers on a street graph, flocks of birds, washing and awnings in the wind |
 | `src/server/ShifterService.lua` | the titan crystal, sides, transforming, punches, roars, titan napes |
 | `src/server/HunterService.lua` | characters, leaderboard and ranks, twin swords, blades, resupply, slash validation, combos, flares, cable relay |
 | `src/server/HunterGear.lua` | the hunters' uniform, cape and grapple rig, built over each avatar |
 | `src/server/CannonService.lua` | the wall cannons |
 | `src/server/Broadcast.lua` | kill feed, announcements, camera shakes |
 | `src/client/GrappleController.lua` | flying hooks, taut-cable swing, reel, gas boost and dash, air spin slash, flares, being grabbed or swatted, other hunters' cables |
-| `src/client/GiantAnimator.lua` | client-only animation (walk, grab, hold, swat, kneel, daze, leap, kick, stare), footsteps, daze stars |
+| `src/client/GiantAnimator.lua` | client-only animation (walk, grab, hold, swat, kneel, daze, leap, kick, stare, idles, the heavy waddle), footsteps, daze stars |
 | `src/client/Hud.lua`, `Radar.lua` | the HUD and the radar |
 | `src/client/Effects.lua` | camera shake, sounds, hit bursts, the windmill |
 | `src/client/SkyController.lua`, `src/shared/Sky.lua` | the sky by the hour; lamps, torches, windows and giants' eyes at night |

@@ -6,7 +6,8 @@
 --                 cannons, and the hunters' post (spawn) on the north wall
 --   World/Town    row houses, plaza, church, headquarters, market, bridges
 --   World/Wilds   giant forest, farms and windmill, the road, the plains,
---                 and the invisible edge of the world
+--                 the landmarks (World/Landmarks: mill ruin, aqueduct,
+--                 watch-fort), and the invisible edge of the world
 --
 -- Everything is built into a folder outside the Workspace and parented in
 -- one go at the end (much cheaper than ten thousand separate insertions).
@@ -51,6 +52,10 @@ local ATOMIC = {
 	Windmill = true,
 	OldCastle = true,
 	Bridge = true,
+	MillRuin = true,
+	AqueductPier = true,
+	AqueductSpan = true,
+	WatchFort = true,
 }
 
 -- Runs one layer; a failure is reported and the build carries on.
