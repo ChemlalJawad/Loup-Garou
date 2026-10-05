@@ -32,7 +32,7 @@ local Broadcast = require(script.Parent.Broadcast)
 
 local DiscoveryService = {}
 
-export type Poi = { Id: string, Name: string, Kind: string, Part: BasePart }
+export type Poi = { Id: string, Name: string, Kind: string, Part: BasePart, Radius: number }
 
 local D = Config.Discovery
 
@@ -65,6 +65,8 @@ local function register(instance: Instance)
 		Name = if type(name) == "string" and name ~= "" then name else id,
 		Kind = if kind == "Town" then "Town" else "Wilds",
 		Part = instance,
+		-- A big place (a lake, a gorge) says how far out it starts (PoiRadius).
+		Radius = math.max(D.Radius, tonumber(instance:GetAttribute("PoiRadius")) or 0),
 	}
 end
 
@@ -212,7 +214,6 @@ local function discover(player: Player, profile: DataService.Profile, poi: Poi)
 end
 
 local function step()
-	local radiusSq = D.Radius * D.Radius
 	for _, player in Players:GetPlayers() do
 		local profile = ready(player)
 		if not profile or player:GetAttribute("TutorialDone") ~= true or not Motion.Trusted(player) then
@@ -228,7 +229,7 @@ local function step()
 			if not profile.Discovered[id] then
 				local a = poi.Part.Position
 				local dx, dz = p.X - a.X, p.Z - a.Z
-				if dx * dx + dz * dz <= radiusSq and math.abs(p.Y - a.Y) <= D.Rise then
+				if dx * dx + dz * dz <= poi.Radius * poi.Radius and math.abs(p.Y - a.Y) <= D.Rise then
 					discover(player, profile, poi)
 				end
 			end

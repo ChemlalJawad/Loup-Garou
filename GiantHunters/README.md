@@ -138,7 +138,7 @@ shop's items, and that every giant kind and titan form builds.
 
 ### Performance
 
-The map is about 10,800 parts, built into a folder outside the Workspace
+The map is about 11,500 parts, built into a folder outside the Workspace
 and dropped in at once (each layer is timed in the output, and a layer
 that fails is skipped with a warning instead of stopping the server).
 **Streaming is on**: clients load what's within about 1,000 studs. The
@@ -752,6 +752,7 @@ sound you've uploaded (`rbxassetid://...`).
 | `src/server/World/Wall.lua` | the Great Wall, the breachable gate, watchtowers, cannons, the spawn post (one persistent model) |
 | `src/server/World/Town.lua` | row houses, plaza, church, headquarters, market, garden, bridges |
 | `src/server/World/Wilds.lua` | giant forest, the Great Forest, training grounds, castle, signal towers, groves, farms, windmill, roads and bridges, plains, supplies, hook coverage, giant entry points, the edge of the world |
+| `src/server/World/Frontier.lua` | the far wilds: the old outer wall and its gatehouse, Needle Rock Gorge, Misty Lake, the Elder Tree, meadows, ponds, outcrops |
 | `src/server/World/Landmarks.lua` | the old mill tower, the aqueduct, the watch-fort |
 | `src/server/World/Kit.lua`, `Layout.lua` | shared part helpers and set pieces; where the big pieces go, the roads, the hill ring and ground height |
 | `src/server/GiantFactory.lua` | part-built giant rig (rounded body, face, oddities, armour, Motor6D waist/limbs/neck, glowing nape, kinematic mover) |
