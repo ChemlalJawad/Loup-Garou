@@ -441,6 +441,7 @@ Config.Tags = {
 	DummyNape = "DummyNape", -- training dummies' targets
 	MapBoundary = "MapBoundary", -- the invisible wall round the edge of the land
 	Sway = "Sway", -- washing and awnings: moved by the breeze on each client
+	POI = "PointOfInterest", -- a named place to discover (attributes PoiId, PoiName, PoiKind)
 }
 
 -- === Day and night ===========================================================
