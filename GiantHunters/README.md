@@ -769,6 +769,7 @@ sound you've uploaded (`rbxassetid://...`).
 | `src/server/World/Wall.lua` | the Great Wall, the breachable gate, watchtowers, cannons, the spawn post (one persistent model) |
 | `src/server/World/Town.lua` | row houses, plaza, church, headquarters, market, garden, bridges |
 | `src/server/World/Wilds.lua` | giant forest, the Great Forest, training grounds, castle, signal towers, groves, farms, windmill, roads and bridges, plains, supplies, hook coverage, giant entry points, the edge of the world |
+| `src/server/World/TownLandmarks.lua` | the town districts (High Town, Crafts Ring, Wallside), the clock tower, river light, water mill, granary, quays, walkways and signposts |
 | `src/server/World/Frontier.lua` | the far wilds: the old outer wall and its gatehouse, Needle Rock Gorge, Misty Lake, the Elder Tree, meadows, ponds, outcrops |
 | `src/server/World/Landmarks.lua` | the old mill tower, the aqueduct, the watch-fort |
 | `src/server/World/Kit.lua`, `Layout.lua` | shared part helpers and set pieces; where the big pieces go, the roads, the hill ring and ground height |
