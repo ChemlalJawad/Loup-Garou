@@ -161,7 +161,10 @@ function Layout.GroundHeight(x: number, z: number): number
 end
 
 -- Inside the wall: reserved sites (in polar terms) that the row houses
--- leave free.
+-- leave free. The town's tall landmarks are spread round the compass so
+-- there is always a perch in reach: the church (north), the clock tower
+-- (west, before the market), the granary (east, behind the headquarters)
+-- and the river light and the water mill on the river's banks.
 export type Site = { Angle: number, Spread: number, Inner: number, Outer: number }
 Layout.Sites = {
 	Church = { Angle = math.rad(180), Spread = math.rad(17), Inner = 64, Outer = 113 },
@@ -169,6 +172,10 @@ Layout.Sites = {
 	Market = { Angle = math.rad(270), Spread = math.rad(14), Inner = 127, Outer = 193 },
 	GateSquare = { Angle = 0, Spread = math.rad(24), Inner = 206, Outer = 300 },
 	Garden = { Angle = math.rad(135), Spread = math.rad(9), Inner = 127, Outer = 193 },
+	ClockTower = { Angle = math.rad(270), Spread = math.rad(9), Inner = 64, Outer = 113 },
+	RiverLight = { Angle = math.rad(207), Spread = math.rad(10), Inner = 140, Outer = 193 },
+	WaterMill = { Angle = math.rad(152), Spread = math.rad(8), Inner = 140, Outer = 193 },
+	Granary = { Angle = math.rad(90), Spread = math.rad(6), Inner = 206, Outer = 271 },
 } :: { [string]: Site }
 
 local function inSector(angle: number, radius: number, sector: Site): boolean

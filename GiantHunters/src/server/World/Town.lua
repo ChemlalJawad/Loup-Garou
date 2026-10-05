@@ -20,6 +20,7 @@ local Config = require(ReplicatedStorage.Shared.Config)
 local Geo = require(ReplicatedStorage.Shared.Geo)
 local Kit = require(script.Parent.Kit)
 local Layout = require(script.Parent.Layout)
+local TownLandmarks = require(script.Parent.TownLandmarks)
 
 local Town = {}
 
@@ -27,14 +28,24 @@ local W = Config.World
 local P = Kit.Palette
 
 local FLOOR = 8.5
+local DISTRICTS = TownLandmarks.Districts
+local avenueClear = TownLandmarks.AvenueClear
 
-type Band = { Inner: number, Outer: number, MinFloors: number, MaxFloors: number, Warehouses: boolean? }
+-- Each band of houses between two roads is a district with its own look,
+-- so the skyline steps: tall stone manors round the plaza, lower workshops
+-- in the middle, a jumble of timber houses by the wall.
+type Style = "Manor" | "Craft" | "Wallside"
+type Band = { Inner: number, Outer: number, MinFloors: number, MaxFloors: number, MinWidth: number, MaxWidth: number, Style: Style, Warehouses: boolean? }
 local BANDS: { Band } = {
-	{ Inner = 64, Outer = 112, MinFloors = 4, MaxFloors = 6 },
-	{ Inner = 128, Outer = 192, MinFloors = 3, MaxFloors = 6 },
-	{ Inner = 208, Outer = 270, MinFloors = 3, MaxFloors = 5, Warehouses = true },
+	{ Inner = 64, Outer = 112, MinFloors = 4, MaxFloors = 7, MinWidth = 14, MaxWidth = 22, Style = "Manor" },
+	{ Inner = 128, Outer = 192, MinFloors = 3, MaxFloors = 5, MinWidth = 13, MaxWidth = 21, Style = "Craft" },
+	{ Inner = 208, Outer = 270, MinFloors = 2, MaxFloors = 6, MinWidth = 12, MaxWidth = 18, Style = "Wallside", Warehouses = true },
 }
 local ALLEY = 4
+
+-- Where each house stands, for the walkways strung between facing houses.
+type Front = { Angle: number, Half: number, Floors: number }
+local fronts: { [string]: { Front } } = {}
 
 local function pick<T>(list: { T }, rng: Random): T
 	return list[rng:NextInteger(1, #list)]
@@ -102,19 +113,69 @@ local function chimney(model: Model, frame: CFrame, x: number, z: number, top: n
 	end
 end
 
-local function rowHouse(parent: Instance, frame: CFrame, width: number, depth: number, floors: number, rng: Random)
+local ASHLAR = { Color3.fromRGB(214, 206, 190), Color3.fromRGB(200, 192, 176), Color3.fromRGB(222, 214, 196) }
+local AWNINGS = { Color3.fromRGB(200, 60, 60), Color3.fromRGB(60, 110, 180), Color3.fromRGB(230, 170, 50), Color3.fromRGB(80, 150, 90), Color3.fromRGB(236, 230, 214) }
+local SLATE = Color3.fromRGB(92, 100, 118)
+
+-- High Town extras: a cornice, a balcony to land on, a corner turret with
+-- a spire, and the district's crimson banner.
+local function manorDetails(model: Model, frame: CFrame, width: number, floors: number, face: number, flatRoof: boolean, rng: Random)
+	local height = floors * FLOOR
+	Kit.Detail({ Name = "Cornice", Size = Vector3.new(width + 0.6, 0.8, 1), CFrame = frame * CFrame.new(0, height - 0.4, face - 0.3), Color = P.Cream, Material = Enum.Material.Slate, Parent = model })
+	if floors >= 4 and rng:NextNumber() < 0.5 then
+		local y = rng:NextInteger(2, floors - 2) * FLOOR
+		Kit.Part({ Name = "Balcony", Size = Vector3.new(width * 0.55, 0.6, 2.6), CFrame = frame * CFrame.new(0, y + 0.3, face - 1.3), Color = P.Cream, Material = Enum.Material.Slate, Parent = model })
+		Kit.Detail({ Name = "Railing", Size = Vector3.new(width * 0.55, 1.4, 0.3), CFrame = frame * CFrame.new(0, y + 1.3, face - 2.45), Color = P.Iron, Material = Enum.Material.Metal, Parent = model })
+	end
+	if not flatRoof and rng:NextNumber() < 0.35 then
+		local x = (width / 2 - 2.6) * (if rng:NextNumber() < 0.5 then -1 else 1)
+		local turret = frame * CFrame.new(x, 0, face + 2.4)
+		Kit.Part({ Name = "Turret", Shape = Enum.PartType.Cylinder, Size = Vector3.new(FLOOR * 1.6, 5, 5), CFrame = turret * CFrame.new(0, height + FLOOR * 0.3, 0) * Kit.UPRIGHT, Color = pick(ASHLAR, rng), Material = Enum.Material.Slate, Parent = model })
+		Kit.Part({ Name = "Spire", Size = Vector3.new(4, 4, 4), CFrame = turret * CFrame.new(0, height + FLOOR * 1.1 + 2, 0), Color = SLATE, Material = Enum.Material.Slate, Parent = model })
+		Kit.Part({ Name = "Spire", Size = Vector3.new(1.8, 6, 1.8), CFrame = turret * CFrame.new(0, height + FLOOR * 1.1 + 7, 0), Color = SLATE, Material = Enum.Material.Slate, Parent = model })
+	end
+	if rng:NextNumber() < 0.4 then
+		Kit.Hanging(model, frame * CFrame.new(rng:NextNumber(-width / 4, width / 4), height - 1.6, face - 0.5), 3.4, math.min(14, height - FLOOR - 4), DISTRICTS.HighTown.Color)
+	end
+end
+
+-- Crafts Ring extras: a striped awning over the shop window, barrels and
+-- crates at the door, a hoist beam up top.
+local function craftDetails(model: Model, frame: CFrame, width: number, height: number, face: number, doorX: number, shopX: number?, rng: Random)
+	if shopX and rng:NextNumber() < 0.55 then
+		local awning = Kit.Part({ Class = "WedgePart", Name = "Awning", Size = Vector3.new(5.2, 1.4, 2.6), CFrame = frame * CFrame.new(shopX, 6.5, -1.3), Color = pick(AWNINGS, rng), Material = Enum.Material.Fabric, Parent = model })
+		CollectionService:AddTag(awning, Config.Tags.Sway) -- swayed by the breeze (client Breeze.lua)
+	end
+	if rng:NextNumber() < 0.45 then
+		local side = if doorX > 0 then -1 else 1
+		local spot = frame * CFrame.new(doorX + side * 3, 0, -1.6)
+		Kit.Barrel(model, spot.Position)
+		if rng:NextNumber() < 0.5 then
+			Kit.Detail({ Name = "Crate", Size = Vector3.new(2.4, 2.4, 2.4), CFrame = spot * CFrame.new(side * 2.6, 1.2, 0) * CFrame.Angles(0, rng:NextNumber(-0.3, 0.3), 0), Color = Color3.fromRGB(150, 112, 70), Material = Enum.Material.WoodPlanks, Parent = model })
+		end
+	end
+	if rng:NextNumber() < 0.25 then
+		Kit.Part({ Name = "Hoist", Size = Vector3.new(0.9, 0.9, 4), CFrame = frame * CFrame.new(rng:NextNumber(-width / 3, width / 3), height - 1.4, face - 1.8), Color = P.Timber, Material = Enum.Material.Wood, Parent = model })
+	end
+end
+
+local function rowHouse(parent: Instance, frame: CFrame, width: number, depth: number, floors: number, rng: Random, style: Style?): Model
 	local model = Kit.Model("House", parent)
 	local height = floors * FLOOR
-	local plaster = pick(P.Plaster, rng)
+	local manor = style == "Manor"
+	local wallside = style == "Wallside"
+	local plaster = if manor then pick(ASHLAR, rng) else pick(P.Plaster, rng)
 	local stone = pick(P.Stone, rng)
-	local timbered = rng:NextNumber() < 0.6
-	local overhang = if timbered then 0.8 else 0
+	local timbered = if manor then false elseif wallside then true else rng:NextNumber() < 0.6
+	-- Wallside houses jut out further over the street.
+	local overhang = if wallside then 1.4 elseif timbered then 0.8 else 0
 
-	-- Stone ground floor, plaster above (jutting out over the street).
+	-- Stone ground floor, plaster above (jutting out over the street); High
+	-- Town's manors are dressed stone all the way up.
 	Kit.Part({ Name = "GroundFloor", Size = Vector3.new(width, FLOOR, depth), CFrame = frame * CFrame.new(0, FLOOR / 2, depth / 2), Color = stone, Material = Enum.Material.Slate, Parent = model })
 	local upperDepth = depth + overhang
 	local upperZ = (depth - overhang) / 2
-	Kit.Part({ Name = "Upper", Size = Vector3.new(width, height - FLOOR, upperDepth), CFrame = frame * CFrame.new(0, FLOOR + (height - FLOOR) / 2, upperZ), Color = plaster, Material = Enum.Material.Plaster, Parent = model })
+	Kit.Part({ Name = "Upper", Size = Vector3.new(width, height - FLOOR, upperDepth), CFrame = frame * CFrame.new(0, FLOOR + (height - FLOOR) / 2, upperZ), Color = plaster, Material = if manor then Enum.Material.Slate else Enum.Material.Plaster, Parent = model })
 
 	local face = -overhang - 0.05 -- the upper facade's front plane
 	if timbered then
@@ -125,7 +186,7 @@ local function rowHouse(parent: Instance, frame: CFrame, width: number, depth: n
 			Kit.Detail({ Name = "Post", Size = Vector3.new(0.6, height - FLOOR, 0.5), CFrame = frame * CFrame.new(side * (width / 2 - 0.3), FLOOR + (height - FLOOR) / 2, face - 0.2), Color = P.Timber, Material = Enum.Material.Wood, Parent = model })
 		end
 	end
-	local flowers = rng:NextNumber() < 0.3
+	local flowers = rng:NextNumber() < (if wallside then 0.45 else 0.3)
 	for f = 1, floors - 1 do
 		windowRow(model, frame, width, f * FLOOR + FLOOR * 0.55, face, rng, flowers)
 	end
@@ -134,7 +195,8 @@ local function rowHouse(parent: Instance, frame: CFrame, width: number, depth: n
 	local doorX = rng:NextNumber(-width / 2 + 2.5, width / 2 - 2.5)
 	Kit.Detail({ Name = "Door", Size = Vector3.new(3.2, 6.2, 0.5), CFrame = frame * CFrame.new(doorX, 3.1, -0.1), Color = P.Door, Material = Enum.Material.Wood, Parent = model })
 	local shopX = if doorX > 0 then doorX - 6 else doorX + 6
-	if math.abs(shopX) < width / 2 - 2.5 then
+	local hasShop = math.abs(shopX) < width / 2 - 2.5
+	if hasShop then
 		Kit.Detail({ Name = "ShopWindow", Size = Vector3.new(4.4, 3.6, 0.4), CFrame = frame * CFrame.new(shopX, 3.8, -0.1), Color = P.Glass, Material = Enum.Material.Glass, Reflectance = 0.15, Parent = model })
 		if rng:NextNumber() < 0.35 then
 			-- A hanging shop sign, out over the street.
@@ -142,19 +204,39 @@ local function rowHouse(parent: Instance, frame: CFrame, width: number, depth: n
 		end
 	end
 
-	-- Roof: usually steep, sometimes a flat top with a parapet.
-	local roofColor = pick(P.Roof, rng)
-	if rng:NextNumber() < 0.1 then
+	-- Roof: usually steep, sometimes a flat top with a parapet and a little
+	-- roof garden. Manors mostly wear blue-grey slate.
+	local roofColor = if manor and rng:NextNumber() < 0.6 then SLATE else pick(P.Roof, rng)
+	local flatRoof = rng:NextNumber() < 0.1
+	if flatRoof then
 		for _, side in { -1, 1 } do
 			Kit.Detail({ Name = "Parapet", Size = Vector3.new(width, 1.6, 0.8), CFrame = frame * CFrame.new(0, height + 0.8, upperZ + side * (upperDepth / 2 - 0.4)), Color = plaster, Material = Enum.Material.Plaster, Parent = model })
 		end
+		Kit.Detail({ Name = "RoofGarden", Size = Vector3.new(width - 3, 0.6, upperDepth - 4), CFrame = frame * CFrame.new(0, height + 0.3, upperZ), Color = Color3.fromRGB(104, 160, 76), Material = Enum.Material.Grass, Parent = model })
+		Kit.Part({ Name = "Leaves", Shape = Enum.PartType.Ball, Size = Vector3.one * 4.5, CFrame = frame * CFrame.new(width / 4, height + 2.4, upperZ), Color = pick(P.Leaves, rng), Material = Enum.Material.Grass, CanCollide = false, CastShadow = false, Parent = model })
 	else
-		local roofHeight = upperDepth * rng:NextNumber(0.34, 0.62)
+		local roofHeight = upperDepth * (if manor then rng:NextNumber(0.5, 0.7) else rng:NextNumber(0.34, 0.62))
 		gableRoof(model, frame, width, upperDepth, upperZ, roofHeight, height, roofColor)
-		if rng:NextNumber() < 0.55 then
+		if wallside and floors >= 3 and rng:NextNumber() < 0.4 then
+			-- A loft stacked on the roof, with its own little gable.
+			local loftWidth, loftDepth, loftHeight = width * 0.55, upperDepth * 0.4, FLOOR * 0.9
+			local x = rng:NextNumber(-1, 1) * (width - loftWidth) / 2
+			local loft = frame * CFrame.new(x, height + roofHeight * 0.45, upperZ)
+			Kit.Part({ Name = "Loft", Size = Vector3.new(loftWidth, loftHeight, loftDepth), CFrame = loft * CFrame.new(0, loftHeight / 2, 0), Color = plaster, Material = Enum.Material.Plaster, Parent = model })
+			gableRoof(model, loft, loftWidth, loftDepth, 0, loftDepth * 0.5, loftHeight, pick(P.Roof, rng))
+		elseif rng:NextNumber() < 0.55 then
 			chimney(model, frame, rng:NextNumber(-width / 2 + 2, width / 2 - 2), upperZ + upperDepth * 0.22, height + roofHeight * 0.6, rng)
 		end
 	end
+
+	if manor then
+		manorDetails(model, frame, width, floors, face, flatRoof, rng)
+	elseif style == "Craft" then
+		craftDetails(model, frame, width, height, face, doorX, if hasShop then shopX else nil, rng)
+	elseif wallside and rng:NextNumber() < 0.12 then
+		Kit.Hanging(model, frame * CFrame.new(0, height - 1.6, face - 0.5), 3, math.min(10, height - FLOOR - 3), DISTRICTS.Wallside.Color)
+	end
+	return model
 end
 
 -- Warehouses and stables along the inside of the wall: big, plain, low.
@@ -170,17 +252,6 @@ end
 
 -- === Row placement ===========================================================
 
-local function avenueClear(angle: number, radius: number, halfWidth: number): boolean
-	for _, degrees in W.AvenueAngles do
-		local wide = degrees == 0 or degrees == 180
-		local clearance = (if wide then W.AvenueWidth + 6 else W.AvenueWidth) / 2 + halfWidth + 2
-		if math.abs(Geo.AngleDelta(angle, math.rad(degrees))) * radius < clearance then
-			return false
-		end
-	end
-	return true
-end
-
 local function lotClear(frame: CFrame, width: number, depth: number): boolean
 	for _, corner in { Vector3.new(-width / 2, 0, 0), Vector3.new(width / 2, 0, 0), Vector3.new(-width / 2, 0, depth), Vector3.new(width / 2, 0, depth), Vector3.new(0, 0, depth / 2) } do
 		local p = frame * corner
@@ -194,7 +265,14 @@ local function lotClear(frame: CFrame, width: number, depth: number): boolean
 	return true
 end
 
-local function row(parent: Instance, band: Band, outward: boolean, rng: Random)
+local function frontsKey(band: number, outward: boolean): string
+	return `{band}{if outward then "out" else "in"}`
+end
+
+local function row(parent: Instance, index: number, outward: boolean, rng: Random)
+	local band = BANDS[index]
+	local placed: { Front } = {}
+	fronts[frontsKey(index, outward)] = placed
 	local rowDepth = (band.Outer - band.Inner - ALLEY) / 2
 	-- Front edge on the road this row faces; lots measured along the narrower
 	-- (inner) edge of the row so neighbours never overlap.
@@ -203,8 +281,9 @@ local function row(parent: Instance, band: Band, outward: boolean, rng: Random)
 	local angle = rng:NextNumber(0, 0.2)
 	local stop = angle + math.pi * 2
 	while angle < stop do
-		local width = rng:NextNumber(13, 21)
-		local gap = if rng:NextNumber() < 0.6 then 0.2 else rng:NextNumber(1, 3)
+		local width = rng:NextNumber(band.MinWidth, band.MaxWidth)
+		-- Wallside is packed wall to wall.
+		local gap = if band.Style == "Wallside" or rng:NextNumber() < 0.6 then 0.2 else rng:NextNumber(1, 3)
 		local step = (width + gap) / innerEdge
 		local centre = angle + step / 2
 		angle += step
@@ -217,10 +296,12 @@ local function row(parent: Instance, band: Band, outward: boolean, rng: Random)
 			if rng:NextNumber() < 0.05 then
 				-- A little garden instead of a house.
 				Kit.Tree(parent, (frame * CFrame.new(0, 0, depth / 2)).Position, rng:NextNumber(16, 24), rng)
-			elseif band.Warehouses and outward then
+			elseif band.Warehouses and outward and rng:NextNumber() < 0.75 then
 				warehouse(parent, frame, width, depth, rng)
 			else
-				rowHouse(parent, frame, width, depth, rng:NextInteger(band.MinFloors, band.MaxFloors), rng)
+				local floors = rng:NextInteger(band.MinFloors, if outward and band.Warehouses then 4 else band.MaxFloors)
+				rowHouse(parent, frame, width, depth, floors, rng, band.Style)
+				table.insert(placed, { Angle = centre, Half = width / 2 / front, Floors = floors })
 			end
 		end
 	end
@@ -253,9 +334,10 @@ local function plaza(parent: Instance, rng: Random)
 	local model = Kit.Model("Plaza", parent)
 	local stone = Color3.fromRGB(196, 186, 166)
 	-- Fountain: basin, water, column, bowl, and the statue on top.
-	Kit.Part({ Name = "Basin", Shape = Enum.PartType.Cylinder, Size = Vector3.new(2.6, 26, 26), CFrame = CFrame.new(0, 1.3, 0) * Kit.UPRIGHT, Color = stone, Material = Enum.Material.Slate, Parent = model })
+	local basin = Kit.Part({ Name = "Basin", Shape = Enum.PartType.Cylinder, Size = Vector3.new(2.6, 26, 26), CFrame = CFrame.new(0, 1.3, 0) * Kit.UPRIGHT, Color = stone, Material = Enum.Material.Slate, Parent = model })
 	local water = Kit.Detail({ Name = "Water", Shape = Enum.PartType.Cylinder, Size = Vector3.new(0.4, 23, 23), CFrame = CFrame.new(0, 2.5, 0) * Kit.UPRIGHT, Color = Color3.fromRGB(90, 150, 170), Material = Enum.Material.Glass, Transparency = 0.25, Parent = model })
 	water.CanCollide = false
+	Kit.Poi(basin, "Plaza", "The Fountain Plaza", "Town")
 	Kit.Part({ Name = "Column", Shape = Enum.PartType.Cylinder, Size = Vector3.new(7, 3.4, 3.4), CFrame = CFrame.new(0, 5, 0) * Kit.UPRIGHT, Color = stone, Material = Enum.Material.Slate, Parent = model })
 	local bowl = Kit.Part({ Name = "Bowl", Shape = Enum.PartType.Cylinder, Size = Vector3.new(1.2, 10, 10), CFrame = CFrame.new(0, 8.6, 0) * Kit.UPRIGHT, Color = stone, Material = Enum.Material.Slate, Parent = model })
 	local spray = Instance.new("ParticleEmitter")
@@ -317,7 +399,8 @@ local function church(parent: Instance)
 	-- The bell tower: shaft, belfry, stepped spire, golden ball.
 	local towerSize = 16
 	local shaft = 78
-	Kit.Part({ Name = "Tower", Size = Vector3.new(towerSize, shaft, towerSize), CFrame = frame * CFrame.new(0, shaft / 2, towerSize / 2), Color = stone, Material = Enum.Material.Slate, Parent = model })
+	local tower = Kit.Part({ Name = "Tower", Size = Vector3.new(towerSize, shaft, towerSize), CFrame = frame * CFrame.new(0, shaft / 2, towerSize / 2), Color = stone, Material = Enum.Material.Slate, Parent = model })
+	Kit.Poi(tower, "Church", "The Bell Tower", "Town")
 	Kit.Detail({ Name = "Door", Size = Vector3.new(6, 11, 0.6), CFrame = frame * CFrame.new(0, 5.5, -0.2), Color = P.Door, Material = Enum.Material.Wood, Parent = model })
 	Kit.Detail({ Name = "RoseWindow", Shape = Enum.PartType.Cylinder, Size = Vector3.new(0.5, 7, 7), CFrame = frame * CFrame.new(0, 18, -0.2) * Kit.ALONG_LOOK, Color = Color3.fromRGB(150, 90, 150), Material = Enum.Material.Glass, Parent = model })
 	-- Clock face.
@@ -346,7 +429,8 @@ local function headquarters(parent: Instance)
 	local frame = siteFrame(site, site.Inner + 2)
 	local width, depth, height = 44, 34, 30
 	local stone = Color3.fromRGB(176, 168, 152)
-	Kit.Part({ Name = "Body", Size = Vector3.new(width, height, depth), CFrame = frame * CFrame.new(0, height / 2, depth / 2), Color = stone, Material = Enum.Material.Brick, Parent = model })
+	local body = Kit.Part({ Name = "Body", Size = Vector3.new(width, height, depth), CFrame = frame * CFrame.new(0, height / 2, depth / 2), Color = stone, Material = Enum.Material.Brick, Parent = model })
+	Kit.Poi(body, "Headquarters", "Hunters' Headquarters", "Town")
 	Kit.Detail({ Name = "Gate", Size = Vector3.new(10, 14, 0.6), CFrame = frame * CFrame.new(0, 7, -0.2), Color = P.Door, Material = Enum.Material.WoodPlanks, Parent = model })
 	Kit.Detail({ Name = "GateArch", Size = Vector3.new(13, 2, 1.2), CFrame = frame * CFrame.new(0, 14.5, -0.4), Color = Kit.Palette.WallBand, Material = Enum.Material.Slate, Parent = model })
 	for _, y in { 11, 21 } do
@@ -403,12 +487,18 @@ local function market(parent: Instance, rng: Random)
 	end
 	-- The well in the middle.
 	local centre = Geo.Polar(site.Angle, radius)
-	Kit.Part({ Name = "Well", Shape = Enum.PartType.Cylinder, Size = Vector3.new(3, 7, 7), CFrame = CFrame.new(centre + Vector3.new(0, 1.5, 0)) * Kit.UPRIGHT, Color = Color3.fromRGB(150, 142, 128), Material = Enum.Material.Cobblestone, Parent = model })
+	local well = Kit.Part({ Name = "Well", Shape = Enum.PartType.Cylinder, Size = Vector3.new(3, 7, 7), CFrame = CFrame.new(centre + Vector3.new(0, 1.5, 0)) * Kit.UPRIGHT, Color = Color3.fromRGB(150, 142, 128), Material = Enum.Material.Cobblestone, Parent = model })
 	for _, x in { -3, 3 } do
 		Kit.Detail({ Name = "WellPost", Size = Vector3.new(0.6, 7, 0.6), CFrame = CFrame.new(centre + Vector3.new(x, 3.5, 0)), Color = P.Timber, Material = Enum.Material.Wood, Parent = model })
 	end
 	Kit.Part({ Class = "WedgePart", Name = "WellRoof", Size = Vector3.new(4, 2, 8), CFrame = CFrame.new(centre + Vector3.new(0, 8, 0)), Color = pick(P.Roof, rng), Material = Enum.Material.Slate, Parent = model })
+	Kit.Poi(well, "Market", "The Market", "Town")
 	Kit.SupplyStation(model, centre + Vector3.new(0, 0, 14), true)
+	-- Carts unloading at the edge of the square.
+	for _, side in { -1, 1 } do
+		local angle = site.Angle + side * site.Spread * 0.9
+		Kit.Cart(model, CFrame.new(Geo.Polar(angle, radius + 8)) * CFrame.Angles(0, angle + side * 1.2, 0), pick({ Color3.fromRGB(226, 214, 180), Color3.fromRGB(160, 190, 120) }, rng))
+	end
 end
 
 local function garden(parent: Instance, rng: Random)
@@ -416,10 +506,16 @@ local function garden(parent: Instance, rng: Random)
 	local model = Kit.Model("Garden", parent)
 	local radius = (site.Inner + site.Outer) / 2
 	local centre = Geo.Polar(site.Angle, radius)
-	Kit.Part({ Name = "Lawn", Size = Vector3.new(44, 0.4, 56), CFrame = CFrame.new(centre + Vector3.new(0, 0.2, 0)) * CFrame.Angles(0, site.Angle, 0), Color = Color3.fromRGB(104, 160, 76), Material = Enum.Material.Grass, Parent = model })
-	for _ = 1, 6 do
-		local offset = Vector3.new(rng:NextNumber(-16, 16), 0, rng:NextNumber(-22, 22))
-		Kit.Tree(model, (CFrame.new(centre) * CFrame.Angles(0, site.Angle, 0) * offset), rng:NextNumber(18, 28), rng)
+	-- The river runs across the garden's far end: the lawn stops at its bank.
+	local lawn = CFrame.new(Geo.Polar(site.Angle, site.Inner + 18)) * CFrame.Angles(0, site.Angle, 0)
+	Kit.Part({ Name = "Lawn", Size = Vector3.new(40, 0.4, 34), CFrame = lawn * CFrame.new(0, 0.2, 0), Color = Color3.fromRGB(104, 160, 76), Material = Enum.Material.Grass, Parent = model })
+	local planted = 0
+	for _ = 1, 20 do
+		local spot = (CFrame.new(centre) * CFrame.Angles(0, site.Angle, 0) * Vector3.new(rng:NextNumber(-16, 16), 0, rng:NextNumber(-22, 22)))
+		if planted < 6 and not Geo.InRiver(spot.X, spot.Z, 6) then
+			Kit.Tree(model, spot, rng:NextNumber(18, 28), rng)
+			planted += 1
+		end
 	end
 end
 
@@ -533,9 +629,11 @@ local function washingLines(parent: Instance, rng: Random)
 	end
 end
 
--- Lamps round the ring roads (the avenues have their own).
+-- Lamps round the ring roads (the avenues have their own). Every other
+-- one flies a pennant in the colour of the district on its side.
+local RING_SIDES = { { DISTRICTS.HighTown, DISTRICTS.Crafts }, { DISTRICTS.Crafts, DISTRICTS.Wallside } }
 local function ringLamps(parent: Instance)
-	for _, radius in W.RingRoads do
+	for ring, radius in W.RingRoads do
 		local count = math.floor(radius * math.pi * 2 / 42)
 		for i = 1, count do
 			local angle = i / count * math.pi * 2
@@ -543,7 +641,68 @@ local function ringLamps(parent: Instance)
 				local r = radius + side * (W.RoadWidth / 2 - 1.2)
 				local p = Geo.Polar(angle, r)
 				if avenueClear(angle, r, 3) and not Geo.InRiver(p.X, p.Z, 4) and not Layout.InAnySite(angle, r) then
-					Kit.Lamp(parent, p, angle + (if side > 0 then 0 else math.pi))
+					local facing = angle + (if side > 0 then 0 else math.pi)
+					Kit.Lamp(parent, p, facing)
+					if i % 2 == 0 then
+						Kit.Pennant(parent, p + Vector3.new(0, 9.6, 0), facing, RING_SIDES[ring][if side > 0 then 2 else 1].Color)
+					end
+				end
+			end
+		end
+	end
+end
+
+-- Signposts where the avenues meet the ring roads: one board back to the
+-- plaza, one on to the next district out, each in its district's colour.
+local function signposts(parent: Instance)
+	for _, degrees in W.AvenueAngles do
+		local angle = math.rad(degrees)
+		local halfWidth = (if degrees == 0 or degrees == 180 then W.AvenueWidth + 6 else W.AvenueWidth) / 2
+		local across = Vector3.new(math.cos(angle), 0, -math.sin(angle)) * (halfWidth - 1.5)
+		for ring, radius in W.RingRoads do
+			local r = radius - W.RoadWidth / 2 - 2.5
+			local p = Geo.Polar(angle, r) + across
+			if not Geo.InRiver(p.X, p.Z, 4) and not Layout.InAnySite(Geo.AngleOf(p), Geo.RadiusOf(p)) then
+				local onward = if ring == 1 then DISTRICTS.Crafts elseif degrees == W.GateAngle then { Name = "South Gate", Color = DISTRICTS.Wallside.Color } else DISTRICTS.Wallside
+				Kit.Signpost(parent, p, {
+					{ Angle = angle + math.pi, Text = "Plaza", Color = DISTRICTS.HighTown.Color },
+					{ Angle = angle, Text = onward.Name, Color = onward.Color },
+				})
+			end
+		end
+	end
+end
+
+-- Plank walkways strung across the ring roads between facing upper floors
+-- (two in three, where both houses are tall enough): something to run along,
+-- and hook points over the street.
+local function walkways(parent: Instance)
+	for ring, radius in W.RingRoads do
+		local empty: { Front } = {}
+		local inside, outside = fronts[frontsKey(ring, true)] or empty, fronts[frontsKey(ring + 1, false)] or empty
+		local floor = if ring == 1 then 3 else 2
+		local y = floor * FLOOR
+		local from, to = BANDS[ring].Outer - 1.5, BANDS[ring + 1].Inner + 1.5
+		local found = 0
+		for _, a in inside do
+			if a.Floors > floor then
+				for _, b in outside do
+					-- Where the two facades overlap (as angles round the road).
+					local delta = Geo.AngleDelta(a.Angle, b.Angle)
+					local low, high = math.max(-a.Half, delta - b.Half), math.min(a.Half, delta + b.Half)
+					if b.Floors > floor and (high - low) * from > 7 then
+						found += 1
+						if found % 3 ~= 0 then
+							local angle = a.Angle + (low + high) / 2
+							local model = Kit.Model("Walkway", parent)
+							local frame = CFrame.new(Geo.Polar(angle, (from + to) / 2, y + 0.3)) * CFrame.Angles(0, angle, 0)
+							Kit.Part({ Name = "Planks", Size = Vector3.new(4, 0.6, to - from), CFrame = frame, Color = Color3.fromRGB(140, 100, 62), Material = Enum.Material.WoodPlanks, Parent = model })
+							for _, side in { -1, 1 } do
+								Kit.Rod(model, "Rope", (frame * CFrame.new(side * 1.9, 3, -(to - from) / 2)).Position, (frame * CFrame.new(side * 1.9, 3, (to - from) / 2)).Position, 0.25, Color3.fromRGB(200, 180, 140), nil, true)
+							end
+						end
+						break
+					end
 				end
 			end
 		end
@@ -582,9 +741,9 @@ function Town.Build(parent: Instance, rng: Random)
 	local folder = Instance.new("Folder")
 	folder.Name = "Town"
 	folder.Parent = parent
-	for _, band in BANDS do
-		row(folder, band, false, rng)
-		row(folder, band, true, rng)
+	for index in BANDS do
+		row(folder, index, false, rng)
+		row(folder, index, true, rng)
 	end
 	plaza(folder, rng)
 	church(folder)
@@ -597,6 +756,9 @@ function Town.Build(parent: Instance, rng: Random)
 	avenueLamps(folder)
 	ringLamps(folder)
 	torches(folder)
+	signposts(folder)
+	walkways(folder)
+	TownLandmarks.Build(folder, rng)
 end
 
 return Town

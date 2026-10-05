@@ -56,11 +56,28 @@ shop's items, and that every giant kind and titan form builds.
 - **The town**: ring roads, avenues from a central plaza, and tight rows
   of tall old houses (stone ground floors, timber-framed upper floors,
   steep tiled roofs, chimneys with smoke, washing lines across the alleys).
-  Every face is something to hook.
-- **Landmarks**: the plaza fountain and its statue of the first hunter, the
-  church bell tower (the highest perch in town), the hunters' headquarters
-  and supply depot, the market, a garden, the gate square with barricades,
-  bridges over the river.
+  Every face is something to hook. Three districts, each with its own
+  colour on banners, lamp pennants and signposts, so the skyline steps:
+  - **High Town** (crimson), round the plaza: tall dressed-stone manors
+    with cornices, balconies to land on and corner turrets with spires;
+  - **the Crafts Ring** (amber): lower workshops with striped awnings,
+    barrels and crates at the doors, hoist beams up top;
+  - **Wallside** (green), by the wall: timber houses packed wall to wall,
+    of every height, jutting upper floors, lofts stacked on the roofs,
+    and warehouses.
+  Plank walkways cross the ring roads between facing upper floors, some
+  flat roofs carry little gardens, and signposts at the avenue crossings
+  point back to the plaza and on to the next district.
+- **Landmarks** (each one a place to discover on the map): the plaza
+  fountain and its statue of the first hunter, the church bell tower (the
+  highest perch in town), the **clock tower** before the market (a lookout
+  gallery under its spire, faces that glow at night), the hunters'
+  headquarters and supply depot, the market, the **great granary** by the
+  east wall (a flat roof with a supply crate), a garden, the gate square
+  with barricades.
+- **The river in town**: stone quays with lamps and moored boats, bridges
+  for the roads and two arched footbridges, the striped **river light**
+  with its lantern and dock, and the **water mill** with its wheel.
 - **Outside** (the land reaches 1300 studs from the centre): the forest of
   giant trees (a hunters' platform with a supply crate up one trunk),
   farms with a windmill and wheat fields, the road from the gate, the

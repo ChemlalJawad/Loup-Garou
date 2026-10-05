@@ -291,4 +291,82 @@ function Kit.Fir(parent: Instance, position: Vector3, height: number, rng: Rando
 	return model
 end
 
+-- A named place to discover (the map and discovery UI read these):
+-- `part` is the anchor, usually the landmark's main body.
+function Kit.Poi(part: BasePart, id: string, name: string, kind: string)
+	part:SetAttribute("PoiId", id)
+	part:SetAttribute("PoiName", name)
+	part:SetAttribute("PoiKind", kind)
+	CollectionService:AddTag(part, Config.Tags.POI)
+end
+
+-- A long hanging banner in a district's colour: rod, cloth and a cream
+-- stripe. `cframe` is the top centre of the cloth, facing out along -Z.
+function Kit.Hanging(parent: Instance, cframe: CFrame, width: number, height: number, color: Color3)
+	Kit.Detail({ Name = "BannerRod", Size = Vector3.new(width + 1, 0.5, 0.5), CFrame = cframe, Color = Kit.Palette.Timber, Material = Enum.Material.Wood, Parent = parent })
+	Kit.Detail({ Name = "BannerCloth", Size = Vector3.new(width, height, 0.25), CFrame = cframe * CFrame.new(0, -height / 2, 0), Color = color, Material = Enum.Material.Fabric, Parent = parent })
+	Kit.Detail({ Name = "BannerStripe", Size = Vector3.new(width * 0.3, height * 0.8, 0.3), CFrame = cframe * CFrame.new(0, -height * 0.45, 0), Color = Kit.Palette.Cream, Material = Enum.Material.Fabric, Parent = parent })
+end
+
+-- A small flag sticking out from a post toward `facing` (an angle, as for
+-- Kit.Lamp), flapping in the breeze. `top`: where it hangs from.
+function Kit.Pennant(parent: Instance, top: Vector3, facing: number, color: Color3): BasePart
+	local cloth = Kit.Detail({
+		Name = "Cloth",
+		Size = Vector3.new(2, 2.8, 0.1),
+		CFrame = CFrame.new(top) * CFrame.Angles(0, facing, 0) * CFrame.new(0, -1.4, -1.35) * CFrame.Angles(0, math.rad(90), 0),
+		Color = color,
+		Material = Enum.Material.Fabric,
+		Parent = parent,
+	})
+	CollectionService:AddTag(cloth, Config.Tags.Sway) -- flaps in the breeze (client)
+	return cloth
+end
+
+-- A barrel standing on the ground at `position`.
+function Kit.Barrel(parent: Instance, position: Vector3): BasePart
+	return Kit.Detail({ Name = "Barrel", Shape = Enum.PartType.Cylinder, Size = Vector3.new(3, 2.4, 2.4), CFrame = CFrame.new(position + Vector3.new(0, 1.5, 0)) * Kit.UPRIGHT, Color = Color3.fromRGB(128, 88, 54), Material = Enum.Material.Wood, Parent = parent })
+end
+
+-- A hand cart: bed, wheels, shafts and a covered load. `cframe` on the
+-- ground, shafts toward -Z.
+function Kit.Cart(parent: Instance, cframe: CFrame, load: Color3): Model
+	local model = Kit.Model("Cart", parent)
+	Kit.Part({ Name = "Bed", Size = Vector3.new(4, 0.6, 6), CFrame = cframe * CFrame.new(0, 2.2, 0), Color = Color3.fromRGB(140, 100, 62), Material = Enum.Material.WoodPlanks, Parent = model })
+	Kit.Detail({ Name = "Wheels", Shape = Enum.PartType.Cylinder, Size = Vector3.new(4.8, 2.8, 2.8), CFrame = cframe * CFrame.new(0, 1.4, 0.8), Color = Kit.Palette.Timber, Material = Enum.Material.Wood, Parent = model })
+	Kit.Detail({ Name = "Shafts", Size = Vector3.new(3, 0.4, 4), CFrame = cframe * CFrame.new(0, 1.6, -4.6) * CFrame.Angles(math.rad(-12), 0, 0), Color = Kit.Palette.Timber, Material = Enum.Material.Wood, Parent = model })
+	Kit.Detail({ Name = "Load", Size = Vector3.new(3.2, 1.6, 4.6), CFrame = cframe * CFrame.new(0, 3.3, 0.2), Color = load, Material = Enum.Material.Fabric, Parent = model })
+	return model
+end
+
+-- A signpost: a post and a board for each way, painted in a district's
+-- colour, with the name on both faces. Each way: { Angle (as for
+-- Geo.Polar), Text, Color }.
+export type Way = { Angle: number, Text: string, Color: Color3 }
+function Kit.Signpost(parent: Instance, position: Vector3, ways: { Way }): Model
+	local model = Kit.Model("Signpost", parent)
+	Kit.Part({ Name = "Post", Size = Vector3.new(0.6, 9, 0.6), Position = position + Vector3.new(0, 4.5, 0), Color = Kit.Palette.Timber, Material = Enum.Material.Wood, Parent = model })
+	for i, way in ways do
+		local along = Vector3.new(math.sin(way.Angle), 0, math.cos(way.Angle))
+		local centre = position + Vector3.new(0, 8.6 - i * 1.5, 0) + along * 2.6
+		local board = Kit.Detail({ Name = "Board", Size = Vector3.new(5, 1.2, 0.3), CFrame = CFrame.lookAt(centre, centre + along) * CFrame.Angles(0, math.rad(90), 0), Color = way.Color, Material = Enum.Material.Wood, Parent = model })
+		for _, face in { Enum.NormalId.Front, Enum.NormalId.Back } do
+			local gui = Instance.new("SurfaceGui")
+			gui.Face = face
+			gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
+			gui.PixelsPerStud = 30
+			gui.Parent = board
+			local label = Instance.new("TextLabel")
+			label.BackgroundTransparency = 1
+			label.Size = UDim2.new(1, 0, 1, 0)
+			label.Text = way.Text
+			label.TextScaled = true
+			label.Font = Enum.Font.Fantasy
+			label.TextColor3 = Kit.Palette.Cream
+			label.Parent = gui
+		end
+	end
+	return model
+end
+
 return Kit
