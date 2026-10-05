@@ -1037,6 +1037,20 @@ function GrappleController.Init()
 				end
 			end
 		end)
+		-- A giant shook itself (its "Shake"): every hook biting a giant comes
+		-- loose (the server stamps "ShakenOffAt"; a small push follows).
+		player:GetAttributeChangedSignal("ShakenOffAt"):Connect(function()
+			local shaken = false
+			for _, hook in hooks do
+				if hook.OnGiant and hook.State ~= "Idle" then
+					release(hook)
+					shaken = true
+				end
+			end
+			if shaken then
+				Effects.Shake(0.8)
+			end
+		end)
 		remote(Config.Remotes.Knocked).OnClientEvent:Connect(function(push: Vector3)
 			if typeof(push) ~= "Vector3" or not root or not humanoid or held then
 				return

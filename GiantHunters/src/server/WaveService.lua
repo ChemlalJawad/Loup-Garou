@@ -115,6 +115,7 @@ local function round(): Outcome
 	state.District = D.Health
 	state.Phase = "Breach"
 	broadcast()
+	GiantService.SetRound(state.Round) -- (the giants get a little sharper each round)
 	WaveService.RoundStarted:Fire(state.Round)
 	if not Wall.IsBreached() then
 		GiantService.RunWallbreaker()
