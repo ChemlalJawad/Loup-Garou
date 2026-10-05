@@ -291,6 +291,9 @@ local function hint(unlock: Config.Unlock?): string
 		ChallengesDone = `Finish {at} daily challenges`,
 		BestRound = `Clear round {at}`,
 	} :: { [string]: string })[unlock.Stat or ""] or `{at}`
+	if unlock.Stat == "Pathfinder" then
+		return "Discover every place on the map (M)"
+	end
 	return `{what} ({math.min(have, at)}/{at})`
 end
 
