@@ -243,6 +243,8 @@ anyone who comes close. Worth 12 points.
 | Resupply gas & blades (at a crate with a blue beam) | R | D-pad down | tap the prompt |
 | Fire a wall cannon / take the titan crystal | R | D-pad down | tap the prompt |
 | Settings (aim assist, camera roll, shake, FOV, text size) | click the gear, top right | - | tap the gear, top right |
+| The big map and the Lost Journal | M | D-pad right | "Map" |
+| Pick up a Lost Journal page / buy from the merchant | R (or walk into the page) | D-pad down | tap the prompt |
 
 Shift is left free for **shift-lock** (camera lock), which makes aiming
 easier: you aim from the centre of the screen, and the crosshair turns
@@ -599,6 +601,60 @@ with a button. Saved in the profile's `Season`; it starts over when
 Premium Payouts (Roblox pays you for the time Premium members play) need no
 code.
 
+## Exploring
+
+The land rewards a good look round. All numbers are in `Config.Discovery`,
+`Config.Journals`, `Config.WorldEvents` and `Config.Wildlife`.
+
+- **Discoveries**: the map builders tag named places (`Config.Tags.POI`: a
+  BasePart anchor with `PoiId`, `PoiName`, `PoiKind` "Town" | "Wilds").
+  Come within 60 studs of one for the first time and you get a
+  **DISCOVERED: <name>** banner, XP and Marks. The server checks where you
+  really are (not during your tutorial, not right after an impossible
+  move). Saved in the profile's `Discovered`. Find every place and you get
+  a bonus and the **Pathfinder** title (profile `Pathfinder` = 1).
+- **The big map** (M, d-pad right, or the MAP button on touch screens): a
+  top-down drawing of the whole land, north up: the hills, the regions,
+  roads, the river and its pools, the town's ring roads and avenues, the
+  Great Wall and the gate, the castle hill. Places you've found are gold
+  with their name, the rest a grey "?". You're the white arrow; other
+  hunters are blue dots, supply crates near you cyan dots, giants within
+  380 studs of you red squares (fair: it's a long radar, not a spy glass),
+  and the world event a pulsing gold star with what it is and the time
+  left. It's drawn by scale, so it fits a phone, and the markers only move
+  (five times a second) while it's open.
+- **Lost Journals**: 18 short pages of the district's story (the old outer
+  wall, the clockmaker who invented the rig, the first hunters, the
+  landmarks...) hidden as small glowing books with a gold star over them,
+  high up: rooftops, tree platforms, landmark tops. The server picks the
+  spots when it starts, by casting rays round the named places, supply
+  crates and cannons from a fixed seed, so every server has the same
+  spots. Walk into a book (or press R at it) to pick it up: XP and Marks,
+  and a bonus for the whole set. Saved in the profile's `Journals`; read
+  them in the map's **JOURNAL** tab. Pages you've found disappear from
+  your screen only.
+- **World events**: one at a time, every 4 to 7 minutes, never while
+  someone is still doing the tutorial; announced in the feed and shown on
+  the map.
+  - **Supply Drop**: a crate floats down on a red balloon somewhere
+    outside the wall. When it lands it's a supply crate (gas and blades,
+    R). The first hunter there, and everyone who arrives in the next 10
+    seconds, gets Marks and XP.
+  - **Wandering Merchant**: a cart parks on a road for 3 minutes, selling
+    one random gear set or technique at 40% off. Buying goes through the
+    shop's usual checks (`ShopService.BuyAt`: level, Marks, not owned).
+  - **Golden Giant** (only during a wave): a shining giant joins the
+    wave; when it goes down, everyone who landed a cut on it shares the
+    prize.
+  - **Signal Beacons**: three beacons far apart across the land. Touch
+    each to light it; all three within 2 minutes and everyone on the
+    server gets Marks and XP (a little more for each beacon you lit).
+- **Wild creatures** (on each screen only, near the camera): deer and
+  rabbits graze in the grassy meadows outside the wall by day, nibbling
+  and wandering, and run (or hop) away from giants and hunters; at night
+  fireflies drift and blink under the trees and along the river. A handful
+  of parts each, half as many on phones and low graphics.
+
 ## The HUD
 
 Crosshair with left/right hook marks (gold flying, sky blue hooked); the
@@ -707,6 +763,11 @@ sound you've uploaded (`rbxassetid://...`).
 | `src/server/SeasonService.lua` | the season pass: season XP, tiers, claiming rewards |
 | `src/server/Respawn.lua` | respawning on the wall, retried if it fails |
 | `src/client/CosmeticsClient.lua` | cosmetic gas and cable colours, defeat effects (yours and other hunters') |
+| `src/server/DiscoveryService.lua` | named places (POI tag) discovered by position, the Pathfinder title, the map's data (`Config.Remotes.Explore`) |
+| `src/server/JournalService.lua` | the Lost Journal pages: placed by seeded raycasts, picked up, saved |
+| `src/server/WorldEventService.lua` | world events: supply drop, wandering merchant, Golden Giant, signal beacons |
+| `src/client/MapScreen.lua` | the big map and the JOURNAL tab; hides the pages you've found |
+| `src/client/Wildlife.lua` | client-only deer, rabbits and fireflies |
 
 Movement runs on each player's own client, so the grapple feels instant.
 Damage is always validated by the server (cooldown, blades left, real

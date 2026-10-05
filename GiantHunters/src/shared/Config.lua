@@ -425,6 +425,9 @@ Config.Remotes = {
 	Monetization = "GH_Monetization", -- client -> server ("Sync") | ("Buy", key, arg?) | ("BuyCosmetic", itemId); server -> client ("State", { Passes, Season }) | ("Result", ok, message); server -> all ("Fireworks", position, buyerName)
 	Style = "GH_Style", -- client -> server ("Sync") | ("Buy", itemId) (Marks) | ("Equip", slot, itemId); server -> client ("State", { Owned, Equip }) | ("Result", ok, message)
 	Season = "GH_Season", -- client -> server ("Sync") | ("Claim", "Free" | "Premium", tier); server -> client ("State", { Id, Name, XP, Tier, ClaimedFree, ClaimedPremium, Premium, EndsIn? }) | ("Result", ok, message)
+	-- Exploring (DiscoveryService, JournalService, WorldEventService / MapScreen, Wildlife):
+	Explore = "GH_Explore", -- client -> server ("Sync"); server -> client ("State", { Pois, Found, Journals, JournalCount, Map })
+	WorldEvent = "GH_WorldEvent", -- client -> server ("Sync"); server -> client ("Event", info?) (nil: no event on)
 }
 -- (Held also sends ("Wriggle", { Count, Needed }): the server's own count of
 -- a held hunter's wriggles, which drives the wriggle bar. Wave also carries
@@ -953,6 +956,8 @@ Config.Cosmetics = {
 		{ Id = "DailyHero", Display = "Daily Hero", Unlock = { Stat = "ChallengesDone", At = 10 } },
 		{ Id = "Legend", Display = "Living Legend", Unlock = { Stat = "Giants", At = 500 } },
 		{ Id = "EliteCommander", Display = "Elite Commander", Unlock = { Pass = "CommanderPack" } },
+		-- Every named place found (DiscoveryService sets the profile's "Pathfinder" to 1).
+		{ Id = "Pathfinder", Display = "Pathfinder", Unlock = { Stat = "Pathfinder", At = 1 } },
 	} :: { Title },
 	TitleDistance = 70, -- studs: the title over a hunter's head fades out past this
 }
@@ -1552,6 +1557,123 @@ Config.Season = {
 		{ XP = 15900, Free = { Marks = 25 }, Premium = { Marks = 50 } },
 		{ XP = 16800, Free = { Marks = 75 }, Premium = { Cosmetic = "Season1_TitanSkin" } }, -- 30
 	} :: { SeasonTier },
+}
+
+-- === Exploring: discoveries, the map, Lost Journals, world events, wildlife ==
+-- Named places are tagged Config.Tags.POI by the map builders (a BasePart
+-- anchor with the attributes PoiId, PoiName and PoiKind "Town" | "Wilds").
+-- Coming within Radius of one for the first time discovers it (checked on
+-- the server from where the hunter really is). Saved in the profile's
+-- "Discovered"; finding them all sets "Pathfinder" (the Pathfinder title).
+Config.Discovery = {
+	Radius = 60, -- studs from the anchor (flat distance; up to Rise above or below)
+	Rise = 160,
+	CheckEvery = 0.5, -- seconds between the server's checks
+	XP = 40,
+	Marks = 15,
+	AllXP = 250, -- every place found: a bonus, and the Pathfinder title
+	AllMarks = 120,
+	-- The big map (MapScreen): M, the d-pad's right, or the MAP button.
+	MapKey = Enum.KeyCode.M,
+	MapGamepad = Enum.KeyCode.DPadRight,
+	MapRefresh = 0.2, -- seconds between marker updates while it's open
+	GiantRange = 380, -- giants show on the map only this close to you (like the radar, a bit further)
+}
+
+-- Lost Journals: pages of the district's story hidden in high, hard-to-reach
+-- spots (rooftops, tree platforms, landmark tops), placed when the server
+-- starts by raycasting round the named places and supply crates, from a
+-- fixed seed (the same spots every server, as long as the map is the same).
+-- Saved in the profile's "Journals".
+export type JournalPage = { Id: string, Title: string, Text: string }
+
+Config.Journals = {
+	Seed = 7319,
+	MinHeight = 24, -- a spot at least this high (studs above sea level) is "high"
+	Spacing = 70, -- never two pages closer than this
+	SearchRadius = { 14, 70 }, -- studs round an anchor where a spot is looked for
+	PickupDistance = 7, -- walking into a page picks it up (or use its prompt, key R)
+	PromptDistance = 10,
+	XP = 30,
+	Marks = 12,
+	AllXP = 300, -- every page: a bonus
+	AllMarks = 150,
+	Pages = {
+		{ Id = "J01", Title = "The First Stone", Text = "Long ago this valley was only a river crossing. Travellers stopped here to rest, then stayed to farm. They called their little town the district, because it was the part of the valley they could keep safe." },
+		{ Id = "J02", Title = "The Old Outer Wall", Text = "Before the Great Wall there was the old outer wall: a ring of earth banks and wooden posts out where the hills begin. It kept the sheep in more than it kept anything out. You can still find its lumpy line in the hills." },
+		{ Id = "J03", Title = "When the Giants Came", Text = "One misty morning the shepherds saw shapes as tall as trees walking over the hills. They were slow, and curious, and very hungry for trouble. The old outer wall did not stop them for a minute." },
+		{ Id = "J04", Title = "Building the Great Wall", Text = "Everyone helped build the Great Wall: farmers hauled stone, children carried water, and the miller's oxen pulled the carts. It took eleven summers. On the last day the whole district sang on top of it." },
+		{ Id = "J05", Title = "The Clockmaker's Idea", Text = "A clockmaker named Odile Brask watched swallows dart between rooftops and had an idea. Two cables, two hooks, a little puff of gas: what if a person could fly like that? Her first rig snapped a washing line. Her second one worked." },
+		{ Id = "J06", Title = "The First Hunters", Text = "Seven volunteers tried Odile's rig. They practised on hay-stuffed dummies until they could swing, turn and land on a chimney. They learned that a giant's weak spot is the back of its neck, and that teamwork beats bravery every time." },
+		{ Id = "J07", Title = "The Statue in the Plaza", Text = "The statue by the fountain is Tamsin Vale, the first hunter to save a whole street. She always said the statue should have been of all seven of them. The pigeons agree: they sit on everyone equally." },
+		{ Id = "J08", Title = "Why the Capes are Green", Text = "The first capes were dyed with river reeds because green cloth was cheapest. Now the green means: I will help you. Any hunter in a green cape will cut a friend free, no questions asked." },
+		{ Id = "J09", Title = "The Bell Tower", Text = "The church bell tower is the highest perch in town. A lookout sits up there on wave days. One ring means giants on the plains. Two rings mean giants at the gate. Three rings mean: everyone, grab your hooks!" },
+		{ Id = "J10", Title = "The River Grates", Text = "Where the river runs under the Great Wall, iron grates let the water through but nothing else. Fish swim in and out as they please. Giants have tried to squeeze through. They got very wet and very grumpy." },
+		{ Id = "J11", Title = "The Old Castle", Text = "The castle on the western hill is older than the wall. Its lord gave the stones of its fallen side to help build the Great Wall. Hunters still camp in its courtyard, and say the keep has the best sunsets in the land." },
+		{ Id = "J12", Title = "The Mill Tower", Text = "The old mill tower in the far north-west lost its sails in a great storm. The miller moved to the farms, but left a crate of supplies in the top for hunters. Climbers say you can see three forests from up there." },
+		{ Id = "J13", Title = "The Aqueduct", Text = "The aqueduct once carried fresh water from the hills to the district. A few arches have fallen, but its tall stone legs make the best swinging line on the plains. Hook, swing, hook, swing, and never touch the ground." },
+		{ Id = "J14", Title = "The Great Forest", Text = "The trees of the Great Forest grew taller than the wall long before anyone counted the years. Hunters built platforms on the biggest trunks. It is the one place where you can swing for a kilometre without stopping." },
+		{ Id = "J15", Title = "Signal Beacons", Text = "Before the bell tower, hunters lit fires on hills to send messages. Three fires in a row meant: all is well, come home for supper. The custom lives on: when beacons are lit, every hunter gets a share of the reward." },
+		{ Id = "J16", Title = "The Wandering Merchant", Text = "Nobody knows where the merchant's cart comes from. It rattles along the roads, sells a bargain or two, and is gone by the next bell. Some say the merchant is Odile Brask's great-grandson. He only winks." },
+		{ Id = "J17", Title = "The Golden Giant", Text = "Once in a long while a giant appears that shines like a polished coin. Nobody knows why. It is no fiercer than the others, but every hunter who helps bring it down shares a reward. Look for the glint on the plains!" },
+		{ Id = "J18", Title = "A Note to New Hunters", Text = "Fly high, cut clean, and look after each other. The district has stood for a hundred years because people chose to help. Now it is your turn. Welcome to the hunters." },
+	} :: { JournalPage },
+}
+
+-- World events: one at a time, now and then (a global cooldown), never while
+-- someone on the server is still doing the tutorial. Announced in the feed
+-- and shown on the big map (WorldEventService).
+Config.WorldEvents = {
+	FirstDelay = 150, -- seconds after the server starts
+	Cooldown = { 240, 420 }, -- seconds between two events
+	Weights = { SupplyDrop = 3, Merchant = 2, GoldenGiant = 2, Beacons = 2 }, -- (Golden Giant: only during a wave)
+	SupplyDrop = {
+		FallTime = 24, -- seconds on its balloon, drifting down
+		StartHeight = 240,
+		Reach = 14, -- studs: you've reached the crate
+		Window = 10, -- after the first hunter gets there, everyone who arrives within this many seconds shares...
+		Marks = 25,
+		XP = 40,
+		WaitLanded = 150, -- seconds it waits on the ground for a first hunter
+		LingerAfter = 45, -- then stays as a supply crate this long
+	},
+	Merchant = {
+		Duration = 180, -- seconds on the road
+		Discount = 0.4, -- off the Marks price of one random gear or technique
+		PromptDistance = 12,
+	},
+	GoldenGiant = {
+		Kind = "Medium", -- Config.GiantKinds
+		Marks = 40, -- for everyone who hit it, when it goes down
+		XP = 80,
+		Color = Color3.fromRGB(255, 200, 70),
+	},
+	Beacons = {
+		Count = 3,
+		Duration = 120, -- seconds to light them all
+		Reach = 12,
+		Radius = { 360, 900 }, -- studs from the centre
+		Marks = 30, -- for every hunter on the server when all are lit...
+		XP = 50,
+		LighterMarks = 10, -- ...and this more for each beacon you lit
+	},
+}
+
+-- Ambient creatures (client-only, near the camera): deer and rabbits grazing
+-- in the meadows outside the wall by day, running from giants and hunters;
+-- fireflies near forests and the river at night (Wildlife.lua).
+Config.Wildlife = {
+	Deer = 4,
+	Rabbits = 6,
+	LowEndScale = 0.5, -- phones and low graphics: half as many
+	Range = { 60, 220 }, -- studs from the camera they appear at
+	Despawn = 300, -- ...and are tidied away past this
+	FleeGiant = 90, -- a giant this close sends them running
+	FleeHunter = 26, -- ...or a hunter
+	DeerSpeed = 30,
+	RabbitSpeed = 22,
+	Fireflies = 30, -- in a few swarms
+	FireflySwarms = 3,
 }
 
 return Config

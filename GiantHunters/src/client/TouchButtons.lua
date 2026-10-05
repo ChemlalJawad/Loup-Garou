@@ -28,6 +28,7 @@ local SLOTS: { [string]: Slot } = {
 	Titan = { X = -2.05, Y = -3.7, Size = 0.85 },
 	Technique = { X = -3.2, Y = -3.8, Size = 0.85 }, -- the shop technique (TechniqueController)
 	Technique2 = { X = -4.35, Y = -3.7, Size = 0.8 }, -- the second technique slot (a game pass)
+	Map = { X = -5.25, Y = -2.5, Size = 0.7 }, -- the big map and the journal (MapScreen)
 }
 
 type Button = { Gui: TextButton, Slot: Slot, Shown: boolean }

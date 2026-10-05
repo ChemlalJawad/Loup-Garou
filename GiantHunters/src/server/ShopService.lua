@@ -160,10 +160,16 @@ local function setEquip(player: Player, profile: any, category: string, id: stri
 	end
 end
 
-local function buy(player: Player, profile: any, category: string, id: string)
-	local item = findItem(category, id)
-	if not item then
+-- `price`: a special price (the Wandering Merchant's), else the item's own.
+local function buy(player: Player, profile: any, category: string, id: string, price: number?)
+	local found = findItem(category, id)
+	if not found then
 		return
+	end
+	local item = found
+	if price and found.Price > 0 then
+		item = table.clone(found)
+		item.Price = math.max(math.floor(price), 1)
 	end
 	local owned = ownedOf(profile)
 	if owned[id] or item.Price <= 0 then
@@ -331,6 +337,24 @@ local function publishStyles(player: Player)
 		local ok = item ~= nil and item.Slot == slot and ShopService.OwnsStyle(player, id)
 		player:SetAttribute(`Cos_{slot}`, if ok then id else "")
 	end
+end
+
+-- Buys gear or a technique at a special price (the Wandering Merchant,
+-- WorldEventService), with every usual check: data loaded, a known item,
+-- not owned yet, the level, the Marks. The hunter gets the usual "Result".
+-- True if they own it now.
+function ShopService.BuyAt(player: Player, category: string, id: string, price: number): boolean
+	local profile = profileOf(player)
+	if not profile then
+		result(player, false, "Still loading your progress...")
+		return false
+	end
+	if category ~= "Gear" and category ~= "Technique" then
+		return false
+	end
+	buy(player, profile, category, id, price)
+	send(player)
+	return ownedOf(profile)[id] == true
 end
 
 -- Re-publishes everything owned and worn (after a pass or a grant).

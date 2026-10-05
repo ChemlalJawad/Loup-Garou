@@ -53,6 +53,13 @@ require(script.Parent.TechniqueService).Init()
 require(script.Parent.MonetizationService).Init()
 require(script.Parent.SeasonService).Init()
 
+-- Exploring: discovering named places (and the map's data), the Lost
+-- Journal pages, and world events (supply drops, the merchant, the Golden
+-- Giant, signal beacons). After the shop, Marks, levels and waves.
+require(script.Parent.DiscoveryService).Init()
+require(script.Parent.JournalService).Init()
+require(script.Parent.WorldEventService).Init()
+
 print(`[{Config.GAME_NAME}] server ready`)
 
 -- In Studio only: a PASS / WARN / FAIL checklist in the Output window.

@@ -62,6 +62,49 @@ function StudioCheck.Run(world: { Spawn: BasePart?, GiantSpawns: { Vector3 } })
 	end
 	check(#missing == 0, if #missing == 0 then "all remotes created" else `missing remotes: {table.concat(missing, ", ")}`)
 
+	-- Exploring: named places (unique PoiIds, names), Lost Journals placed.
+	local poiIds: { [string]: boolean } = {}
+	local pois, dupes, unnamed = 0, {}, 0
+	for _, anchor in CollectionService:GetTagged(Config.Tags.POI) do
+		local id = anchor:GetAttribute("PoiId")
+		if not anchor:IsA("BasePart") or type(id) ~= "string" or id == "" then
+			report("FAIL", `{Config.Tags.POI} without a BasePart anchor or PoiId: {anchor:GetFullName()}`)
+			continue
+		end
+		pois += 1
+		if poiIds[id] then
+			table.insert(dupes, id)
+		end
+		poiIds[id] = true
+		if type(anchor:GetAttribute("PoiName")) ~= "string" then
+			unnamed += 1
+		end
+	end
+	check(pois >= 8, `places to discover: {pois}`, "WARN")
+	check(#dupes == 0, if #dupes == 0 then "PoiIds unique" else `PoiIds used twice: {table.concat(dupes, ", ")}`)
+	check(unnamed == 0, `places without a PoiName: {unnamed}`, "WARN")
+	local journals = Workspace:FindFirstChild("LostJournals")
+	local placed = if journals then #journals:GetChildren() else 0
+	check(placed == #Config.Journals.Pages, `Lost Journal pages placed: {placed}/{#Config.Journals.Pages}`)
+	local journalIds: { [string]: boolean } = {}
+	local badPages = {}
+	for _, page in Config.Journals.Pages do
+		if journalIds[page.Id] or #page.Text > 400 then
+			table.insert(badPages, page.Id)
+		end
+		journalIds[page.Id] = true
+	end
+	check(#badPages == 0, if #badPages == 0 then "journal pages: unique ids, short texts" else `journal pages with a repeated id or a long text: {table.concat(badPages, ", ")}`)
+	if journals then
+		local low = 0
+		for _, book in journals:GetChildren() do
+			if book:IsA("Model") and book:GetPivot().Position.Y < Config.Journals.MinHeight then
+				low += 1
+			end
+		end
+		check(low <= #Config.Journals.Pages // 3, `Lost Journal pages placed low (no high spot found): {low}`, "WARN")
+	end
+
 	-- Saving: needs "Enable Studio Access to API Services" in Game Settings.
 	local ok, err = pcall(function()
 		DataStoreService:GetDataStore("GH_StudioCheck"):GetAsync("probe")

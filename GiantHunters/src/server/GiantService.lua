@@ -739,7 +739,9 @@ end
 
 -- === Spawning and takedowns ==================================================
 
-function GiantService.SpawnGiant(kindName: string)
+-- Returns the new giant's model (the Golden Giant, WorldEventService,
+-- dresses it up).
+function GiantService.SpawnGiant(kindName: string): Model
 	local point = spawnPoints[rng:NextInteger(1, #spawnPoints)] + Vector3.new(rng:NextNumber(-25, 25), 0, rng:NextNumber(-25, 25))
 	local rig = GiantFactory.Build(kindName, point, rng)
 	-- Face the gate (the rig is built facing -Z).
@@ -810,6 +812,7 @@ function GiantService.SpawnGiant(kindName: string)
 	elseif kind.Look and kind.Look.Guard then
 		Broadcast.Feed("A Sprinter is coming! She can cover her nape - wait for the hand to drop", "Danger")
 	end
+	return rig.Model
 end
 
 

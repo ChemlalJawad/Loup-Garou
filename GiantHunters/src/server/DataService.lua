@@ -5,7 +5,8 @@
 -- challenges, lifetime totals, the chosen cape and title; and the level and
 -- XP (LevelService); the styles owned and worn (ShopService), the season
 -- pass (SeasonService) and the Robux purchases already granted
--- (MonetizationService).
+-- (MonetizationService); the places discovered and Lost Journal pages found
+-- (DiscoveryService, JournalService).
 --
 -- Older saves simply lack the newer keys: every missing or bad key loads as
 -- its default.
@@ -52,6 +53,12 @@ export type Profile = {
 	-- Robux purchases already granted (MonetizationService): the latest
 	-- PurchaseIds, oldest first, so a receipt is never granted twice.
 	Receipts: { string },
+	-- Exploring (DiscoveryService, JournalService): named places found, Lost
+	-- Journal pages picked up, and 1 once every place was found (the
+	-- Pathfinder title). Never lost: merged with the stored copy on save.
+	Discovered: { [string]: boolean },
+	Journals: { [string]: boolean },
+	Pathfinder: number,
 }
 
 export type Season = {
@@ -101,6 +108,9 @@ local function blank(): Profile
 		Cosmetics = { Owned = {}, Equip = {} },
 		Season = { Id = Config.Season.Id, XP = 0, ClaimedFree = {}, ClaimedPremium = {} },
 		Receipts = {},
+		Discovered = {},
+		Journals = {},
+		Pathfinder = 0,
 	}
 end
 
@@ -175,7 +185,7 @@ local function clean(stored: unknown): Profile
 	local profile = blank()
 	if type(stored) == "table" then
 		local data = stored :: { [string]: unknown }
-		for _, key in { "Points", "Giants", "BestRound", "Marks", "ChallengesDone", "CleanCuts", "Rescues", "XP" } do
+		for _, key in { "Points", "Giants", "BestRound", "Marks", "ChallengesDone", "CleanCuts", "Rescues", "XP", "Pathfinder" } do
 			local value = count(data[key])
 			if value then
 				(profile :: any)[key] = value
@@ -200,6 +210,8 @@ local function clean(stored: unknown): Profile
 		if type(data.Title) == "string" then
 			profile.Title = data.Title
 		end
+		profile.Discovered = cleanMap(data.Discovered, isTrue)
+		profile.Journals = cleanMap(data.Journals, isTrue)
 		profile.Owned = cleanMap(data.Owned, isTrue)
 		profile.Equip = cleanMap(data.Equip, isText)
 		local cosmetics = data.Cosmetics
@@ -295,6 +307,8 @@ local function write(player: Player, session: Session, dataStore: DataStore): bo
 		ClaimedPremium = table.clone(profile.Season.ClaimedPremium),
 	}
 	profile.Receipts = table.clone(profile.Receipts)
+	profile.Discovered = table.clone(profile.Discovered)
+	profile.Journals = table.clone(profile.Journals)
 	local ok = retry(`save {player.Name}`, function()
 		return dataStore:UpdateAsync(keyFor(player), function(stored: unknown)
 			-- Keep the best of both for the things that only ever go up.
@@ -317,6 +331,14 @@ local function write(player: Player, session: Session, dataStore: DataStore): bo
 			while #profile.Receipts > MAX_RECEIPTS do
 				table.remove(profile.Receipts, 1)
 			end
+			-- Places found and journal pages are never lost either.
+			for id in old.Discovered do
+				profile.Discovered[id] = true
+			end
+			for id in old.Journals do
+				profile.Journals[id] = true
+			end
+			profile.Pathfinder = math.max(profile.Pathfinder, old.Pathfinder)
 			return profile
 		end)
 	end)

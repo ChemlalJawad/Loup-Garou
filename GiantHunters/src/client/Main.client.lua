@@ -36,3 +36,8 @@ task.spawn(require(script.Parent.TechniqueController).Init, Grapple)
 
 -- Cosmetic items: defeat effects (other hunters' too); gas and cable colours.
 task.spawn(require(script.Parent.CosmeticsClient).Init)
+
+-- Exploring: the big map and the Lost Journal (M / d-pad right / MAP), and
+-- the wild creatures (deer and rabbits by day, fireflies at night).
+task.spawn(require(script.Parent.MapScreen).Init)
+task.spawn(require(script.Parent.Wildlife).Init)
