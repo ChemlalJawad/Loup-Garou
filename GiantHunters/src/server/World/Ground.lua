@@ -10,6 +10,9 @@
 --   * The river winds west to east across the north of town, under the wall
 --     and out over the fields: stone banks in town, mud ones outside. It
 --     ends in a round pool at each end, short of the hills.
+--   * The far wilds (Layout): Misty Lake with its island, a few ponds,
+--     Needle Rock Gorge's ridges and ravine, rocky outcrops, the Elder
+--     Tree's mound; flower meadows of leafy grass out on the plains.
 --   * The land is a round disc (World.EdgeRadius), so no square corners
 --     stick out past the hills.
 
@@ -111,11 +114,16 @@ local function wilds(terrain: Terrain)
 				elseif Layout.InRegion(p, Layout.Forest) or Layout.InRegion(p, Layout.GreatForest) or Layout.InRegion(p, Layout.Training) then
 					local floor = math.noise(x / 26, z / 26, 2.9)
 					material = if floor > 0.3 then Enum.Material.Mud elseif floor > -0.25 then Enum.Material.LeafyGrass else Enum.Material.Grass
+				elseif Layout.InRegion(p, Layout.Gorge) then
+					-- Stony ground round the gorge's rocks.
+					local stones = math.noise(x / 21, z / 21, 4.4)
+					material = if stones > 0.35 then Enum.Material.Rock elseif stones > -0.1 then Enum.Material.Ground else Enum.Material.Grass
 				else
-					local lush = math.noise(x / 70, z / 70, 3.7)
+					local lush = Layout.Meadow(x, z)
 					local bare = math.noise(x / 38, z / 38, 8.1)
 					if lush > 0.22 then
-						material = Enum.Material.LeafyGrass
+						material = Enum.Material.LeafyGrass -- a flower meadow
+						flat = lush > 0.3 -- (level where the wildflowers grow)
 					elseif bare < -0.48 then
 						material = Enum.Material.Ground
 					elseif math.noise(x / 17, z / 17, 6.3) > 0.62 then
@@ -130,7 +138,7 @@ local function wilds(terrain: Terrain)
 					local fade = math.clamp((r - wallOut - 20) / 40, 0, 1)
 					local roll = math.noise(x / 52, z / 52, 5.9) * 0.7 + math.noise(x / 19, z / 19, 2.2) * 0.3
 					local height = math.min(math.max(roll, 0) * 2.5, 1) * 2.6 * fade
-					if height > 0.05 and (Geo.InRiver(x, z, 8) or Layout.NearPlainRoad(p, Layout.RoadHalfWidth + 3)) then
+					if height > 0.05 and (Geo.InRiver(x, z, 8) or Layout.InWater(p, 10) or Layout.NearPlainRoad(p, Layout.RoadHalfWidth + 3)) then
 						height = 0
 					end
 					if height > 0.05 then
@@ -211,6 +219,41 @@ local function river(terrain: Terrain)
 	end
 end
 
+-- The far wilds (Layout): Misty Lake and the ponds dug like the river's
+-- pools (all the banks first, so one bay's bank never fills another's
+-- water), the lake's island, the gorge's stony ravine floor between its
+-- rock ridges, the spires' rocky feet, the outcrops on the plains, and the
+-- mound the Elder Tree stands on.
+local function farWilds(terrain: Terrain)
+	local waterY = W.River.WaterY
+	local pools: { Layout.Circle } = table.clone(Layout.Lake.Circles)
+	for _, pond in Layout.Ponds do
+		table.insert(pools, pond)
+	end
+	for _, pool in pools do
+		terrain:FillCylinder(CFrame.new(pool.Centre.X, -6, pool.Centre.Z), 12, pool.Radius + 8, Enum.Material.Mud)
+	end
+	for _, pool in pools do
+		terrain:FillCylinder(CFrame.new(pool.Centre.X, -3, pool.Centre.Z), 18, pool.Radius, Enum.Material.Air)
+	end
+	for _, pool in pools do
+		terrain:FillCylinder(CFrame.new(pool.Centre.X, (waterY - 12) / 2, pool.Centre.Z), waterY + 12, pool.Radius, Enum.Material.Water)
+	end
+	terrain:FillBall(Layout.IslandBall.Centre, Layout.IslandBall.Radius, Enum.Material.Grass)
+	local island = Layout.Lake.Island
+	terrain:FillCylinder(CFrame.new(island.X, -3, island.Z), 8, 6, Enum.Material.Ground) -- a beach where the pier points
+	local run = Layout.GorgeRun
+	local from, to = Layout.GorgeAlong * (run.From - 30), Layout.GorgeAlong * (run.To + 30)
+	local middle = (from + to) / 2
+	terrain:FillBlock(CFrame.lookAt(middle - Vector3.new(0, 4, 0), to - Vector3.new(0, 4, 0)), Vector3.new(40, 8, (to - from).Magnitude), Enum.Material.Ground)
+	for _, list in { Layout.GorgeRidges, Layout.SpireFeet, Layout.Outcrops } do
+		for _, rock in list do
+			terrain:FillBall(rock.Centre, rock.Radius, Enum.Material.Rock)
+		end
+	end
+	terrain:FillBall(Layout.ElderMound.Centre, Layout.ElderMound.Radius, Enum.Material.Grass)
+end
+
 function Ground.Build(_rng: Random)
 	local terrain = Workspace.Terrain
 	local function stage(name: string, build: () -> ())
@@ -238,6 +281,9 @@ function Ground.Build(_rng: Random)
 	end)
 	stage("river", function()
 		river(terrain)
+	end)
+	stage("far wilds", function()
+		farWilds(terrain)
 	end)
 
 	terrain.Decoration = true

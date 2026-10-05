@@ -27,6 +27,10 @@ export type Helpers = {
 	Supplies: (Instance, Vector3, boolean) -> (),
 	Grounded: (Vector3, number?) -> Vector3,
 	ClearSpot: (Vector3, number) -> boolean,
+	-- A giant tree (World/Wilds): (parent, base, height, rng, deckY?) -> (model, trunk width).
+	GiantTree: (Instance, Vector3, number, Random, number?) -> (Model, number),
+	-- Marks a named place to discover: (PoiId, PoiName, where, radius).
+	Poi: (string, string, Vector3, number) -> (),
 }
 
 local P = Kit.Palette
@@ -70,6 +74,7 @@ local function millRuin(parent: Instance, h: Helpers, rng: Random)
 	end
 	h.AddAnchor(at)
 	h.Occupy(at, width / 2 + 12)
+	h.Poi("MillRuin", "Old Mill Tower", at, 60)
 end
 
 -- === The aqueduct =============================================================
@@ -102,6 +107,7 @@ local function aqueduct(parent: Instance, h: Helpers, rng: Random)
 	for d = 0, length, 14 do
 		h.Occupy(from + along * d, 24) -- (giant trees spread wide)
 	end
+	h.Poi("Aqueduct", "The Aqueduct", (from + to) / 2, length / 2)
 	local frame = CFrame.lookAt(Vector3.zero, along)
 	local crateDone = false
 	for k, pier in piers do
@@ -199,6 +205,7 @@ local function watchFort(parent: Instance, h: Helpers)
 	end
 	h.AddAnchor(at)
 	h.Occupy(at, half + 2)
+	h.Poi("WatchFort", "Watch-Fort", at, 50)
 end
 
 function Landmarks.Build(parent: Instance, rng: Random, helpers: Helpers)

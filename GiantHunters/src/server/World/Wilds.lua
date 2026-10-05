@@ -13,6 +13,11 @@
 --     lone giant tree in any stretch still too far from an anchor.
 --   * Landmarks (World/Landmarks): the old mill tower, the aqueduct and the
 --     watch-fort.
+--   * The far wilds (World/Frontier): the old outer wall and its gatehouse,
+--     Needle Rock Gorge, Misty Lake, the Elder Tree; wildflowers and fallen
+--     logs.
+--   * Every named place carries a marker tagged Config.Tags.POI (one small
+--     always-streamed model, "PointsOfInterest").
 --   * The edge of the world: an invisible wall inside the hill ring.
 
 local CollectionService = game:GetService("CollectionService")
@@ -21,6 +26,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Config = require(ReplicatedStorage.Shared.Config)
 local Geo = require(ReplicatedStorage.Shared.Geo)
 local Kit = require(script.Parent.Kit)
+local Frontier = require(script.Parent.Frontier)
 local Landmarks = require(script.Parent.Landmarks)
 local Layout = require(script.Parent.Layout)
 
@@ -33,22 +39,51 @@ local WALL_OUT = W.WallRadius + W.WallThickness
 -- What's been put down so far, for spacing and hook coverage. Reset by
 -- Wilds.Build.
 type Footprint = { At: Vector3, Radius: number }
-local footprints: { Footprint } = {} -- everything solid on the ground
+-- Everything solid on the ground, filed in a grid of CELL-stud squares
+-- (each footprint in every square its bounding box touches), so a spacing
+-- check only looks at what's nearby.
+local CELL = 64
+local footprints: { [number]: { Footprint } } = {}
+local function cellsOf(at: Vector3, radius: number, visit: (number) -> boolean?): boolean
+	for cx = math.floor((at.X - radius) / CELL), math.floor((at.X + radius) / CELL) do
+		for cz = math.floor((at.Z - radius) / CELL), math.floor((at.Z + radius) / CELL) do
+			if visit(cx * 4096 + cz) then
+				return true
+			end
+		end
+	end
+	return false
+end
 local anchors: { Vector3 } = {} -- things 40+ studs tall to hook
 local crates: { Vector3 } = {} -- supply crates outside the wall
+local pois: Model? = nil -- the markers of named places
 
 local function occupy(p: Vector3, radius: number)
-	table.insert(footprints, { At = Geo.Flat(p), Radius = radius })
+	local footprint = { At = Geo.Flat(p), Radius = radius }
+	cellsOf(footprint.At, radius, function(key: number): boolean?
+		local cell = footprints[key]
+		if not cell then
+			cell = {}
+			footprints[key] = cell
+		end
+		table.insert(cell, footprint)
+		return nil
+	end)
 end
 
 local function free(p: Vector3, radius: number): boolean
 	local flat = Geo.Flat(p)
-	for _, f in footprints do
-		if (f.At - flat).Magnitude < f.Radius + radius then
-			return false
+	return not cellsOf(flat, radius, function(key: number): boolean?
+		local cell = footprints[key]
+		if cell then
+			for _, f in cell do
+				if (f.At - flat).Magnitude < f.Radius + radius then
+					return true
+				end
+			end
 		end
-	end
-	return true
+		return nil
+	end)
 end
 
 local function addAnchor(p: Vector3)
@@ -89,6 +124,7 @@ local function clearSpot(p: Vector3, margin: number): boolean
 		and not Geo.InRiver(p.X, p.Z, margin)
 		and not Geo.InCastleHill(p, margin)
 		and Geo.RadiusOf(p) > WALL_OUT + margin
+		and not Layout.Reserved(p, margin)
 end
 
 -- In a polar region, or within `margin` studs of it.
@@ -103,13 +139,41 @@ local function nearRegion(p: Vector3, region: Region, margin: number): boolean
 end
 
 -- Taken by a named place: the forests, the farms, the training grounds,
--- the castle hill.
+-- the castle hill, the gorge, the lake, the Elder Tree's glade.
 local function busy(p: Vector3, margin: number): boolean
 	return nearRegion(p, Layout.Forest, margin)
 		or nearRegion(p, Layout.Farms, margin)
 		or nearRegion(p, Layout.GreatForest, margin)
 		or nearRegion(p, Layout.Training, margin)
+		or nearRegion(p, Layout.Gorge, margin)
 		or Geo.InCastleHill(p, margin)
+		or Layout.InWater(p, margin * 0.5)
+		or (Geo.Flat(p) - Layout.ElderTree).Magnitude < 150 + margin
+end
+
+-- A named place to discover: an invisible marker (always streamed in) at
+-- `at`, tagged Config.Tags.POI, with PoiId, PoiName, PoiKind and PoiRadius
+-- (roughly how far the place spreads).
+local function poi(id: string, name: string, at: Vector3, radius: number)
+	local parent = pois
+	if not parent then
+		return
+	end
+	local marker = Kit.Part({
+		Name = id,
+		Size = Vector3.new(2, 2, 2),
+		Position = Geo.Flat(at) + Vector3.new(0, Layout.GroundHeight(at.X, at.Z) + 4, 0),
+		Transparency = 1,
+		CanCollide = false,
+		CanQuery = false,
+		CastShadow = false,
+		Parent = parent,
+	})
+	marker:SetAttribute("PoiId", id)
+	marker:SetAttribute("PoiName", name)
+	marker:SetAttribute("PoiKind", "Wilds")
+	marker:SetAttribute("PoiRadius", radius)
+	CollectionService:AddTag(marker, Config.Tags.POI)
 end
 
 -- Random points in a polar region, at least `spacing` apart.
@@ -213,6 +277,7 @@ local function forest(parent: Instance, rng: Random)
 	local folder = Instance.new("Folder")
 	folder.Name = "GiantForest"
 	folder.Parent = parent
+	poi("GiantWoods", "Giant Tree Woods", Geo.Polar(Layout.Forest.Angle, (Layout.Forest.Inner + Layout.Forest.Outer) / 2), 150)
 	local spots = scatter(Layout.Forest, 30, 46, 14, rng)
 	for i, p in spots do
 		local height = rng:NextNumber(115, 160)
@@ -289,6 +354,7 @@ local function farms(parent: Instance, rng: Random)
 	folder.Name = "Farms"
 	folder.Parent = parent
 	local region = Layout.Farms
+	poi("Farms", "The Farms", Geo.Polar(region.Angle, (region.Inner + region.Outer) / 2), 130)
 	local spots = scatter(region, 7, 70, 16, rng)
 	for i, p in spots do
 		local facing = Geo.AngleOf(-p) -- face the town
@@ -297,6 +363,7 @@ local function farms(parent: Instance, rng: Random)
 			windmill(folder, p, facing + math.pi)
 			addAnchor(p)
 			occupy(p, 12)
+			poi("Windmill", "The Windmill", p, 30)
 		elseif i == 2 then
 			barn(folder, frame)
 			occupy(p, 18)
@@ -411,6 +478,7 @@ local function greatForest(parent: Instance, rng: Random)
 	local folder = Instance.new("Folder")
 	folder.Name = "GreatForest"
 	folder.Parent = parent
+	poi("GreatForest", "The Great Forest", Geo.Polar(Layout.GreatForest.Angle, (Layout.GreatForest.Inner + Layout.GreatForest.Outer) / 2), 280)
 	local spots = scatter(Layout.GreatForest, 76, 64, 16, rng)
 	for i, spot in spots do
 		local p = grounded(spot, 3) -- the far edge reaches the hills
@@ -469,6 +537,7 @@ local function training(parent: Instance, rng: Random)
 	folder.Name = "TrainingGrounds"
 	folder.Parent = parent
 	local region = Layout.Training
+	poi("TrainingGrounds", "Training Grounds", Geo.Polar(region.Angle, (region.Inner + region.Outer) / 2), 130)
 	-- The crate and the banner first, so nothing is built on them.
 	local crate = Geo.Polar(region.Angle, region.Inner + 30)
 	supplies(folder, crate, true)
@@ -555,6 +624,7 @@ local function castle(parent: Instance)
 		Kit.Torch(model, base * CFrame.new(x, 0, -half - 4))
 	end
 	addAnchor(centre)
+	poi("Castle", "The Old Castle", centre, 90)
 end
 
 -- === Signal towers ==========================================================
@@ -715,11 +785,11 @@ local function fillGaps(parent: Instance, rng: Random)
 	local folder = Instance.new("Folder")
 	folder.Name = "LoneGiants"
 	folder.Parent = parent
-	local CELL = 60
+	local GRID = 60
 	local reach = W.LandRadius - 100
-	for x = -reach, reach, CELL do
-		for z = -reach, reach, CELL do
-			local centre = Vector3.new(x + CELL / 2, 0, z + CELL / 2)
+	for x = -reach, reach, GRID do
+		for z = -reach, reach, GRID do
+			local centre = Vector3.new(x + GRID / 2, 0, z + GRID / 2)
 			local r = Geo.RadiusOf(centre)
 			if r > WALL_OUT + 60 and r < reach and anchorDistance(centre) > 140 then
 				local height = rng:NextNumber(100, 150)
@@ -785,17 +855,25 @@ function Wilds.Build(parent: Instance, rng: Random)
 	local folder = Instance.new("Folder")
 	folder.Name = "Wilds"
 	folder.Parent = parent
+	local markers = Kit.Model("PointsOfInterest", folder)
+	markers.ModelStreamingMode = Enum.ModelStreamingMode.Persistent
+	pois = markers
 	castle(folder)
-	-- The landmarks go down early so everything else keeps clear of them
-	-- (on their own seed, so the rest of the wilds doesn't reshuffle).
-	Landmarks.Build(folder, Random.new(1866), {
+	-- The landmarks and the far wilds go down early so everything else
+	-- keeps clear of them (on their own seeds, so the rest of the wilds
+	-- doesn't reshuffle).
+	local helpers: Landmarks.Helpers = {
 		Occupy = occupy,
 		Free = free,
 		AddAnchor = addAnchor,
 		Supplies = supplies,
 		Grounded = grounded,
 		ClearSpot = clearSpot,
-	})
+		GiantTree = giantTree,
+		Poi = poi,
+	}
+	Landmarks.Build(folder, Random.new(1866), helpers)
+	Frontier.Build(folder, Random.new(1871), helpers)
 	forest(folder, rng)
 	greatForest(folder, rng)
 	training(folder, rng)
@@ -805,12 +883,14 @@ function Wilds.Build(parent: Instance, rng: Random)
 	signalTowers(folder, rng)
 	plains(folder, rng)
 	outerTowers(folder, rng)
-	-- Supplies out in the far north and north-west, and deep in the Great
-	-- Forest, where nothing else is.
-	for _, spot in { { 170, 1060 }, { 205, 1060 }, { 238, 1060 }, { 90, 1130 }, { 62, 1060 } } do
+	-- Supplies out in the far north and north-west, deep in the Great
+	-- Forest, by the old outer wall and near the town wall, where nothing
+	-- else is.
+	for _, spot in { { 170, 1060 }, { 205, 1060 }, { 238, 1060 }, { 90, 1130 }, { 62, 1060 }, { 45, 1090 }, { 40, 600 }, { 290, 1120 }, { 330, 1090 }, { 215, 1130 }, { 95, 430 }, { 268, 430 } } do
 		lonelyCrate(folder, Geo.Polar(math.rad(spot[1]), spot[2]))
 	end
 	fillGaps(folder, rng)
+	Frontier.Dress(folder, Random.new(1872), helpers)
 end
 
 return Wilds
