@@ -1,7 +1,8 @@
 --!strict
 -- Client-side effects: camera shake, sounds, bursts of steam and sparks
 -- where a cut lands, dust and a felt thud under giants' footsteps, and
--- spinning things (windmill sails). Nothing here replicates, so it costs the
+-- spinning things (windmill sails), stomp rings and crumbling walls under
+-- climbing giants. Nothing here replicates, so it costs the
 -- network nothing. Shake follows the "Screen shake" setting.
 
 local CollectionService = game:GetService("CollectionService")
@@ -221,6 +222,90 @@ local function footstep(root: BasePart, height: number)
 	puff.Speed = NumberRange.new(size * 1.5, size * 3)
 	spot.WorldPosition = ground.Position
 	puff:Emit(math.floor(math.clamp(height / 6, 3, 10)))
+end
+
+-- A giant's stomp (or the Wallbreaker's kick landing): a flat ring of dust
+-- thrown out along the ground round the foot, a widening ring, a boom, and
+-- a hard shake by size and distance.
+function Effects.Stomp(foot: BasePart, height: number)
+	local camera = Workspace.CurrentCamera
+	local model = foot.Parent
+	groundParams.FilterDescendantsInstances = if model then { model } else {}
+	local ground = Workspace:Raycast(foot.Position, Vector3.new(0, -height * 0.4, 0), groundParams)
+	local at = if ground then ground.Position else foot.Position
+	local distance = (camera.CFrame.Position - at).Magnitude
+	local reach = height * Config.Feel.StepReach
+	if distance < reach then
+		local falloff = 1 - distance / reach
+		Effects.Shake(Config.Feel.StepShake * 3 * (height / 46) * falloff)
+	end
+	Effects.Play("Boom", at, math.clamp(height / 46, 0.4, 1.2), 0.9)
+	if distance > Config.Feel.StepDustRange * 1.5 then
+		return
+	end
+	local size = math.clamp(height / 8, 1.5, 8)
+	local spot = Instance.new("Attachment")
+	spot.WorldPosition = at
+	spot.Parent = Workspace.Terrain
+	local puff = Instance.new("ParticleEmitter")
+	puff.Color = ColorSequence.new(if ground and (ground.Material == Enum.Material.Grass or ground.Material == Enum.Material.LeafyGrass) then Color3.fromRGB(170, 160, 120) else Color3.fromRGB(196, 182, 160))
+	puff.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.35), NumberSequenceKeypoint.new(1, 1) })
+	puff.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, size * 0.6), NumberSequenceKeypoint.new(1, size * 2.2) })
+	puff.Lifetime = NumberRange.new(0.8, 1.5)
+	puff.Speed = NumberRange.new(size * 5, size * 9)
+	puff.Drag = 3
+	puff.Rotation = NumberRange.new(0, 360)
+	-- Flung out round the up axis, close to the ground: a ring.
+	puff.EmissionDirection = Enum.NormalId.Top
+	puff.SpreadAngle = Vector2.new(85, 85)
+	puff.Acceleration = Vector3.new(0, size * 0.6, 0)
+	puff.Rate = 0
+	puff.Parent = spot
+	puff:Emit(math.floor(math.clamp(height / 2, 12, 36)))
+	Debris:AddItem(spot, 2)
+	local ring = Instance.new("Part")
+	ring.Name = "StompRing"
+	ring.Shape = Enum.PartType.Cylinder
+	ring.Material = Enum.Material.SmoothPlastic
+	ring.Color = Color3.fromRGB(210, 196, 170)
+	ring.Anchored = true
+	ring.CanCollide = false
+	ring.CanQuery = false
+	ring.CanTouch = false
+	ring.CastShadow = false
+	ring.Transparency = 0.35
+	ring.Size = Vector3.new(0.3, size, size)
+	ring.CFrame = CFrame.new(at + Vector3.new(0, 0.2, 0)) * CFrame.Angles(0, 0, math.pi / 2)
+	ring.Parent = Workspace.Terrain
+	local wide = height * 0.9
+	TweenService:Create(ring, TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Size = Vector3.new(0.3, wide, wide), Transparency = 1 }):Play()
+	Debris:AddItem(ring, 0.7)
+end
+
+-- Bits of wall crumbling where a climbing giant grabs on.
+function Effects.Crumble(position: Vector3, size: number)
+	local camera = Workspace.CurrentCamera
+	if (camera.CFrame.Position - position).Magnitude > Config.Feel.StepDustRange then
+		return
+	end
+	local spot = Instance.new("Attachment")
+	spot.WorldPosition = position
+	spot.Parent = Workspace.Terrain
+	local bits = Instance.new("ParticleEmitter")
+	bits.Color = ColorSequence.new(Color3.fromRGB(150, 140, 128))
+	bits.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, size * 0.35), NumberSequenceKeypoint.new(1, size * 0.15) })
+	bits.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(0.8, 0.2), NumberSequenceKeypoint.new(1, 1) })
+	bits.Lifetime = NumberRange.new(0.8, 1.4)
+	bits.Speed = NumberRange.new(size * 2, size * 5)
+	bits.SpreadAngle = Vector2.new(70, 70)
+	bits.Acceleration = Vector3.new(0, -60, 0)
+	bits.Rotation = NumberRange.new(0, 360)
+	bits.RotSpeed = NumberRange.new(-180, 180)
+	bits.Rate = 0
+	bits.Parent = spot
+	bits:Emit(8)
+	Effects.Burst(position, Color3.fromRGB(196, 186, 170), size, 6)
+	Debris:AddItem(spot, 2)
 end
 
 function Effects.Init()

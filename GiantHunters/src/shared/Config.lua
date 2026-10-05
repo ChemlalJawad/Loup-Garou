@@ -308,6 +308,42 @@ Config.Giants = {
 	GuardCooldown = 6,
 }
 
+-- === Giant actions (one-shot moves) ============================================
+-- The server sets the model attributes "Action" (a name below) and "ActionAt"
+-- (Workspace:GetServerTimeNow() when it started; optional "ActionDir", a
+-- world Vector3 toward the target or where a hit came from); every client
+-- plays the move from ActionAt (GiantAnimator + GiantActions), so the timings
+-- here are the ones both sides read:
+--   Duration  seconds the move lasts (a Loop move repeats this cycle for as
+--             long as the attribute holds)
+--   Windup    seconds of readable tell before it can land
+--   Impact    seconds in when the blow lands / the foot hits (clients shake
+--             and throw dust here); nil = no impact
+--   Gait      how much of the walk still shows under it (0 stands still)
+-- "Mood" ("Calm" | "Alert" | "Hunting" | "Enraged") picks the gait, "LookAt"
+-- (world Vector3) aims the head and eyes, "Mind" ("Mindless" | "Abnormal" |
+-- "Intelligent") and "Cunning" (bool) change how it moves.
+export type GiantAction = { Duration: number, Windup: number, Impact: number?, Loop: boolean?, Gait: number }
+Config.GiantActions = {
+	Stomp = { Duration = 1.2, Windup = 0.55, Impact = 0.6, Gait = 0 }, -- foot up high, slammed down
+	Swipe = { Duration = 1.0, Windup = 0.4, Impact = 0.5, Gait = 0.3 }, -- wide arm sweep at roof height (ActionDir picks the arm)
+	Lunge = { Duration = 1.1, Windup = 0.5, Impact = 0.62, Gait = 0 }, -- dives forward with both arms
+	Climb = { Duration = 1.6, Windup = 0, Loop = true, Gait = 0 }, -- hands up a wall edge in turn, legs pushing
+	Shake = { Duration = 1.0, Windup = 0.15, Impact = 0.35, Gait = 0.2 }, -- shakes like a wet dog (throws off hooks)
+	Search = { Duration = 2.5, Windup = 0, Gait = 0.15 }, -- lost you: hand over its eyes, looking left and right
+	Sniff = { Duration = 1.5, Windup = 0, Gait = 0.2 }, -- leans toward ActionDir, sniffing
+	Flinch = { Duration = 0.4, Windup = 0, Gait = 0.6 }, -- small recoil away from ActionDir (where the cut came from)
+	Stagger = { Duration = 0.9, Windup = 0, Gait = 0 }, -- big stumble back
+	Taunt = { Duration = 1.5, Windup = 0, Gait = 0 }, -- abnormals: chest beat and a goofy wave
+	Crouch = { Duration = 1.0, Windup = 0.4, Impact = 0.5, Gait = 0 }, -- squats low, reaching for someone on the ground
+	Roar = { Duration = 1.4, Windup = 0.35, Impact = 0.45, Gait = 0 }, -- head back, arms out
+	Turn = { Duration = 0.6, Windup = 0, Gait = 0.4 }, -- a fast whole-body pivot toward ActionDir
+	-- Client-only (from other attributes): the Wallbreaker's kick ("Kick")
+	-- and its slow peek over the wall ("Event" before the kick).
+	Kick = { Duration = 2.35, Windup = 0.45, Impact = 0.75, Gait = 0 },
+	Peek = { Duration = 4.0, Windup = 0, Loop = true, Gait = 0 },
+} :: { [string]: GiantAction }
+
 -- === Rounds & waves ===========================================================
 -- A round: the Wallbreaker kicks the gate in, then waves pour through the
 -- breach; the last wave brings an Armored Giant. Clear it and the district is

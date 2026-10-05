@@ -386,6 +386,25 @@ it, and it won't come back.
     slowly round, or sniffs the air toward the nearest hunter. Heavy ones
     (chubby, stocky, the Beast, anything 40+ tall) waddle from foot to foot
     with their arms out and their bellies bouncing.
+  - **How they move** (all procedural, on the client; no animation
+    assets). The walk's stride and cadence come from how fast a giant is
+    really moving, so planted feet don't slide; hips sway over the
+    standing foot, shoulders counter-turn, the head bobs a beat late and
+    forearms follow through. It leans into quick turns and shuffles round
+    on the spot. Its **mood** sets the gait: calm (an amble, curious head
+    bobs), alert (stops, head up, looking round), hunting (a brisk stride,
+    leaning in, arms swinging wide) or enraged (a heavy run, arms
+    flailing). Its **mind** shows too: mindless ones lumber, arms dangling,
+    heads lolling, eyes drifting apart; abnormal ones twitch and snap their
+    heads round, long arms trailing when they sprint; intelligent ones walk
+    upright and evenly, track you with lowered brows, crouch in ambush and
+    cover their napes backing off - and a rare **cunning** one has narrowed,
+    amber, glinting eyes. One-shot **moves** (`Config.GiantActions`, played
+    from the server's "Action" attribute, blended over the walk): Stomp
+    (dust ring and a shake), Swipe, Lunge, Climb, Shake, Search, Sniff,
+    Flinch, Stagger, Taunt, Crouch, Roar and Turn; the Wallbreaker peeks
+    over the wall, then winds up a slow, heavy kick.
+    ![Giant moves and minds](titan-actions-preview.jpg)
 - **Grabs**: a giant raises its arms first (the warning). If it catches
   you, you're held in its hand: **mash anything to wriggle free** (any
   key, click, tap or button; the bar fills as the server counts them), or
@@ -785,7 +804,8 @@ sound you've uploaded (`rbxassetid://...`).
 | `src/server/CannonService.lua` | the wall cannons |
 | `src/server/Broadcast.lua` | kill feed, announcements, camera shakes |
 | `src/client/GrappleController.lua` | flying hooks, taut-cable swing, reel, gas boost and dash, air spin slash, flares, being grabbed or swatted, other hunters' cables |
-| `src/client/GiantAnimator.lua` | client-only animation (walk, grab, hold, swat, kneel, daze, leap, kick, stare, idles, the heavy waddle), footsteps, daze stars |
+| `src/client/GiantAnimator.lua` | client-only animation (foot-planted walk, moods, minds, grab, hold, swat, kneel, daze, leap, kick, stare, idles, the heavy waddle), footsteps, daze stars; level of detail by distance |
+| `src/client/GiantActions.lua` | the giants' one-shot moves as key poses + timings from `Config.GiantActions` (Stomp, Swipe, Lunge, Climb...) |
 | `src/client/Hud.lua`, `Radar.lua` | the HUD and the radar |
 | `src/client/Effects.lua` | camera shake, sounds (with a little variety), nape bursts, footstep dust and shake, the windmill |
 | `src/client/Juice.lua` | hit-stop, flashes and vignettes, floating score, speed lines, camera roll, grab tells, defeated giants slumping |

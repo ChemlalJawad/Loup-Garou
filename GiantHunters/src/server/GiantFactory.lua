@@ -17,7 +17,8 @@
 -- knees, shoulders, elbows and the neck are Motor6Ds, so clients animate
 -- the lumbering walk, the grab and the head tracking (GiantAnimator)
 -- without the server sending any animation. So are the pupils (LeftEye,
--- RightEye) and the eyelids (LeftLid, RightLid). Every part is
+-- RightEye), the eyelids (LeftLid, RightLid) and the brows (LeftBrow,
+-- RightBrow; not a heavy single ridge). Every part is
 -- non-colliding (giants stride through town) but queryable, so hunters can
 -- hook onto a giant's body.
 --
@@ -342,12 +343,18 @@ function GiantFactory.Build(kindName: string, position: Vector3, rng: Random, fo
 	-- head the same way, tilted or not)
 	motor("Neck", torso, head, CFrame.new(headCentre.Position), CFrame.Angles(slouch, 0, 0))
 	-- Small face details cast no shadow (there are a lot of them).
-	local function face(name: string, size: Vector3, offset: CFrame, color: Color3, shape: Enum.PartType?, material: Enum.Material?): Part
+	-- `joint`: on a motor of that name (pivoting at its centre) instead of a
+	-- weld, so clients can move it (the brows).
+	local function face(name: string, size: Vector3, offset: CFrame, color: Color3, shape: Enum.PartType?, material: Enum.Material?, joint: string?): Part
 		local p = part(model, name, size, headCentre * offset, color, shape, material)
 		if math.max(size.X, size.Y, size.Z) < headSize * 0.45 then
 			p.CastShadow = false
 		end
-		weld(head, p)
+		if joint then
+			motor(joint, head, p, headCentre * CFrame.new(offset.Position))
+		else
+			weld(head, p)
+		end
 		return p
 	end
 	local skull = headSize / 2
@@ -489,7 +496,7 @@ function GiantFactory.Build(kindName: string, position: Vector3, rng: Random, fo
 				up, roll, thick = 0.27, 0, 0.075
 			end
 			local brow = onBall(skull, side * 0.38, headSize * up, 0)
-			face(`Brow{i}`, Vector3.new(headSize * 0.26, headSize * thick, headSize * 0.07), CFrame.new(brow) * CFrame.Angles(0, -side * 0.38, side * roll), hairColor)
+			face(`Brow{i}`, Vector3.new(headSize * 0.26, headSize * thick, headSize * 0.07), CFrame.new(brow) * CFrame.Angles(0, -side * 0.38, side * roll), hairColor, nil, nil, `{prefix}Brow`)
 		end
 		if look.Ears ~= "None" then
 			local big = if look.Ears == "Big" then 1.6 else 1
