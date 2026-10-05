@@ -259,6 +259,9 @@ end
 
 -- === Grab tells ==============================================================
 
+-- Moves that can knock you about: they get the danger arrow too.
+local ATTACKS = { Stomp = true, Swipe = true, Lunge = true, Crouch = true, Shake = true }
+
 local function watchGiant(model: Instance)
 	if not model:IsA("Model") then
 		return
@@ -288,6 +291,21 @@ local function watchGiant(model: Instance)
 		if model:GetAttribute("Defeated") == true then
 			dangers[model] = nil
 			Juice.Collapse(model)
+		end
+	end)
+	-- The newer attacks (GiantService sets "Action"): the same red edge
+	-- arrow while one is winding up near you.
+	model:GetAttributeChangedSignal("Action"):Connect(function()
+		local action = model:GetAttribute("Action")
+		local spec = if type(action) == "string" and ATTACKS[action] then Config.GiantActions[action] else nil
+		local root = myRoot()
+		local giantRoot = model:FindFirstChild("Root")
+		if not spec or model:GetAttribute("Defeated") or not root or not giantRoot or not giantRoot:IsA("BasePart") then
+			return
+		end
+		local height = (model:GetAttribute("Height") :: number?) or 20
+		if (giantRoot.Position - root.Position).Magnitude < height * 1.6 + 20 then
+			dangers[model] = os.clock() + (spec.Impact or spec.Windup) + 0.3
 		end
 	end)
 end

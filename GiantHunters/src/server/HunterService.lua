@@ -494,6 +494,7 @@ local function fireFlare(player: Player)
 	hunter.LastFlare = now
 	local green = Color3.fromRGB(110, 240, 130)
 	local start = root.Position + Vector3.new(0, 3, 0)
+	GiantService.Noise(start, Config.GiantAI.Noise.Flare) -- clever giants hear it
 	local shell = Instance.new("Part")
 	shell.Name = "Flare"
 	shell.Shape = Enum.PartType.Ball
@@ -664,6 +665,8 @@ function HunterService.Init(spawn: BasePart?)
 				return
 			end
 		end
+		-- Giants feel hunters hooked onto them (and shake them off).
+		GiantService.NoteHook(player, side :: string, part :: BasePart?)
 		for _, other in Players:GetPlayers() do
 			if other ~= player then
 				hookRemote:FireClient(other, player, side, part, localPos)

@@ -146,14 +146,19 @@ export type GiantKind = {
 	Abnormal: boolean?, -- sprints, zig-zags and leaps; picks its own targets
 	Powers: boolean?, -- throws boulders at rooftop hunters and roars them away
 	Look: GiantLook?,
+	-- How it thinks (Config.GiantAI.Minds; default "Mindless"): mindless ones
+	-- run at the nearest hunter, abnormals at odd ones, intelligent ones hunt.
+	Mind: GiantMind?,
 }
+export type GiantMind = "Mindless" | "Abnormal" | "Intelligent"
 
 Config.GiantKinds = {
-	Small = { Name = "Small", Display = "Small Giant", Height = 18, WalkSpeed = 12, NapeHealth = 1, GrabReach = 11, Points = 1 },
-	Medium = { Name = "Medium", Display = "Giant", Height = 30, WalkSpeed = 10, NapeHealth = 2, GrabReach = 16, Points = 2 },
-	Colossal = { Name = "Colossal", Display = "Colossal Giant", Height = 46, WalkSpeed = 8, NapeHealth = 3, GrabReach = 22, Points = 4 },
+	Small = { Name = "Small", Display = "Small Giant", Height = 18, WalkSpeed = 12, NapeHealth = 1, GrabReach = 11, Points = 1, Mind = "Mindless" },
+	Medium = { Name = "Medium", Display = "Giant", Height = 30, WalkSpeed = 10, NapeHealth = 2, GrabReach = 16, Points = 2, Mind = "Mindless" },
+	Colossal = { Name = "Colossal", Display = "Colossal Giant", Height = 46, WalkSpeed = 8, NapeHealth = 3, GrabReach = 22, Points = 4, Mind = "Mindless" },
 	Runner = {
 		Name = "Runner",
+		Mind = "Abnormal",
 		Display = "Runner",
 		Height = 24,
 		WalkSpeed = 24,
@@ -165,6 +170,7 @@ Config.GiantKinds = {
 	},
 	Armored = {
 		Name = "Armored",
+		Mind = "Intelligent",
 		Display = "Armored Giant",
 		Height = 40,
 		WalkSpeed = 8,
@@ -178,6 +184,7 @@ Config.GiantKinds = {
 	-- they're safe on the rooftops, and roars anyone close away.
 	Beast = {
 		Name = "Beast",
+		Mind = "Intelligent",
 		Display = "Beast Giant",
 		Height = 52,
 		WalkSpeed = 8,
@@ -204,6 +211,7 @@ Config.GiantKinds = {
 	-- cover her nape with a crystal hand (attribute "Guarding", see GiantFactory).
 	Sprinter = {
 		Name = "Sprinter",
+		Mind = "Intelligent",
 		Display = "Sprinter",
 		Height = 28,
 		WalkSpeed = 22,
@@ -216,6 +224,7 @@ Config.GiantKinds = {
 	-- Slow, on all fours, nape on top: the easy one for new hunters.
 	Crawler = {
 		Name = "Crawler",
+		Mind = "Mindless",
 		Display = "Crawler",
 		Height = 22,
 		WalkSpeed = 9,
@@ -227,6 +236,7 @@ Config.GiantKinds = {
 	-- A player who took the titan power, transformed (see ShifterService).
 	Shifter = {
 		Name = "Shifter",
+		Mind = "Mindless",
 		Display = "Titan Shifter",
 		Height = 34,
 		WalkSpeed = 0,
@@ -250,6 +260,7 @@ Config.GiantKinds = {
 	-- Event only: peeks over the wall and kicks the gate in. Can't be hurt.
 	Wallbreaker = {
 		Name = "Wallbreaker",
+		Mind = "Mindless",
 		Display = "Wallbreaker",
 		Height = 175, -- head and shoulders above the 110-stud wall
 		WalkSpeed = 0,
@@ -285,7 +296,6 @@ Config.Beast = {
 }
 
 Config.Giants = {
-	ThinkInterval = 0.25, -- seconds between AI decisions
 	SightRange = 460,
 	GrabWindup = 0.8, -- seconds of arm-raise warning before a grab lands
 	GrabCooldown = 3,
@@ -343,6 +353,127 @@ Config.GiantActions = {
 	Kick = { Duration = 2.35, Windup = 0.45, Impact = 0.75, Gait = 0 },
 	Peek = { Duration = 4.0, Windup = 0, Loop = true, Gait = 0 },
 } :: { [string]: GiantAction }
+-- === How giants think (GiantService, GiantBrain) ==============================
+export type MindTuning = {
+	SightBase: number, -- studs, + SightPerHeight x its height
+	SightPerHeight: number,
+	ConeDot: number, -- sees hunters further forward than this (-1: all round)
+	MaxAbove: number, -- x height: hunters higher above the land are out of its mind
+	Reaction: { number }, -- seconds from spotting a hunter to going for them
+	Memory: number, -- seconds it keeps looking for a hunter it lost (0: forgets)
+	TrackGrace: number,
+	Hearing: boolean,
+	HearBase: number,
+	HearPerHeight: number,
+	ListenTime: number,
+	SearchTime: number,
+	SniffTime: number,
+	AmbushChance: number,
+	AmbushTime: number,
+	Attacks: { [string]: boolean },
+	CooldownScale: number,
+	Smart: boolean, -- picks isolated hunters and rescuers over the nearest
+	Pack: boolean, -- roars call friends
+	Coordinate: boolean, -- MaxPerHunter
+	Shake: boolean,
+	Climb: boolean,
+	Brace: boolean,
+	AvoidHot: boolean,
+	TurnAfter: { number }, -- seconds a hunter stays close behind before it may turn ({0, 0}: never)
+	TurnChance: number,
+	Retreat: number, -- backs off at or below this share of its nape health (0: never)
+	FeintChance: number,
+	TauntChance: number,
+	TwitchChance: number, -- per second: a sudden turn
+}
+
+-- Three kinds of mind (GiantKinds[..].Mind): Mindless (most: run at the
+-- nearest hunter), Abnormal (erratic, odd targets) and Intelligent (see,
+-- hear, remember, call the pack, guard their nape). Every attack has a
+-- wind-up (Config.GiantActions when present, else GiantService's defaults)
+-- and its effect only lands at its Impact time. Pairs { round 1, from
+-- RoundsToFull on } ease with the round: round 1 is gentle.
+Config.GiantAI = {
+	ThinkInterval = 0.15, -- seconds between one giant's decisions (staggered)
+	RoundsToFull = 6,
+	TellTime = { 0.45, 0.12 }, -- a still stare at the target before an attack's own wind-up
+	CooldownScale = { 1.35, 1 },
+	EnrageHits = 2, -- this many hits within EnrageWindow s: Enraged
+	EnrageWindow = 20,
+	EnrageTime = { 10, 15 },
+	EnragedCooldown = 0.7, -- x cooldowns while Enraged
+	FriendFallRadius = 120, -- a giant taken down this close may enrage its friends
+	FriendFallChance = 0.5,
+	MoodSpeed = { Calm = 0.75, Alert = 0.8, Hunting = 1, Enraged = 1.25 },
+	LoudSpeed = 60, -- studs/s: a hunter gassing this fast can be heard
+	Noise = { Flare = 220, Cannon = 160 }, -- hearing radius of a flare / a cannon shot
+	PackRadius = 150, -- an intelligent giant's roar calls friends this close to its target
+	RoarChance = 0.6, -- when it gets Enraged (RoarMinHeight and up)
+	RoarMinHeight = 28,
+	MaxPerHunter = 2, -- intelligent giants leave a hunter to the two already on them...
+	CircleRadius = 1.4, -- ...and circle (x height + 20 studs) if there's nobody else
+	BehindRange = 1.1, -- x height: "close behind" for Turn and Brace
+	IsolatedRadius = 45, -- no other hunter this close: "on their own"
+	RescueRadius = 40, -- this close to a grabbed friend: a rescuer
+	TargetBonus = 40, -- studs of distance an isolated / rescuing / current target is worth
+	StaggerSpeed = 50, -- a clean nape cut this fast (or a cannonball) staggers
+	Cooldowns = { Stomp = 7, Swipe = 5, Lunge = 8, Crouch = 6, Shake = 6, Climb = 14, Turn = 6, Taunt = 9, Roar = 20, Brace = 12, Retreat = 16 },
+	FrontDot = 0.2,
+	Stomp = { Radius = 0.45, MaxAbove = 7, Force = 60 }, -- x height round its feet; a small shove
+	Swipe = { Reach = 0.85, MinAbove = 0.22, Force = 80 }, -- x height
+	Lunge = { Reach = 1, MaxAbove = 0.6, FrontDot = 0.55, Speed = 60 }, -- x height past its grab reach; the dive's top speed (studs/s)
+	Crouch = { Reach = 0.6, MaxAbove = 0.2, FrontDot = 0.6 },
+	Shake = { After = 1.5, Force = 45, Range = 1.6 }, -- hooked this long; hooks further than Range x height are stale
+	Climb = { After = 5, Range = 1.3, Approach = 0.42, Rise = 0.3, MinRise = 4, MaxRise = 14, Hold = 1.6, Reach = 0.6 },
+	Retreat = { Time = 5, Distance = 60 },
+	Brace = { Time = 4, Probe = 45 }, -- backs up to a building within Probe studs behind it
+	Flock = { MaxHeight = 20, LeaderHeight = 30, Radius = 140, Spacing = 34 }, -- small mindless giants tag along with big ones
+	HotSpot = { Radius = 30, Memory = 30 }, -- (intelligent) keeps clear of where it was hurt
+	-- Extra nape reach while an action moves the drawn nape off the rest pose.
+	ActionNapeSlack = { Lunge = 6, Crouch = 6, Climb = 7, Stomp = 2, Swipe = 3, Shake = 4, Flinch = 2, Stagger = 4, Taunt = 2, Roar = 3, Turn = 2 },
+	-- Normal giants (Medium, Colossal) that come out Cunning: intelligent minds.
+	Cunning = { Kinds = { Medium = true, Colossal = true }, FromRound = 3, Chance = 0.08, LateRound = 6, LateChance = 0.15 },
+	Minds = {
+		-- Dumb and relentless: the nearest hunter, straight at them. No
+		-- memory, deaf, never guards the nape. Dangerous in numbers.
+		Mindless = {
+			SightBase = 120, SightPerHeight = 6, ConeDot = -0.2, MaxAbove = 1.05,
+			Reaction = { 0.8, 0.4 }, Memory = 0, TrackGrace = 0.8,
+			Hearing = false, HearBase = 0, HearPerHeight = 0, ListenTime = 0, SearchTime = 2.5, SniffTime = 1.5,
+			AmbushChance = 0, AmbushTime = 0,
+			Attacks = { Grab = true, Stomp = true, Swipe = true, Lunge = false, Crouch = false },
+			CooldownScale = 1.15,
+			Smart = false, Pack = false, Coordinate = false, Shake = false, Climb = false, Brace = false, AvoidHot = false,
+			TurnAfter = { 0, 0 }, TurnChance = 0, Retreat = 0, FeintChance = 0, TauntChance = 0, TwitchChance = 0,
+		},
+		-- Erratic: a far or odd target (high up, in a group), sudden turns,
+		-- leaps, taunts.
+		Abnormal = {
+			SightBase = 200, SightPerHeight = 6, ConeDot = -1, MaxAbove = 2.5,
+			Reaction = { 0.7, 0.35 }, Memory = 3, TrackGrace = 1.5,
+			Hearing = false, HearBase = 0, HearPerHeight = 0, ListenTime = 0, SearchTime = 1.5, SniffTime = 1,
+			AmbushChance = 0, AmbushTime = 0,
+			Attacks = { Grab = true, Stomp = true, Swipe = true, Lunge = true, Crouch = false },
+			CooldownScale = 1,
+			Smart = false, Pack = false, Coordinate = false, Shake = false, Climb = false, Brace = false, AvoidHot = false,
+			TurnAfter = { 0, 0 }, TurnChance = 0, Retreat = 0, FeintChance = 0, TauntChance = 0.5, TwitchChance = 0.2,
+		},
+		-- Thinks: a sight cone (it can't see behind it), hearing, memory and a
+		-- search, pack roars, two at most on one hunter, and tricks: turns on
+		-- hunters behind it, backs up to walls, ambushes, feints, retreats
+		-- when hurt, Shakes off hooks, Climbs to rooftop hunters.
+		Intelligent = {
+			SightBase = 160, SightPerHeight = 6, ConeDot = 0.57, MaxAbove = 1.05, -- (a 110-degree cone)
+			Reaction = { 1, 0.45 }, Memory = 12, TrackGrace = 1.2,
+			Hearing = true, HearBase = 50, HearPerHeight = 2.5, ListenTime = 1.6, SearchTime = 2.5, SniffTime = 1.5,
+			AmbushChance = 0.3, AmbushTime = 8,
+			Attacks = { Grab = true, Stomp = true, Swipe = true, Lunge = true, Crouch = true },
+			CooldownScale = 1,
+			Smart = true, Pack = true, Coordinate = true, Shake = true, Climb = true, Brace = true, AvoidHot = true,
+			TurnAfter = { 4, 2 }, TurnChance = 0.6, Retreat = 0.5, FeintChance = 0.35, TauntChance = 0, TwitchChance = 0, -- (a feint: a Swipe wind-up that turns into a Lunge)
+		},
+	} :: { [string]: MindTuning },
+}
 
 -- === Rounds & waves ===========================================================
 -- A round: the Wallbreaker kicks the gate in, then waves pour through the

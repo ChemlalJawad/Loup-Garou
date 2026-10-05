@@ -350,8 +350,9 @@ it, and it won't come back.
   - Trip or daze the same giant again soon after and it shakes it off
     faster (and only the first one scores).
 - **Giants**:
-  - **Small / Giant / Colossal**: they chase the nearest hunter they can
-    reach. On a rooftop above their heads, you're safe.
+  - **Small / Giant / Colossal**: mindless (below): they chase the nearest
+    hunter they can see and reach. On a rooftop above their heads, you're
+    safe (from most of them).
   - **Runner** (an abnormal): fast, zig-zags, leaps, and picks its own
     target. Yellow shorts, odd eyes.
   - **Sprinter** (an abnormal, from wave 3): lean and quick, zig-zags and
@@ -412,6 +413,68 @@ it, and it won't come back.
   3.5 s? You're caught and sent back to the wall.
 - **Swats**: fly round a giant's head in front of it and it swats you
   away. It can't see behind it - **attack from behind**.
+- **Moods** (the giant's attribute "Mood"): **Calm** (ambling about,
+  a little slow), **Alert** (stopped, looking toward something it saw or
+  heard), **Hunting** (after you), **Enraged** (cut twice in a short while,
+  or a friend taken down close by: faster and quicker to attack for
+  10-15 s, then it calms down).
+- **Every attack is told first**: the giant stops and stares at you, then
+  winds up. Nothing lands before the wind-up ends, and a cut on it calls
+  the attack off (it **flinches**; a fast clean cut or a cannonball makes it
+  **stagger**). Round 1 giants are slow to react and stare longer; they
+  sharpen a little every round.
+  - **Grab**: arms up, then the grab (above).
+  - **Stomp**: you're on the ground by its feet: a foot lifts, then a
+    shockwave shoves you away (no harm). Jump, hook up, or step back.
+  - **Swipe**: you're on a roof or a wall at its arm height in front: an
+    arm draws back, then sweeps you off. Jump off or get behind it.
+  - **Lunge**: you're in front, a bit too far to grab: it crouches back,
+    then dives at **where you were** and grabs if you're still there.
+    Dodge sideways.
+  - **Crouch**: you're low right in front of it: it squats and scoops.
+    Get up high or away.
+  - **Shake** (intelligent giants): hooked onto its body for 1.5 s, it
+    shudders and your hooks pop loose with a small push (not more than every
+    6 s). Cut fast or swing off and come back.
+  - **Climb** (intelligent giants): perched on a house just above its reach
+    for 5 s, it walks over, climbs a few studs up the facade, pauses, then
+    swipes. Slow and easy to see coming. It never climbs the Great Wall.
+  - **Roar** (intelligent giants, when Enraged): calls every giant within
+    150 studs to its target. Beasts' roars also blow you away.
+
+### Kinds of giants: mindless, abnormal, intelligent
+
+Every giant has a mind (`Config.GiantKinds[..].Mind`, the attribute "Mind";
+the numbers are in `Config.GiantAI.Minds`):
+
+- **Mindless** (most of them: Small, Giant, Colossal, Crawler): a vacant
+  stare, slack jaw, arms dangling, a goofy lumber. They run straight at the
+  **nearest** hunter they can see (anything not behind them), forget you the
+  moment you're gone, ignore noises, never guard the nape, and only grab,
+  stomp and swipe. Their danger is numbers. **Beat them**: lead them by the
+  nose, slip behind them, and cut; a closer friend steals their attention.
+- **Abnormal** (Runners): twitchy and erratic. They ignore the nearest
+  hunter for an odd one (high up, far off, in a group), zig-zag, leap,
+  turn on the spot and stop to **taunt** you. **Beat them**: a taunt is your
+  opening - they stand still for a moment.
+- **Intelligent** (the Sprinter, the Beast, the Armored Giant, and from
+  round 3 a few **Cunning** normal giants: 8%, 15% from round 6; a feed line
+  says "A cunning giant is among them - it guards its nape!"; attribute
+  "Cunning"): upright, deliberate, head tracking you. They see in a
+  110-degree cone in front (never behind), **hear** gas boosts, flares and
+  cannon shots and come to look, **remember** where they lost you and
+  search and sniff about before giving up, call the pack with a roar, and
+  never put more than two on one hunter (the others circle). Their tricks:
+  linger close behind one for a few seconds and it **turns round**; two or
+  more of you close and it **backs up to a wall**; it may **wait in
+  ambush** crouched still where it lost you, then lunge; it can **feint** (a
+  swipe wind-up that becomes a lunge - both wound up); badly hurt it
+  **backs away** facing you (covering its nape if it can); it steers round
+  spots where it was cut or shelled lately; it **shakes** off hooks and
+  **climbs** to rooftop hunters. Armour on, the Armored Giant just charges.
+  **Beat them**: come from behind and don't hang about, split up so one of
+  you is always behind it, use flares to pull it away, and strike when it's
+  busy searching or winding up.
 - **Blades**: a sword in each hand, 8 blades per life, one used per hit.
   With none left they turn dull and grey. Resupply at a crate (the wall
   post, the plaza, the headquarters, the market, the gate square, the
@@ -793,7 +856,8 @@ sound you've uploaded (`rbxassetid://...`).
 | `src/server/World/Landmarks.lua` | the old mill tower, the aqueduct, the watch-fort |
 | `src/server/World/Kit.lua`, `Layout.lua` | shared part helpers and set pieces; where the big pieces go, the roads, the hill ring and ground height |
 | `src/server/GiantFactory.lua` | part-built giant rig (rounded body, face, oddities, armour, Motor6D waist/limbs/neck, glowing nape, kinematic mover) |
-| `src/server/GiantService.lua` | giant AI, grabs and holds, swats, the three cuts, armour, takedowns, the Wallbreaker |
+| `src/server/GiantService.lua` | giant AI (perception, minds, attacks, Shake, Climb, pack calls), grabs and holds, swats, the three cuts, armour, takedowns, the Wallbreaker |
+| `src/server/GiantBrain.lua` | the giants' mood / plan state machine and attack choice, as pure functions |
 | `src/server/WaveService.lua` | rounds and waves (and the odd Beast Giant) |
 | `src/server/DayNightService.lua` | the 24-hour clock |
 | `src/server/WeatherService.lua`, `src/client/Weather.lua` | passing rain and fog: the server picks, each client fades the sky and the rain |
