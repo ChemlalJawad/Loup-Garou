@@ -100,6 +100,32 @@ shop's items, and that every giant kind and titan form builds.
   fallen; a crate sits in the channel halfway); and the **watch-fort** where
   the east road enters the Great Forest: a log stockade, a lookout tower
   with a crate on its deck, a banner and a torch.
+- **The far wilds** (World/Frontier), an old frontier land beyond the roads:
+  - **The old outer wall**: a broken ring of an older, lower wall (64
+    studs) at the foot of the hills, 1196 studs out, past where giants
+    walk. Long stretches still stand (a few with towers), others are
+    stubs with slanting broken tops, whole sections lie toppled flat in the
+    grass, and moss and bushes grow everywhere. It's open where the river
+    and the south road pass; on the road stands the ruined **gatehouse**,
+    its arch fallen beside the road and a crate on its tall tower.
+  - **Needle Rock Gorge** (south-south-west, beyond the farms): a ravine
+    between two craggy rock ridges, crossed by two rope bridges, with a
+    crate on its floor, and a ring of stone spires (75-150 studs), a
+    crate on top of the two tallest. A vertical playground.
+  - **Misty Lake** (south-south-east, beyond the forest): mist drifting
+    over the water, reeds and lily pads, a pier with a rowboat, and an
+    island with a broken tower (a crate on its floor) and a little shrine
+    with a torch.
+  - **The Elder Tree** (north, beyond the north road): one colossal tree,
+    320 studs tall. Platforms spiral up its trunk, rope bridges run out
+    to three neighbours, and a lookout with a crate hides in its crown.
+  - Four **ponds**, low **rocky outcrops**, **flower meadows** (leafy grass
+    and patches of wildflowers) and **fallen logs** on the open plains.
+- **Places to discover**: every named place outside the wall has an
+  invisible marker tagged `PointOfInterest` (`PoiId`, `PoiName`,
+  `PoiKind = "Wilds"`, `PoiRadius`), in one always-streamed model:
+  Castle, MillRuin, Aqueduct, WatchFort, OuterWall, Gorge, MistLake,
+  ElderTree, GiantWoods, GreatForest, TrainingGrounds, Farms, Windmill.
 - **Town life**: townsfolk stroll the streets by day (fewer at night and in
   the rain). They step out of doors near you, and when the giants come (or
   one gets close) they hurry back indoors. Flocks of birds circle over the
